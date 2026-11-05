@@ -314,18 +314,30 @@ describe("every text tier reads on every surface it sits on", () => {
     });
 
     it(`${theme.name}: the reversed chrome plate carries its own ink at ${AA_BODY}:1`, () => {
-      // Tooltip, hover card and toast, and the connection banner, which paints
-      // the same ink on the solid error plate. The banner's old gap (white on
-      // a light red, 2.92:1) closed when error became the ink.
+      // The connection banner, which paints the ground on the solid error
+      // plate. The banner's old gap (white on a light red, 2.92:1) closed when
+      // error became the ink.
       for (const plate of [
-        "--vex-alias-tooltip-bg",
-        "--vex-alias-toast-bg",
         "--vex-alias-state-error",
       ] as const) {
         expect(
           ratio(theme.blocks, "--vex-alias-label-on-chrome", plate),
           `on-chrome on ${plate} in ${theme.name}`,
         ).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the floating plate (the toast, the tooltip) carries ink at ${AA_BODY}:1`, () => {
+      // VEX Cloud's toast and tooltip: ink words on the top of the ground
+      // ladder (16.6:1 in Cloud's own measure), and muted (the overflow line)
+      // above the floor.
+      for (const plate of ["--vex-alias-toast-bg", "--vex-alias-tooltip-bg"] as const) {
+        for (const ink of ["--vex-alias-label-on-plate", "--vex-alias-label-tertiary"] as const) {
+          expect(
+            ratio(theme.blocks, ink, plate),
+            `${ink} on ${plate} in ${theme.name}`,
+          ).toBeGreaterThanOrEqual(AA_BODY);
+        }
       }
     });
   }

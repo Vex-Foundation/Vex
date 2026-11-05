@@ -82,6 +82,14 @@ export const DURATION_VEX_OPEN_MS = 720;
  */
 export const DURATION_VEX_CLOSE_MS = 420;
 
+/**
+ * The general key's hover fill: it rises from the key's foot (VEX Cloud's
+ * `--vx-dur-fill`, docs/design/H3-DESKTOP.md section 5.2). A named exception
+ * to the scale (MOTION-POLICY.md), owned by `components/ui/button.tsx`.
+ * CSS: `--vex-duration-key-fill`.
+ */
+export const DURATION_KEY_FILL_MS = 420;
+
 export const SPRING_PANEL = {
   type: "spring",
   stiffness: 260,

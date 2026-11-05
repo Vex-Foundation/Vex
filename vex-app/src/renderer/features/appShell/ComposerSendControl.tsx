@@ -1,19 +1,19 @@
 /**
  * THE SEND CELL (docs/design/H3-DESKTOP.md sections 1.8 and 2.4, Appendix
- * A.5): the composer row's last cell, 140 wide (1300 to 1440 at 1440) and the
- * row's 72 high, the composer's one blue fill. One slot, three hard-cut
- * states:
- *  - send: the blue cell, H3's three-by-three dot glyph and SEND (sans 14,
- *    caps, white); a `type="submit"` of the composer's own form. While there
- *    is nothing to send it is disabled, and says so to assistive tech, but
- *    keeps its blue: H3 draws the resting composer, "Ask Vex..." over an
- *    empty field, with the blue SEND, so the primary key stands where the
- *    eye expects it from the first frame;
+ * A.5): the composer row's last cell, 138 wide (1302 to 1440 at 1440, H3's
+ * `.cmp-send`) and the row's 72 high. One slot, four hard-cut states:
+ *  - send: the blue cell, the three-by-three dot glyph and SEND (sans 13,
+ *    caps, white); a `type="submit"` of the composer's own form;
+ *  - held: while there is nothing to send the same key is disabled and wears
+ *    the held look (VEX Cloud's EC-04): the cell fill with a muted word and
+ *    faint dots, never a blue key that does nothing. It turns blue the moment
+ *    the draft has text; which drafts can be sent is the owner's rule, not
+ *    this cell's;
  *  - stop: the same blue cell with a square and STOP, while a turn runs. The
  *    key's word is short, its NAME says what it stops ("Stop agent" in a
  *    chat, "Stop mission" in a mission), because a stop names its target;
  *  - stopping: the same box, disabled, on the cell fill with muted words
- *    (section 2.4's disabled key), until the stop is acknowledged.
+ *    (section 2.4's held key), until the stop is acknowledged.
  * The word is written in sentence case and set in caps by the sheet, so a
  * screen reader reads words; the accessible name is the full one. Focus is
  * the 2px ink ring inside the cell (section 2.4).
@@ -34,23 +34,36 @@ import { cn } from "../../lib/utils.js";
 const KEY_BASE =
   "vex-composer-key shrink-0 transition-colors duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus";
 
-/** H3's send glyph: three rows of three dots, drawn in the key's ink. */
+/**
+ * The send glyph: three rows of three dots on a 24 grid, every other one
+ * larger (VEX Cloud's `dots` glyph), drawn 20 square. Faint at rest, white
+ * under the pointer (console.css).
+ */
+const SEND_DOTS: readonly (readonly [number, number, number])[] = [
+  [5, 5, 1.6],
+  [12, 5, 1.6],
+  [19, 5, 2.6],
+  [5, 12, 2.6],
+  [12, 12, 2.6],
+  [19, 12, 1.6],
+  [5, 19, 1.6],
+  [12, 19, 2.6],
+  [19, 19, 1.6],
+];
+
 function SendGlyph(): JSX.Element {
-  const at = [3, 8, 13] as const;
   return (
     <svg
       aria-hidden="true"
       focusable="false"
-      width={16}
-      height={16}
-      viewBox="0 0 16 16"
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
       className="vex-composer-key__glyph"
     >
-      {at.flatMap((cy) =>
-        at.map((cx) => (
-          <circle key={`${String(cx)}-${String(cy)}`} cx={cx} cy={cy} r={1.75} fill="currentColor" />
-        )),
-      )}
+      {SEND_DOTS.map(([cx, cy, r]) => (
+        <circle key={`${String(cx)}-${String(cy)}`} cx={cx} cy={cy} r={r} fill="currentColor" />
+      ))}
     </svg>
   );
 }

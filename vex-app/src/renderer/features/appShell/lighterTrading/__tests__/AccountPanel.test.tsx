@@ -376,7 +376,8 @@ describe("TradingBottomPanel", () => {
     expect(table.textContent).toContain("3,200.5");
     expect(table.textContent).toContain("-12.5");
     // Sell and a realized loss are trading values: each carries its tone for the trading pair.
-    expect(within(table).getByText("Sell").getAttribute("data-tone")).toBe("negative");
+    expect(within(table).getByText("Sell").getAttribute("data-side")).toBe("sell");
+    expect(within(table).getByText("Sell").hasAttribute("data-tone")).toBe(false);
     expect(within(table).getByText("-12.5").getAttribute("data-tone")).toBe("negative");
     expect(screen.getByRole("note").textContent).toContain("older activity is not loaded");
 
@@ -441,9 +442,11 @@ describe("TradingBottomPanel", () => {
     renderPanel();
 
     expect(screen.getByRole("tab", { name: /^Positions ?1$/ })).toBeTruthy();
-    // The side word is its own element, the only part of the line in the trading pair.
+    // The side word is its own element, a word in ink, never the trading pair
+    // (VEX Cloud's DG5-07: red means refused).
     const sideWord = screen.getByText("Long");
-    expect(sideWord.getAttribute("data-trade")).toBe("up");
+    expect(sideWord.getAttribute("data-side")).toBe("long");
+    expect(sideWord.hasAttribute("data-trade")).toBe(false);
     expect(sideWord.closest("small")?.textContent).toBe("Long · 10x Cross");
     expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "Market", "Size", "Entry", "Mark", "Liq. price", "Margin", "uPnL (ROE)", "TP / SL", "Actions",
@@ -494,7 +497,8 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("Open")).toBeTruthy();
     expect(screen.getByText("GTC")).toBeTruthy();
     expect(screen.getByText("Filled 0.15 / 0.25")).toBeTruthy();
-    expect(screen.getByText("Sell").getAttribute("data-tone")).toBe("negative");
+    expect(screen.getByText("Sell").getAttribute("data-side")).toBe("sell");
+    expect(screen.getByText("Sell").hasAttribute("data-tone")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Cancel BTC order order-1" }));
     expect(mocks.actions.onCancelOrder).toHaveBeenCalledWith(account.openOrders[0]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel all" }));

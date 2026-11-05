@@ -134,7 +134,7 @@
   max-width: 120px;
   background: var(--vex-alias-tooltip-bg);
   padding: 5px 7px;
-  color: var(--vex-alias-label-on-chrome);
+  color: var(--vex-alias-label-on-plate);
   content: attr(data-label);
   font-family: var(--font-sans);
   font-size: 12px;

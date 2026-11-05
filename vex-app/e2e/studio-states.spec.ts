@@ -240,7 +240,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   await expect(creator.getByRole("heading", { name: "What Vex did" })).toBeVisible();
   await expect(creator.getByRole("heading", { name: "Project files" })).toBeVisible();
   await shot(page, "05-creator-report");
-  await creator.getByRole("button", { name: "Close" }).click();
+  await creator.locator(".vex-dialog-foot").getByRole("button", { name: "Close" }).click();
   await expect(creator).toBeHidden();
 
   /* ---- 06: a refusal, by name ----------------------------------------- */
