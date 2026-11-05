@@ -16,12 +16,17 @@
  *     .vex-key__chevron    60 wide, then the column's rule: down while she
  *                          is closed, up while open
  *
- * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6): "Hide Vex" while she is
- * open, "Show Vex" while she is closed, with `aria-expanded` for the section
- * it folds. The tooltip and `aria-keyshortcuts` carry the chord (Appendix
- * A.9: "Show Vex (Ctrl+Shift+B)"); the keycaps are its picture, hidden from
- * assistive technology so the chord is not read twice. The state line
- * describes the key (`aria-describedby`), so it is heard after the name.
+ * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6; VEX Cloud's EC-01):
+ * "Hide Vex" while she is open, "Show Vex" while she is closed, the name
+ * following the words, with `aria-controls` naming her section and no
+ * `aria-expanded` or `aria-pressed` (a changing name and a state attribute
+ * would say it twice). Every press is said once, politely, "Vex shown." or
+ * "Vex hidden." (EC-24), by the announcer beside the key
+ * (`VexSectionAnnouncer`). The tooltip and `aria-keyshortcuts` carry the
+ * chord (Appendix A.9: "Show Vex (Ctrl+Shift+B)"); the keycaps are its
+ * picture, hidden from assistive technology so the chord is not read twice.
+ * The state word describes the key (`aria-describedby`), so it is heard
+ * after the name; its short word and the ticking timer are pictures, hidden.
  *
  * THE WORDS CHANGE AT THE PRESS (section 3.3), never at the end of a motion:
  * while her close plays (`vex-hide.ts`) the key already reads Show Vex, and a
@@ -58,6 +63,8 @@ import { useVexPresence } from "./useVexPresence.js";
 import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
+import { VexSectionAnnouncer } from "./VexSectionAnnouncer.js";
+import { VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
 import { vexShortWordOf, type VexState } from "./vex-state.js";
 import {
@@ -109,6 +116,8 @@ export interface VexKeyProps {
   readonly platform?: StudioPlatform;
   /** Her band rests under 1024: why, in words; the key then acts on nothing. */
   readonly held?: string | null;
+  /** Her section's id (`aria-controls`): the shell's by default, the stage names its own. */
+  readonly controls?: string;
 }
 
 export function VexKey({ open, onToggle, platform = studioPlatform, held = null }: VexKeyProps): JSX.Element {
@@ -126,11 +135,12 @@ export function VexKey({ open, onToggle, platform = studioPlatform, held = null 
         word={presence.word}
         timer={
           presence.timerStartedAt === null ? null : (
-            <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" />
+            <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" decorative />
           )
         }
       />
       <VexStateAnnouncer state={presence.state} word={presence.word} live={presence.live} />
+      <VexSectionAnnouncer />
     </>
   );
 }
@@ -165,6 +175,7 @@ export function VexKeyView({
   mood,
   held = null,
   count = null,
+  controls = VEX_SECTION_ID,
 }: VexKeyViewProps): JSX.Element {
   const closing = useVexClosing();
   // While her close plays her section still stands, but the person has
@@ -187,7 +198,7 @@ export function VexKeyView({
         data-vex-state={state}
         data-vex-key-open={shown ? "true" : "false"}
         aria-label={name}
-        aria-expanded={shown}
+        aria-controls={controls}
         aria-describedby={stateId}
         aria-keyshortcuts={vexToggleAriaShortcut(platform)}
         aria-disabled={held === null ? undefined : true}

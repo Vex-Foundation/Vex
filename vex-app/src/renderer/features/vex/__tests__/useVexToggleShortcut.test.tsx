@@ -9,16 +9,18 @@
  *  - a held key's repeats, other chords, a key someone nearer took and a key
  *    pressed under an open modal dialog do nothing;
  *  - a hide goes through her close, like a click on the Vex key; a press
- *    while she closes keeps her;
+ *    while she closes keeps her; each press is said, "Vex shown." or "Vex
+ *    hidden." (EC-24);
  *  - with no Vex to toggle (`null`, Lighter's Zen) nothing is bound, and the
  *    listener goes with the shell.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JSX } from "react";
 import { useVexToggleShortcut, type VexToggleTarget } from "../useVexToggleShortcut.js";
 import { registerVexCloser, setVexClosing } from "../vex-hide.js";
+import { VexSectionAnnouncer } from "../VexSectionAnnouncer.js";
 import type { StudioPlatform } from "../../appShell/studio/keybindings-labels.js";
 
 function Shell({
@@ -51,6 +53,33 @@ describe("useVexToggleShortcut", () => {
     const event = press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("says its press once, politely, as every toggle's: Vex shown. or Vex hidden. (EC-24)", () => {
+    const view = render(
+      <>
+        <Shell toggle={{ open: false, onToggle: () => undefined }} platform="win32" />
+        <VexSectionAnnouncer />
+      </>,
+    );
+    const said = (): string =>
+      Array.from(document.querySelectorAll("[data-vex-area='vex-section-announcer'] [role='status']"))
+        .map((r) => r.textContent)
+        .join("");
+    act(() => {
+      press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
+    });
+    expect(said()).toBe("Vex shown.");
+    view.rerender(
+      <>
+        <Shell toggle={{ open: true, onToggle: () => undefined }} platform="win32" />
+        <VexSectionAnnouncer />
+      </>,
+    );
+    act(() => {
+      press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
+    });
+    expect(said()).toBe("Vex hidden.");
   });
 
   it("leaves Ctrl+B alone: that is Studio's sidebar key, not hers", () => {

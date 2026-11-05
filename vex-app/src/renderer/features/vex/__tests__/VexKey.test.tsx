@@ -12,8 +12,10 @@
  *    platform's spelling, hidden from assistive technology;
  *  - VEX Cloud's measures and width rules in its sheet: no keycaps under
  *    1440, the chat row's short word under 1280 ("Waiting"), 14 from 1920;
- *  - one control named for what it does, expanded while she is open, its
- *    tooltip and `aria-keyshortcuts` carrying the chord (Appendix A.9);
+ *  - one control named for what it does, controlling her section, with no
+ *    `aria-expanded` or `aria-pressed` (EC-01), its tooltip and
+ *    `aria-keyshortcuts` carrying the chord (Appendix A.9); every press said
+ *    once, politely, "Vex shown." or "Vex hidden." (EC-24);
  *  - the portrait: her portrait key (S4-03, faceless until her art) and the
  *    portrait glyph stand together and crossfade, the glyph on the open
  *    ground while open; the chevron up while open, down closed;
@@ -38,7 +40,8 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexKey, vexKeySquareOf } = await import("../VexKey.js");
+const { VexKey, VexKeyView, vexKeySquareOf } = await import("../VexKey.js");
+const { VEX_SECTION_ID, VEX_STAGE_SECTION_ID } = await import("../vex-section-a11y.js");
 const { VEX_STATES } = await import("../vex-state.js");
 const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
@@ -201,15 +204,18 @@ describe("VexKey: what it draws", () => {
 });
 
 describe("VexKey: the control", () => {
-  it("is named for what a press does, expanded while she is open, with the chord", () => {
+  it("is a disclosure named by its words, controlling her section, with no state attribute (EC-01)", () => {
     const { rerender } = render(<VexKey open onToggle={() => undefined} platform="linux" />);
     const hide = screen.getByRole("button", { name: "Hide Vex" });
     expect(hide).toBe(key());
-    expect(hide.getAttribute("aria-expanded")).toBe("true");
+    expect(hide.getAttribute("aria-controls")).toBe(VEX_SECTION_ID);
+    expect(hide.hasAttribute("aria-expanded")).toBe(false);
+    expect(hide.hasAttribute("aria-pressed")).toBe(false);
     expect(hide.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+B");
     rerender(<VexKey open={false} onToggle={() => undefined} platform="darwin" />);
     const show = screen.getByRole("button", { name: "Show Vex" });
-    expect(show.getAttribute("aria-expanded")).toBe("false");
+    expect(show.getAttribute("aria-controls")).toBe(VEX_SECTION_ID);
+    expect(show.hasAttribute("aria-expanded")).toBe(false);
     expect(show.getAttribute("aria-keyshortcuts")).toBe("Meta+Shift+B");
   });
 
@@ -218,6 +224,49 @@ describe("VexKey: the control", () => {
     render(<VexKey open onToggle={() => undefined} platform="linux" />);
     const described = document.getElementById(key().getAttribute("aria-describedby") ?? "");
     expect(described).toBe(part("status"));
+  });
+
+  it("keeps the ticking timer out of its description, as a picture of the live turn", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    arrange({ state: "thinking", word: "Thinking", fill: "thinking", timerStartedAt: NOW - 3_000, live: true });
+    render(<VexKey open onToggle={() => undefined} platform="linux" />);
+    expect(part("timer")?.textContent).toBe("0:03");
+    expect(part("timer")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("says every press once, politely: Vex shown. or Vex hidden. (EC-24)", () => {
+    const { rerender } = render(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
+    const announcer = document.querySelector("[data-vex-area='vex-section-announcer']");
+    expect(announcer).not.toBeNull();
+    expect(key().contains(announcer)).toBe(false);
+    const regions = Array.from(announcer?.querySelectorAll("[role='status']") ?? []);
+    expect(regions.map((r) => r.getAttribute("aria-live"))).toEqual(["polite", "polite"]);
+    const said = (): string => regions.map((r) => r.textContent).join("");
+    expect(said()).toBe("");
+    fireEvent.click(key());
+    expect(said()).toBe("Vex shown.");
+    rerender(<VexKey open onToggle={() => undefined} platform="linux" />);
+    fireEvent.click(key());
+    expect(said()).toBe("Vex hidden.");
+    rerender(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
+    fireEvent.click(key());
+    // The same words again land in the other half, so they are heard again.
+    expect(said()).toBe("Vex shown.");
+  });
+
+  it("names the stage's own section where the stage hands it in", () => {
+    render(
+      <VexKeyView
+        open
+        onToggle={() => undefined}
+        platform="linux"
+        state="ready"
+        word="Ready"
+        controls={VEX_STAGE_SECTION_ID}
+      />,
+    );
+    expect(key().getAttribute("aria-controls")).toBe(VEX_STAGE_SECTION_ID);
   });
 
   it("spells its tooltip as the contract does: the name, then the chord", () => {
@@ -267,7 +316,6 @@ describe("VexKey: the control", () => {
         setVexClosing(true);
       });
       expect(key().getAttribute("aria-label")).toBe("Show Vex");
-      expect(key().getAttribute("aria-expanded")).toBe("false");
       expect(part("name")?.textContent).toBe("Show Vex");
       fireEvent.click(key());
       expect(keep).toHaveBeenCalledTimes(1);

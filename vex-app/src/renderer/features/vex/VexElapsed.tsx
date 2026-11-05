@@ -12,10 +12,17 @@ import { formatElapsed } from "../appShell/TurnIsland/ElapsedCounter.js";
 export function VexElapsed({
   startedAtMs,
   className,
+  decorative = false,
 }: {
   /** Epoch ms the live turn started. */
   readonly startedAtMs: number;
   readonly className?: string;
+  /**
+   * Hidden from assistive technology: where the time is a picture beside a
+   * word that already says the state (the Vex key, as VEX Cloud's `.vk-timer`
+   * is), so a description never reads a ticking figure.
+   */
+  readonly decorative?: boolean;
 }): JSX.Element {
   const [label, setLabel] = useState(() => formatElapsed(Date.now() - startedAtMs));
   useEffect(() => {
@@ -28,5 +35,9 @@ export function VexElapsed({
       window.clearInterval(id);
     };
   }, [startedAtMs]);
-  return <span className={className}>{label}</span>;
+  return (
+    <span className={className} aria-hidden={decorative ? true : undefined}>
+      {label}
+    </span>
+  );
 }

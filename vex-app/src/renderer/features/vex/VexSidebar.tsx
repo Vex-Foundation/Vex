@@ -98,6 +98,7 @@ import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
 import { kimmMoodOf } from "./kimm-mood.js";
 import { TAGLINES, taglineMomentOf } from "./TaglineCell.js";
 import { registerVexCloser } from "./vex-hide.js";
+import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 
 /**
@@ -234,10 +235,14 @@ function VexBand({ open, onClose }: { readonly open: boolean; readonly onClose: 
       mood={kimmMoodOf(state)}
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next) {
+          onClose();
+          announceVexSection(false);
+        }
       }}
       shortcut={KIMM_SHORTCUT}
       band={{ line }}
+      id={VEX_SECTION_ID}
     />
   );
 }

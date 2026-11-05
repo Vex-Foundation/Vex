@@ -93,7 +93,6 @@ function PlateVexKey({ open, state }: { readonly open: boolean; readonly state: 
       data-vex-state={state}
       data-vex-key-open={open ? "true" : "false"}
       aria-label={name}
-      aria-expanded={open}
     >
       <span className="vex-key__portrait" data-open={open ? "" : undefined}>
         {open ? (

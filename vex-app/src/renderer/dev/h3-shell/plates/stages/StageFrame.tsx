@@ -123,7 +123,7 @@ function platform(): StudioPlatform {
 function VexKeyCells({ vex }: { readonly vex: StageVexKey }): JSX.Element {
   const ready = vex.word === "Ready";
   return (
-    <button type="button" className="vex-key" aria-label="Hide Vex" aria-expanded>
+    <button type="button" className="vex-key" aria-label="Hide Vex">
       <span className="vex-key__portrait" data-open="">
         <PortraitGlyph />
       </span>

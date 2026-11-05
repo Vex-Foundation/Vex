@@ -156,7 +156,7 @@ The Vex key is the header cell over the Vex column, in three parts:
 - **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
 - **Width rules** (VEX Cloud's, on the window's width): under 1440 no keycaps (the chord stays in the key's name, `aria-keyshortcuts`, its tooltip and the first-close hint), the state line 12 at 0.06em with its parts 8 apart, the text 16 in, the chevron cell 48, and the console's decision 14 with its Review cell 14 in from each side; under 1280 the state line says the chat row's short word ("Waiting" for Waiting for approval; every other word is already short), the long word staying the key's description; from 1920 the state line is 14 and the keycaps 20 high at 11.
 
-The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
+The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3). It is a disclosure as VEX Cloud's EC-01 draws every control of her section: the name follows the words, `aria-controls` names her section, and there is no `aria-expanded` or `aria-pressed`. Its description is the long state word; the short word and the ticking timer are hidden from assistive tech, as Cloud's are.
 
 Her moods, printed on `landing-r3__plate-key-moods`. Both apps must use the same list:
 
@@ -446,6 +446,7 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 - The way back is where the person pressed. After HIDE VEX is pressed, what is under the pointer from 0 to 600ms is Show Vex, and a second press there opens her again (printed at 1024, 1280, 1440 and 2560). The strip's key (531 to 680) covers the open key's box (542 to 680).
 - A press acts at once: no confirm, no delay.
 - Focused from the keyboard, each key shows the 2px white ring inside its cell.
+- **For assistive tech** (VEX Cloud's EC-01 and EC-24): each control is a disclosure named by its words, with `aria-controls` naming her section (`vex-section` in the shell, `vex-stage-section` on the stage before it) and no `aria-expanded` or `aria-pressed`. Every press, by the Vex key, her corner key or the shortcut, is said once in a polite live region beside the Vex key: "Vex shown." or "Vex hidden." (Cloud's DRAFT words). Open: the console line's key under 1024 (section 1.10) is a toggle too and does not say its press yet.
 
 ### 3.4 While she moves
 - Her section's body is inert while it moves: nothing in it takes a click or focus. The console's rest under her is inert while she is open and until a close has ended. The two keys stay live.
@@ -698,6 +699,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | CLOUD, beside the mark | the mark alone | desktop is not Cloud. Open: a word beside the mark, if the owner wants one |
 | READY, THINKING 0:03, WAITING FOR APPROVAL, DONE | Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up (`features/vex/vex-state.ts`), with the timer while Thinking or Working | desktop's state machine has ten states |
 | HIDE VEX, SHOW VEX | same | |
+| (spoken) "Vex shown.", "Vex hidden." | same, on every toggle's press | Cloud's EC-24 pair, DRAFT in Cloud (PD-27 copy pass) |
 | under 1280: WAITING for WAITING FOR APPROVAL in the Vex key; MAIN and the hatch for MAINNET and REAL FUNDS | same | Cloud's short words (`.vk-short`, `.hd-short`); the long words stay for assistive tech |
 | keycaps CTRL, SHIFT, B | same on Windows and Linux; ⇧, ⌘, B on macOS, in Apple's modifier order | each platform's keys (section A.9) |
 | "SAMPLE DATA" under the chat title | the chat's kind and access: "Agent · Restricted", "Mission · Full access"; a page's own line, or none | "SAMPLE DATA" marks the mockup |
