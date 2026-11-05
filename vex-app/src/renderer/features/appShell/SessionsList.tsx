@@ -241,15 +241,18 @@ export function SessionsList({
   const listBody = query.isLoading ? (
     <SessionsLoadingPlaceholder sidebarOpen />
   ) : query.data && query.data.ok === false ? (
-    <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
+    // Cloud's words, never the raw cause.
+    <SessionsErrorPlaceholder sidebarOpen />
   ) : query.isError ? (
     // A TRANSPORT rejection never produces a Result, so without this branch
     // it fell through to `null` and the column went blank: a lie by omission
     // (rule 08: failure is a distinct state, not emptiness).
-    <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
+    <SessionsErrorPlaceholder sidebarOpen />
   ) : query.data && query.data.ok ? (
     visibleRows.length === 0 ? (
-      <SessionsEmptyPlaceholder sidebarOpen />
+      // "No chats yet." only when there are none; a search or a tab that
+      // narrowed a list with chats says none match it.
+      <SessionsEmptyPlaceholder sidebarOpen searching={(agentRows?.length ?? 0) > 0} />
     ) : (
       <SidebarSessionGroups
         groups={groups}
@@ -269,7 +272,7 @@ export function SessionsList({
       ref={columnRef}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
-      aria-label="Sessions and agent"
+      aria-label="Chats"
       className={cn("vex-sidebar vex-ls", quiet && "vex-quiet-bars")}
       data-vex-area="sessions-sidebar"
       data-vex-sidebar-open={rail ? "false" : "true"}
@@ -293,7 +296,7 @@ export function SessionsList({
               <Tooltip label="Expand sidebar">
                 <button
                   type="button"
-                  aria-label="Expand sessions sidebar"
+                  aria-label="Expand sidebar"
                   aria-expanded={false}
                   onClick={onToggleSidebar}
                   className="vex-ls-nrow vex-ls-nrow--expand"

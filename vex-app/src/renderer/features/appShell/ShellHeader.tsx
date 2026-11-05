@@ -82,7 +82,7 @@ export interface ShellHeaderProps {
 
 /** The sidebar key's name in each mode that has one. */
 function collapseLabel(runtimeMode: RuntimeMode): string {
-  return runtimeMode === "studio" ? STUDIO_SIDEBAR_COLLAPSE_LABEL : "Collapse sessions sidebar";
+  return runtimeMode === "studio" ? STUDIO_SIDEBAR_COLLAPSE_LABEL : "Collapse sidebar";
 }
 
 export function ShellHeader({

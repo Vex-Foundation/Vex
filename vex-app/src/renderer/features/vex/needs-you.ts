@@ -158,7 +158,7 @@ function whereOf(row: ApprovalPendingGlobalDto): { where: string; groupKey: stri
   if (row.sessionId !== null) {
     const title = row.sessionTitle?.trim() ?? "";
     return {
-      where: title.length > 0 ? title : "Untitled session",
+      where: title.length > 0 ? title : "Untitled chat",
       groupKey: `session:${row.sessionId}`,
     };
   }

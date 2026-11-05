@@ -206,9 +206,9 @@ export function LighterSidebar({
             {query.isLoading ? (
               <SessionsLoadingPlaceholder sidebarOpen />
             ) : query.data && query.data.ok === false ? (
-              <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
+              <SessionsErrorPlaceholder sidebarOpen />
             ) : query.isError ? (
-              <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
+              <SessionsErrorPlaceholder sidebarOpen />
             ) : query.data && query.data.ok ? (
               groups.length === 0 ? (
                 <SessionsEmptyPlaceholder sidebarOpen />

@@ -681,6 +681,9 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | TODAY, YESTERDAY, EARLIER | Pinned, Today, Yesterday, Earlier | "Earlier" replaces desktop's "Older"; pinned chats are desktop's |
 | a time, or RUNNING or WAITING | a time, or Running, Paused, Waiting or Sleeping | desktop's chat rows have four states |
 | You, Account and settings | same | |
+| "Loading chats", "Chats could not load.", "No chats yet.", "No chats match your search." | same | Cloud's REAL list words (`shell/sidebar/chat-list.tsx`); they replace "Loading sessions", the read's raw cause or "Vex could not read your sessions.", and "No sessions". The search's or a tab's empty list says none match; "No chats yet." only when there are none |
+| "Untitled chat" | same, for a chat with no title and no first message, and where the Needs you rows and the inbox name an untitled chat | replaces "Agent session" and "Untitled session"; a mission with no title stays "Mission setup" |
+| Collapse sidebar, Expand sidebar | same, as the sidebar key's and the rail's names | Cloud's REAL `page-key.tsx`; "chat", never "session", in every word a person reads; the column is named "Chats" |
 
 ### A.3 The console
 | H3 | Desktop | Why |
