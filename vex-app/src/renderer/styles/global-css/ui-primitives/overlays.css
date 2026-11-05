@@ -500,24 +500,70 @@ dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
 }
 
 /* ── Tooltip ───────────────────────────────────────────────────────────────
- * The existing tooltip tokens: the reversed chrome plate (ink by day, paper
- * at night), no arrow, no motion. */
+ * VEX Cloud's v99 rail tooltip (docs/design/H3-DESKTOP.md section 5.4;
+ * Cloud's `.vx-tip`, D2-25): the dark plate at the top of the ground ladder
+ * with ink words at 12/1.35, pointed by an 8px notch toward its key, 8 from
+ * it, at most 280 wide (a reason wraps). It fades in over 160ms, Cloud's
+ * --vx-tooltip-in; it leaves at once (Cloud fades it out in 220ms). */
 .vex-tooltip {
   position: fixed;
   z-index: 1200;
   /* Fixed-position shrink-to-fit measures only left->viewport-edge space, so
    * right-edge anchors would wrap early; max-content sizes by the label. */
   width: max-content;
-  max-width: 50vw;
-  padding: 4px 8px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 10px;
   background: var(--vex-alias-tooltip-bg);
-  color: var(--vex-alias-label-on-chrome);
+  color: var(--vex-alias-label-on-plate);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
+  animation: vex-tooltip-in 160ms var(--vex-ease-out);
+}
+
+@keyframes vex-tooltip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The notch: a square turned 45 degrees, half out of the plate toward the key. */
+.vex-tooltip::before {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.vex-tooltip[data-side="right"]::before {
+  top: calc(50% - 4px);
+  left: -4px;
+}
+
+.vex-tooltip[data-side="left"]::before {
+  top: calc(50% - 4px);
+  right: -4px;
+}
+
+.vex-tooltip[data-side="bottom"]::before {
+  top: -4px;
+  left: calc(50% - 4px);
+}
+
+.vex-tooltip[data-side="top"]::before {
+  bottom: -4px;
+  left: calc(50% - 4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-tooltip {
+    animation: none;
+  }
 }
 
 .vex-tooltip[data-side="right"],

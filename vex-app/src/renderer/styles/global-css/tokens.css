@@ -263,8 +263,9 @@
   --vex-alias-label-on-primary: var(--color-h3-ground);
   /* Type painted on a solid accent fill: the ground. */
   --vex-alias-label-on-accent: var(--color-h3-ground);
-  /* Type painted on the reversed chrome plate (tooltip, hover card, toast,
-   * connection banner): the ground on the ink plate. */
+  /* Type painted on the reversed chrome plate (the ink label box, the
+   * connection banner): the ground on the ink plate. The tooltip and the
+   * toast moved to the dark floating plate (--vex-alias-label-on-plate). */
   --vex-alias-label-on-chrome: var(--color-h3-ground);
 
   /* Keys (docs/design/H3-DESKTOP.md section 2.4). THE PRIMARY KEY is the one
@@ -352,12 +353,11 @@
   --vex-alias-bg-mask-1: rgba(0, 0, 0, 0.6);
   --vex-alias-bg-mask-drop: rgba(1, 2, 3, 0.7);
 
-  /* The reversed chrome plate: the tooltip, the ink plate, with
-   * --vex-alias-label-on-chrome on top. */
-  --vex-alias-tooltip-bg: var(--color-h3-ink);
-  /* The floating plate (VEX Cloud's toast, docs/design/H3-DESKTOP.md
-   * section 5.1): the top of the ground ladder in the chosen rule, ink words
-   * on it. A failure lays the refusal red at 16% over the card ground. */
+  /* The floating plate (VEX Cloud's tooltip and toast, docs/design/
+   * H3-DESKTOP.md sections 5.1 and 5.4): the top of the ground ladder, ink
+   * words on it (--vex-alias-label-on-plate). The toast wears the chosen rule;
+   * a failure lays the refusal red at 16% over the card ground. */
+  --vex-alias-tooltip-bg: var(--color-h3-tooltip);
   --vex-alias-toast-bg: var(--color-h3-tooltip);
   --vex-alias-label-on-plate: var(--color-h3-ink);
   --vex-alias-card: var(--color-h3-card);

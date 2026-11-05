@@ -39,6 +39,10 @@ here is a defect:
   the node when it elapses), so its duration is a behaviour of the
   notification model rather than a style choice; retuning it is a
   notification change, not a motion change.
+- The tooltip's fade in, 160ms - VEX Cloud's `--vx-tooltip-in`
+  (`docs/design/H3-DESKTOP.md` section 5.4): opacity only, on the entrance
+  curve; reduced motion shows it at once. It leaves at once (Cloud fades it
+  out in 220ms, which would need the bubble to outlive its anchor's hover).
 - The general key's hover fill, 420ms (`--vex-duration-key-fill`,
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot

@@ -614,6 +614,9 @@ Buy, Sell, Long and Short read as words in ink, never in the trading green and r
 
 Cloud draws no order book, so it sets no rule for depth bars; desktop follows the side rule there too. Nothing about an order changes: its side, size and every key's action are what they were.
 
+### 5.4 The tooltip
+Cloud's v99 rail tooltip (`.vx-tip`, D2-25): the dark plate (`--color-h3-tooltip`, oklch 20%) with ink words, not the inverted ink plate R3 drew. 12/1.35 with 0.02em tracking, padding 8 10, at most 280 wide (a reason wraps), 8 from its key, pointed by an 8px notch turned 45 degrees toward the key. It fades in over 160ms. Cloud fades it out over 220ms; desktop's bubble leaves at once, because fading out would need it to outlive its anchor's hover (Open: build it if the owner wants the exit too). The Lighter chart's tool labels take the same plate.
+
 ---
 
 ## Appendix A. Words, keys and taglines
