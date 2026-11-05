@@ -15,8 +15,11 @@ import {
   HISTORY_CAP,
   MAX_VISIBLE_TOASTS,
   NotificationsModel,
-  PURGE_MS,
   TOAST_EXIT_MS,
+  TOAST_HOLD_LONG_MS,
+  TOAST_HOLD_MS,
+  TOAST_LONG_TEXT,
+  toastHoldMs,
 } from "../index.js";
 import type {
   NotificationChange,
@@ -70,8 +73,8 @@ describe("dedup", () => {
     // would tell the user one project failed when two did.
     expect(shape(model.getSnapshot())).toEqual({
       items: ["Watcher stopped", "Watcher stopped"],
-      toasts: ["Watcher stopped", "Watcher stopped"],
-      overflowCount: 0,
+      toasts: ["Watcher stopped"],
+      overflowCount: 1,
       droppedFromHistory: 0,
     });
   });
@@ -84,8 +87,8 @@ describe("dedup", () => {
 
     expect(shape(model.getSnapshot())).toEqual({
       items: ["Disk almost full", "Bridge reconnecting"],
-      toasts: ["Bridge reconnecting", "Disk almost full"],
-      overflowCount: 0,
+      toasts: ["Bridge reconnecting"],
+      overflowCount: 1,
       droppedFromHistory: 0,
     });
   });
@@ -160,25 +163,25 @@ describe("derived stickiness", () => {
 });
 
 describe("visible cap", () => {
-  it("shows three, queues the rest, and reports the overflow", () => {
+  it("shows one, queues the rest, and reports the overflow", () => {
     for (let index = 0; index < 5; index += 1) {
       model.notify(input({ message: `m${index}` }));
     }
 
     expect(shape(model.getSnapshot())).toEqual({
       items: ["m4", "m3", "m2", "m1", "m0"],
-      // Slot order is longest-waiting first, so an arrival never reshuffles
-      // the stack under a reading user.
-      toasts: ["m0", "m1", "m2"],
-      overflowCount: 2,
+      // One slot (VEX Cloud's H3 toast), and the longest-waiting holds it, so
+      // an arrival never takes the slot from a toast under a reading user.
+      toasts: ["m0"],
+      overflowCount: 4,
       droppedFromHistory: 0,
     });
-    expect(MAX_VISIBLE_TOASTS).toBe(3);
+    expect(MAX_VISIBLE_TOASTS).toBe(1);
   });
 
   it("lets a toast keep its slot until its exit fade has finished", () => {
     model.notify(input({ message: "leaving" }));
-    vi.advanceTimersByTime(PURGE_MS.info);
+    vi.advanceTimersByTime(TOAST_HOLD_MS);
     // A reconcile triggered mid-exit (here, by a new arrival) must not yank
     // the node out from under its fade.
     model.notify(input({ message: "arriving" }));
@@ -192,10 +195,7 @@ describe("visible cap", () => {
       midExit,
       afterExit: model.getSnapshot().toasts.map((item) => item.message),
     }).toEqual({
-      midExit: [
-        { message: "leaving", phase: "exiting" },
-        { message: "arriving", phase: "visible" },
-      ],
+      midExit: [{ message: "leaving", phase: "exiting" }],
       afterExit: ["arriving"],
     });
   });
@@ -204,65 +204,82 @@ describe("visible cap", () => {
     for (let index = 0; index < 4; index += 1) {
       model.notify(input({ message: `m${index}` }));
     }
-    vi.advanceTimersByTime(PURGE_MS.info + TOAST_EXIT_MS);
+    vi.advanceTimersByTime(TOAST_HOLD_MS + TOAST_EXIT_MS);
 
     expect(shape(model.getSnapshot())).toEqual({
       items: ["m3", "m2", "m1", "m0"],
-      toasts: ["m3"],
-      overflowCount: 0,
+      toasts: ["m1"],
+      overflowCount: 2,
       droppedFromHistory: 0,
     });
   });
 });
 
 describe("purge", () => {
-  it("purges each severity on its own timeout and retains it in the center", () => {
-    const info = new NotificationsModel();
-    info.notify(input({ severity: "info", message: "i" }));
-    const warning = new NotificationsModel();
-    warning.notify(input({ severity: "warning", message: "w" }));
-    const error = new NotificationsModel();
-    error.notify(input({ severity: "error", message: "e" }));
+  it("holds Cloud's 3s, and 6s for an action or 75 characters, then fades in 1000ms", () => {
+    const short = new NotificationsModel();
+    short.notify(input({ severity: "error", message: "Could not lock." }));
+    const long = new NotificationsModel();
+    long.notify(input({ message: "x".repeat(TOAST_LONG_TEXT) }));
+    // A secondary action does not hold the toast sticky, and still earns the long hold.
+    const action = new NotificationsModel();
+    action.notify(
+      input({ message: "Exported.", actions: [{ id: "open", label: "Open", rank: "secondary", run: () => {} }] }),
+    );
+    const count = (): readonly number[] =>
+      [short, long, action].map((scratch) => scratch.getSnapshot().toasts.length);
 
-    vi.advanceTimersByTime(PURGE_MS.info + TOAST_EXIT_MS);
-    const afterInfo = {
-      info: info.getSnapshot().toasts.length,
-      warning: warning.getSnapshot().toasts.length,
-      error: error.getSnapshot().toasts.length,
-    };
-    vi.advanceTimersByTime(PURGE_MS.error - PURGE_MS.info);
-    const afterError = {
-      info: info.getSnapshot().toasts.length,
-      warning: warning.getSnapshot().toasts.length,
-      error: error.getSnapshot().toasts.length,
+    vi.advanceTimersByTime(TOAST_HOLD_MS);
+    const fading = count();
+    vi.advanceTimersByTime(TOAST_EXIT_MS);
+    const afterShort = count();
+    vi.advanceTimersByTime(TOAST_HOLD_LONG_MS - TOAST_HOLD_MS - TOAST_EXIT_MS);
+    const longFading = count();
+    vi.advanceTimersByTime(TOAST_EXIT_MS);
+    const afterLong = count();
+    const retained = [short, long, action].map((scratch) => scratch.getSnapshot().items.length);
+    for (const scratch of [short, long, action]) scratch.reset();
+
+    expect({
+      constants: [TOAST_HOLD_MS, TOAST_HOLD_LONG_MS, TOAST_LONG_TEXT, TOAST_EXIT_MS],
+      fading,
+      afterShort,
+      longFading,
+      afterLong,
       // Purged from the toast surface; still readable in the center.
-      retained: [
-        info.getSnapshot().items.length,
-        warning.getSnapshot().items.length,
-        error.getSnapshot().items.length,
-      ],
-    };
-    for (const scratch of [info, warning, error]) scratch.reset();
-
-    expect({ afterInfo, afterError }).toEqual({
-      afterInfo: { info: 0, warning: 1, error: 1 },
-      afterError: { info: 0, warning: 0, error: 0, retained: [1, 1, 1] },
+      retained,
+    }).toEqual({
+      constants: [3000, 6000, 75, 1000],
+      // the short one is mid-fade: it keeps the slot until the fade ends
+      fading: [1, 1, 1],
+      afterShort: [0, 1, 1],
+      longFading: [0, 1, 1],
+      afterLong: [0, 0, 0],
+      retained: [1, 1, 1],
     });
+  });
+
+  it("counts the title, the message and the action labels toward the long hold", () => {
+    expect([
+      toastHoldMs({ title: null, message: "x".repeat(TOAST_LONG_TEXT - 1), actions: [] }),
+      toastHoldMs({ title: "x", message: "x".repeat(TOAST_LONG_TEXT - 1), actions: [] }),
+      toastHoldMs({ title: null, message: "short", actions: [{ label: "Retry" }] }),
+    ]).toEqual([TOAST_HOLD_MS, TOAST_HOLD_LONG_MS, TOAST_HOLD_LONG_MS]);
   });
 
   it("holds a hovered or focused toast open and releases it afterwards", () => {
     const hovered = model.notify(input({ message: "hovered" }));
     model.setToastInteraction(hovered.id, { hovered: true });
-    vi.advanceTimersByTime(PURGE_MS.info * 3);
+    vi.advanceTimersByTime(TOAST_HOLD_MS * 3);
     const whileHovered = model.getSnapshot().toasts.length;
 
     model.setToastInteraction(hovered.id, { hovered: false });
     model.setToastInteraction(hovered.id, { focused: true });
-    vi.advanceTimersByTime(PURGE_MS.info * 2);
+    vi.advanceTimersByTime(TOAST_HOLD_MS * 2);
     const whileFocused = model.getSnapshot().toasts.length;
 
     model.setToastInteraction(hovered.id, { focused: false });
-    vi.advanceTimersByTime(PURGE_MS.info + TOAST_EXIT_MS);
+    vi.advanceTimersByTime(TOAST_HOLD_MS + TOAST_EXIT_MS);
 
     expect({
       whileHovered,
@@ -273,7 +290,7 @@ describe("purge", () => {
 
   it("never purges a sticky notification", () => {
     model.notify(input({ sticky: true, message: "stays" }));
-    vi.advanceTimersByTime(PURGE_MS.error * 10);
+    vi.advanceTimersByTime(TOAST_HOLD_LONG_MS * 10);
 
     expect(shape(model.getSnapshot())).toEqual({
       items: ["stays"],
@@ -294,7 +311,7 @@ describe("modal deferral", () => {
     // The urgent one was SHOWN, so its purge timer ran like any other; the
     // deferred one was never seen, so it must still be waiting rather than
     // having expired behind the dialog.
-    vi.advanceTimersByTime(PURGE_MS.info * 2);
+    vi.advanceTimersByTime(TOAST_HOLD_MS * 2);
     const afterTimersRan = model.getSnapshot().toasts.map((item) => item.message);
 
     model.setModalOpen(false);
@@ -332,8 +349,6 @@ describe("modal deferral", () => {
 
     expect(model.getSnapshot().toasts.map((item) => item.message)).toEqual([
       "m0",
-      "m1",
-      "m2",
       "urgent",
     ]);
   });
@@ -627,7 +642,7 @@ describe("leak gate", () => {
     for (let index = 0; index < 6; index += 1) {
       model.notify(input({ message: `m${index}` }));
     }
-    vi.advanceTimersByTime(PURGE_MS.info + 1);
+    vi.advanceTimersByTime(TOAST_HOLD_MS + 1);
     model.reset();
 
     expect(vi.getTimerCount()).toBe(0);

@@ -238,6 +238,8 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | ground | `--page` oklch(9% 0.012 264); `--panel` oklch(8.5% 0.008 264) | #020205; #010203 | #000002 to #020202 (OKLCH 7 to 8.5%) in every column, no readable hue | oklch(8.5% 0.008 264), #010203 |
 | cell | `--cell` oklch(11% 0.006 264) | #040406 | #050407: the New chat cell, the composer's model cell, the greyed approve key | the sheet value |
 | raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
+| card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: menus, dialogs, the ground under a failure's red (section 5) |
+| plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1) |
 | raised 2 | none | | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell; #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
 | bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
 | selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
@@ -561,6 +563,21 @@ Decided on 3 November 2026, for S2-07: desktop keeps the chat at 640 or more whe
 - Under 1024 the band (section 1.10) folds the chats whatever either says, and the rail has no Expand key there.
 - Nothing about her section enters this: the Vex column is 30% of the window at every width, and the fold is only what the shell asks the solver (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`). A fold the person asks for may move a card (section 1.2); her section never does.
 - Open: whether Cloud folds its chats under 1268 too. Settled with Cloud.
+
+---
+
+## 5. The kit
+
+The primitives H3's app plates do not draw, taken from what VEX Cloud decided and built on `origin/rebranding-v99-ui` (the `h3-kit-gaps`, `h3-shell-gaps`, `h3-chat-gaps` and `h3-money-gaps` mockups, `contracts/keys.md`, `apps/web/src/styles/overlays.css` and `keys.css`, and Cloud's `HANDOFF.md`). The owner asked for desktop to take every change Cloud made here, however small. Where desktop keeps a rule of its own, the line says why.
+
+### 5.1 The toast
+- **One slot.** One floating cell, never a stack: the plate (`--color-h3-tooltip`, Cloud's `--vx-tooltip`, oklch 20%) in the chosen rule (24%), square, no shadow, at least 44 high, at most min(640, the window less 48) wide. Cloud's D2-16.
+- **Anatomy.** The status column (44) first: the cross for a failure, the concerned hatch for a warning, the info glyph for information. Then the words, 14/1.45 in sentence case (a title, where the producer gives one, over the message in ink 2 at 13). Then each action as a key cell on the right edge: 13px caps, ink, padding 0 20, its left rule, never blue. Desktop keeps its dismiss key as the last cell (44, the cross glyph), because its notifications are dismissible and some are not.
+- **A failure** is the refusal register: the red 16% over the card ground (`--vex-alias-refusal-tint` over `--color-h3-card`). Its words stay ink, where Cloud uses its refusal ink: a status word is ink on desktop (section 2.2).
+- **Place.** 12 under the header, centred on the content column (the chat, a page or the desk), clamped 12 from the window's edges. Before the shell exists, 12 under the old 44 title row.
+- **Never over a waiting card** (Cloud's DG-3 decision 16). A card's strip carries the network and REAL FUNDS, and on a short window it starts at the header's rule. When any `[data-vex-area="approval-card"]` would meet the toast's box, or come within 8 of its foot, the toast takes the header's message slot instead: the header's title cell, for its hold, on the header's ground with no plate of its own, the words 24 in at H3's `.hd-msg` (12/1.35), its keys as the cell's key cells. Words longer than the cell scroll inside it; the slot never grows onto the card. The seat is measured on show, on resize, on any scroll and whenever the document's tree changes, once a frame at most, and only while a toast is on screen (`toastSeat`, `components/ui/notification-toast.tsx`). The desk's Review order is a modal dialog, and a toast never paints while a modal holds the top layer: it waits in the center (unchanged). `e2e/h3-card-proof.spec.ts` proves both in a real browser at 1280 x 720 to 1920 x 1080.
+- **Timings,** Cloud's: the hold is 3s, 6s for a toast with an action or whose words (title, message and action labels) reach 75 characters; then a 1000ms fade (Cloud's `toastFade`; Cloud's `HANDOFF.md` records the hold plus 1000ms as a deviation it keeps, against the drawn 300). The toast arrives in 620ms on the push curve, which has the control points of Cloud's caption curve, 8px down and in; reduced motion drops the arrival and keeps the fade. Hover or focus pauses the hold, and a sticky notification (progress still running, a failure with a working primary action) never fades, as before.
+- **What waits** behind the slot is reported under the words ("+2 more in the notification center"), never dropped: the queue, the center and the announcer are unchanged. An urgent notification still passes the slot and stands under it; nothing raises one yet.
 
 ---
 

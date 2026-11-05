@@ -10,7 +10,8 @@
  *   --vex-ease-out       the landing "Out" curve. ENTRANCES only - a surface
  *                        arriving from nothing and decelerating into place.
  *   --vex-ease-inout     full-surface reveals (the Chronos Gate curtain).
- *   --vex-ease-push      Kimm's section opening and closing, and nothing else
+ *   --vex-ease-push      Kimm's section opening and closing, and the toast's
+ *                        arrival (Cloud's caption curve), and nothing else
  *                        (docs/design/H3-DESKTOP.md section 3.1).
  *
  * All four are DECLARED in `tokens.css`, alongside the `--vex-duration-*`

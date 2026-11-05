@@ -18,6 +18,24 @@ declare global {
       readonly calls: () => readonly string[];
       /** Every bridge member the shell called that the state did not answer. */
       readonly unanswered: () => readonly string[];
+      /**
+       * Raise a notification through the window's own model (the toast).
+       * The input is the renderer's `NotificationInput`; returns its id.
+       */
+      readonly notify: (input: {
+        readonly severity: "info" | "warning" | "error";
+        readonly scope: { readonly kind: "global" };
+        readonly source: string;
+        readonly title?: string;
+        readonly message: string;
+        readonly sticky?: boolean;
+        readonly actions?: readonly {
+          readonly id: string;
+          readonly label: string;
+          readonly rank: "primary" | "secondary";
+          readonly run: () => void;
+        }[];
+      }) => string;
     };
   }
 }
