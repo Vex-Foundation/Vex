@@ -620,6 +620,34 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("says a failure as Cloud's one ink line with the cross, right above the decision band (DG5-28)", () => {
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Wallet rejected the request.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-x",
+        },
+      });
+    });
+    renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
+    const line = screen.getByRole("alert");
+    expect(line.classList.contains("vex-appr__fail")).toBe(true);
+    expect(line.getAttribute("data-vex-area")).toBe("approval-failure");
+    // The cross is the ink error swatch, the words follow it; nothing is red.
+    expect(line.firstElementChild?.getAttribute("data-s")).toBe("error");
+    expect(line.textContent).toBe("Wallet rejected the request.");
+    expect(line.className).not.toMatch(/danger|red|err/);
+    // The decision band follows it at once: the line is the last cell above the footer.
+    expect(line.nextElementSibling?.getAttribute("data-vex-area")).toBe("approval-foot");
+  });
+
   it("invalidates approval queries when approve returns a Result-level failure", async () => {
     const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries").mockResolvedValue();
     mockApproveMutate.mockImplementation((_input, options) => {
@@ -665,7 +693,7 @@ describe("ApprovalCard", () => {
     expect(document.querySelector("[data-vex-signed-glint]")).toBeNull();
   });
 
-  it("buttons disabled while a mutation is in-flight, and the approve key says it is working", () => {
+  it("buttons disabled while a mutation is in-flight, and the approve key says Approving…", () => {
     approvePending = true;
     renderCard(
       makeSummary({ riskLevel: "info", actionKind: "read" }),
@@ -674,8 +702,10 @@ describe("ApprovalCard", () => {
     // The key the user pressed names what it is doing and is marked busy; a
     // dispatch can run for fifteen seconds, and a key that only dimmed for
     // that long read as a click that never landed.
-    const approve = screen.getByRole("button", { name: /working, please wait/i });
+    const approve = screen.getByRole("button", { name: /^approving, please wait$/i });
     const reject = screen.getByRole("button", { name: /^reject$/i });
+    // Cloud's own in-flight word (Appendix A.7), the ellipsis drawn, not spoken.
+    expect(approve.textContent).toContain("Approving…");
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
     expect(approve.getAttribute("aria-busy")).toBe("true");
@@ -699,9 +729,40 @@ describe("ApprovalCard", () => {
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
     expect(approve.querySelector(".vex-swatch")).toBeNull();
-    // An inert primary is the dotted outline, never a faded fill.
-    expect(approve.className).toContain("disabled:border-dotted");
+    // An inert primary is HELD (Cloud's kit): the sheet draws the cell
+    // ground and the muted word from `disabled`, never a dotted blue outline.
+    expect(approve.className).not.toMatch(/disabled:(border-dotted|border-accent|text-accent|bg-transparent)/);
     expect(approve.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("draws a key that cannot act as Cloud's held key: the cell ground, the muted word, the 7% edge, no blue", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet);
+      expect(match, `rule missing: ${selector}`).not.toBeNull();
+      return match?.[1] ?? "";
+    };
+    const held = rule(".vex-appr__foot > button:disabled:not([data-vex-approve-working])");
+    expect(held).toContain("background: var(--vex-alias-bg-layer-3)");
+    expect(held).toContain("color: var(--vex-alias-label-tertiary)");
+    expect(held).toContain("border-color: var(--vex-alias-rule)");
+    expect(held).toContain("border-style: solid");
+    expect(held).not.toMatch(/accent|opacity|dotted/);
+    // A running rejection keeps the held ground with its word in ink; the
+    // working approve key is pending, not held, and keeps its blue.
+    expect(rule('.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled')).toContain(
+      "color: var(--vex-alias-label-primary)",
+    );
+    expect(rule(".vex-appr-row__go > button:disabled")).toContain("background: var(--vex-alias-bg-layer-3)");
+    // Nothing on the keys draws a held state of its own any more.
+    rejectPending = true;
+    renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    for (const key of screen.getAllByRole("button")) {
+      if (key.closest('[data-vex-area="approval-foot"]') === null) continue;
+      expect(key.className).not.toMatch(/disabled:(border-dotted|text-accent|bg-transparent|text-ink-tertiary)/);
+    }
   });
   describe("click responsiveness (K-2 B1)", () => {
     const LOW = { riskLevel: "info", actionKind: "read" } as const;
@@ -714,7 +775,7 @@ describe("ApprovalCard", () => {
       fireEvent.click(approveKey);
       fireEvent.click(approveKey);
       expect(mockApproveMutate).toHaveBeenCalledTimes(1);
-      const working = screen.getByRole("button", { name: /working, please wait/i });
+      const working = screen.getByRole("button", { name: /^approving, please wait$/i });
       expect(working.getAttribute("disabled")).not.toBeNull();
       expect(working.getAttribute("aria-busy")).toBe("true");
       const rejectKey = screen.getByRole("button", { name: /^reject$/i });
@@ -729,7 +790,7 @@ describe("ApprovalCard", () => {
       fireEvent.click(screen.getByRole("button", { name: /rejecting, please wait/i }));
       expect(mockRejectMutate).toHaveBeenCalledTimes(1);
       const rejecting = screen.getByRole("button", { name: /rejecting, please wait/i });
-      expect(rejecting.textContent).toBe("Rejecting");
+      expect(rejecting.textContent).toBe("Rejecting…");
       expect(rejecting.getAttribute("aria-busy")).toBe("true");
       expect(screen.getByRole("button", { name: /^approve transfer$/i }).getAttribute("disabled")).not.toBeNull();
     });
@@ -1050,19 +1111,24 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     expect(frame).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
   });
 
-  it("draws the stamp as H3's ink fill, 23 high, caps 12, led by its hatch glyph", () => {
+  it("draws the stamp as Cloud's ink tag, 24 high, caps 11 at 400, a 1px ink edge, led by its 10 x 14 hatch", () => {
     const stamp = ruleBody(".vex-appr__top .vex-stamp,\n.vex-appr__top .vex-tag");
-    expect(stamp).toContain("height: 23px");
-    expect(stamp).toContain("font-size: 12px");
+    expect(stamp).toContain("height: 24px");
+    expect(stamp).toContain("font-size: 11px");
+    expect(stamp).toContain("font-weight: 400");
+    const own = ruleBody(".vex-appr__top .vex-stamp");
+    expect(own).toContain("padding: 0 8px 0 3px");
+    expect(own).toContain("border: 1px solid var(--vex-alias-rule-ink)");
     const glyph = ruleBody(".vex-appr__top .vex-stamp::before");
-    expect(glyph).toContain("width: 12px");
+    expect(glyph).toContain("width: 10px");
+    expect(glyph).toContain("height: 14px");
     expect(glyph).toMatch(
       /repeating-linear-gradient\(\s*135deg,\s*var\(--vex-alias-label-on-primary\) 0 1\.5px,\s*transparent 1\.5px 4px\s*\)/,
     );
     expect(glyph).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
   });
 
-  it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at 20", () => {
+  it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at Cloud's 18 / 1.3", () => {
     for (const selector of [".vex-appr__eyebrow", ".vex-appr__net"]) {
       const body = ruleBody(selector);
       expect(body).toContain("font-size: 13px");
@@ -1070,7 +1136,10 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
       expect(body).toContain("letter-spacing: var(--tracking-label)");
       expect(body).not.toContain("--font-mono");
     }
-    expect(ruleBody(".vex-appr__title")).toContain("font-size: 20px");
+    const title = ruleBody(".vex-appr__title");
+    expect(title).toContain("font-size: 18px");
+    expect(title).toContain("line-height: 1.3");
+    expect(title).toContain("letter-spacing: -0.01em");
     expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 15px");
   });
 });
@@ -1085,7 +1154,7 @@ describe("ApprovalCard, the H3 head", () => {
     const consequence = screen.getByTestId("approval-consequence");
     expect(eyebrow?.textContent).toBe("Confirm this bridge");
     expect(title.textContent).toBe("Bridge 1 USDC from Base to Arbitrum.");
-    expect(consequence.textContent).toBe("This sends real funds on mainnet. It cannot be undone.");
+    expect(consequence.textContent).toBe("This moves real funds between chains. It cannot be undone.");
     expect(head?.contains(title)).toBe(true);
     expect(head?.contains(consequence)).toBe(true);
     // Document order: eyebrow row, then the sentence, then the consequence.
@@ -1119,7 +1188,8 @@ describe("ApprovalCard, the H3 head", () => {
       }),
       false,
     );
-    expect(screen.getByText("Confirm this action")).toBeTruthy();
+    // Outside the four families the eyebrow is the tool's own title.
+    expect(document.querySelector(".vex-appr__eyebrow")?.textContent).toBe("Wallet evm transaction confirm");
     expect(screen.queryByTestId("approval-consequence")).toBeNull();
     // The card still says what it does: the risk sentence stays.
     expect(screen.getByText("High risk:")).toBeTruthy();
@@ -1179,14 +1249,15 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     });
   }
 
-  it("keeps the same rows and the same data: send, receive, minimum, costs", () => {
+  it("keeps the same data: send, receive, minimum, and the fees on Cloud's two rows (DG5-06)", () => {
     renderCard(SWAP, false);
     const rows = moneyRows();
-    expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
     expect(rows[0]?.value).toBe("200 USDC · on Base");
     expect(rows[1]?.value).toBe("0.05714 ETH · quoted");
     expect(rows[2]?.value).toBe("0.05686 ETH · slippage limit 0.5%");
-    expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%) · network fee Not available");
+    expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%)");
+    expect(rows[4]?.value).toBe("Not available");
     // The network fee is never quoted, so the total stays hidden.
     expect(document.body.textContent).not.toMatch(/total debit/i);
     // H3 rows desktop has no data for are not drawn (section 4.1).
@@ -1272,12 +1343,17 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     const label = ruleBody(".vex-appr__dl dt");
     expect(label).toContain("padding-left: var(--vex-appr-inset)");
     expect(label).toContain("color: var(--vex-alias-label-tertiary)");
-    // The register owns the label's face, size and caps; the table never overrides them.
+    // The register owns the label's face and caps; the row never overrides them.
     expect(label).not.toMatch(/font-family|font-size|text-transform|letter-spacing/);
+    // The card sets the register at Cloud's card measure, mono 12 at 0.06em, in one place.
+    const measure = ruleBody(".vex-appr .vex-field-label");
+    expect(measure).toContain("font-size: 12px");
+    expect(measure).toContain("letter-spacing: 0.06em");
     const value = ruleBody(".vex-appr__dl dd");
     expect(value).toContain("text-align: right");
     expect(value).toContain("padding-right: var(--vex-appr-inset)");
-    expect(value).toContain("font-size: 14px");
+    expect(value).toContain("font-size: 13px");
+    expect(ruleBody(".vex-appr__num")).toContain("font-size: 12px");
   });
 
   describe("All signed fields, H3's disclosure", () => {
@@ -1366,7 +1442,8 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
 describe("ApprovalCard, every kind in the same frame", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
   const RESTING_LINE = "This places a real order on mainnet.";
-  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const TRANSFER_LINE = "This sends real funds on mainnet. A transfer cannot be reversed.";
+  const BRIDGE_LINE = "This moves real funds between chains. It cannot be undone.";
   const ADDRESS = "0x9a3c5f1e2d4b6a8c0e1f3a5b7c9d0e2f4a6b8c0d";
 
   interface Kind {
@@ -1394,7 +1471,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve transfer",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1403,7 +1480,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       summary: makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }),
       eyebrow: "Confirm this bridge",
       approve: "Approve bridge",
-      consequence: FUNDS_LINE,
+      consequence: BRIDGE_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1479,7 +1556,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve and deposit",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1498,7 +1575,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve transfer",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1514,7 +1591,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           perpetualFee: "0.02%",
         }),
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "Lighter · Fees approve",
       approve: "Approve trading fees",
       consequence: null,
       realFunds: true,
@@ -1531,7 +1608,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           criticalArgs: { toolId: "pools.launch_execute", name: "Harbor Token", symbol: "HRBR", pairedAsset: "weth" },
         },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "pools.fun · Launch",
       approve: "Approve",
       consequence: null,
       realFunds: true,
@@ -1549,7 +1626,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: "{}" },
         },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "Deepwiki / read wiki structure",
       approve: "Approve",
       consequence: null,
       realFunds: false,
@@ -1561,7 +1638,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
         toolName: "WalletEvmTransactionConfirm",
         preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: ADDRESS } },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "Wallet evm transaction confirm",
       approve: "Approve",
       consequence: null,
       realFunds: true,
@@ -1798,6 +1875,15 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       return match?.[1] ?? "";
     };
 
+    it("tightens at a short window as Cloud's density rule does: the strip 40, the head 10 under, the reason 40", () => {
+      const block = /@media \(min-width: 1024px\) and \(max-height: 820px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
+      expect(block).toMatch(/\.vex-appr__head \{\s*padding: 8px 0 10px;\s*\}/);
+      expect(block).toMatch(/\.vex-appr__title \{\s*margin-top: 7px;\s*\}/);
+      expect(block).toMatch(/\.vex-appr__foot\[data-docked\] > input \{\s*height: 40px;\s*\}/);
+      // The rows and the decision row keep their measures: nothing else steps down.
+      expect(block).not.toMatch(/vex-appr__dl|> button|--vex-h3-bottom-h/);
+    });
+
     it("hides the composer while the dock holds a decision, and only then", () => {
       expect(rule("[data-vex-composer-dock]:has(+ .vex-appr-dock:not(:empty))")).toContain("display: none");
       expect(rule(".vex-appr-dock:empty")).toContain("display: none");
@@ -1805,12 +1891,15 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
 
     it("lays the row out as H3's cells: the reason across, then Reject 168 | the gate | approve 200, 72 high", () => {
       const row = rule(".vex-appr__foot[data-docked]");
-      expect(row).toContain("grid-template-columns: minmax(96px, 168px) minmax(0, 1fr) minmax(120px, 200px)");
+      expect(row).toContain("grid-template-columns: 168px minmax(0, 1fr) 200px");
       expect(row).toContain('"reason reason reason"');
       expect(row).toContain('"reject gate approve"');
       expect(row).toContain("position: static");
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
       expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
+      // Cloud's keys: 13 caps, the approve key 32 each side of its word.
+      expect(rule(".vex-appr__foot[data-docked] > button")).toContain("font-size: 13px");
+      expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain("padding: 0 32px");
     });
 
     it("fills Reject raised and the approve key blue, an armed key in reversed ink and never a second blue", () => {

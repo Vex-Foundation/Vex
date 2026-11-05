@@ -11,7 +11,7 @@
  *     whole feed every render),
  *   - at most the newest five rows, in main's order, keyed `(source, id)`,
  *   - agent rows: the kind words (no status chip), legs from `displayAmount`
- *     ONLY, `~` / `est.` when the basis is estimated, the `~$X est.` figure,
+ *     ONLY, `~` / `est.` when the basis is estimated, the "about $X" figure,
  *     chain route plus clock, and the explorer link only when main resolved one,
  *   - Lighter fill rows: kind chip, compact trade, settled USD, no explorer link,
  *   - EVERY row ends in H3's status mark (a word beside a square with its own
@@ -422,12 +422,12 @@ describe("SessionActivityCard - the rows", () => {
     mockFeed([entry({ id: "a-1" })]);
     const first = renderCard(SESSION_SCOPE);
     // Output leads: the fixture's output is $49.80, its input $50.00.
-    expect(cell(firstRow(first.container), 2).textContent).toBe("~$49.80 est.");
+    expect(cell(firstRow(first.container), 2).textContent).toBe("about $49.80");
     first.unmount();
 
     mockFeed([entry({ id: "a-2", output: { ...entry({ id: "x" }).output, usdEst: null } })]);
     const second = renderCard(SESSION_SCOPE);
-    expect(cell(firstRow(second.container), 2).textContent).toBe("~$50.00 est.");
+    expect(cell(firstRow(second.container), 2).textContent).toBe("about $50.00");
     second.unmount();
 
     mockFeed([entry({ id: "a-3", ...decoyLegs() })]);
