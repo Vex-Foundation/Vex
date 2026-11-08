@@ -484,6 +484,83 @@
   border-bottom: 1px solid var(--vex-alias-rule);
 }
 
+/* 5b. THE KEY ROW OUTSIDE THE DOCK (Cloud 6f067702, `styles/cards.css`
+ * `.vx-xc-foot`): on the Needs you page, in the global panel and on a card
+ * whose band the chat's dock does not hold, the footer is a row of cells on
+ * the card's rule: the reason field as a cell, then the keys, each 44 high
+ * with its own left rule, in sans 13 caps at 400. Reject is the raised cell
+ * in ink, at least 120 wide; the approve key is the view's one blue, at
+ * least 200. An armed key turns to the reversed ink fill, as docked; a held
+ * key keeps Cloud's held look (Held keys, below). Only the drawing changes:
+ * the keys, words, guards and states are the card's own. The Lighter desk's
+ * Review order card keeps the keys of its approved plate (lighter-ticket.css),
+ * so it is left out here. */
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) {
+  align-items: stretch;
+  gap: 0;
+  min-height: 44px;
+  padding: 0;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > input {
+  height: 44px;
+  padding: 0 var(--vex-appr-inset);
+  background: transparent;
+  border: 0;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > input:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button {
+  height: 44px;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: normal;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  outline: none;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="reject"] {
+  min-width: 120px;
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-solid);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="reject"]:enabled:hover {
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-active);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"] {
+  min-width: 200px;
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"]:enabled:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed],
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed]:enabled:hover {
+  color: var(--vex-alias-label-on-primary);
+  background: var(--vex-alias-rule-ink);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed]:focus-visible {
+  outline-color: var(--vex-alias-label-on-primary);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button:disabled:not([data-vex-approve-working]) {
+  color: var(--vex-alias-label-tertiary);
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-vex-key="reject"][aria-busy="true"]:disabled {
+  color: var(--vex-alias-label-primary);
+}
+
 /* 6. THE DECISION ROW (docs/design/H3-DESKTOP.md sections 1.8 and 4.3).
  *
  * While a card waits in a chat, the chat's bottom-row cell (the composer seat,

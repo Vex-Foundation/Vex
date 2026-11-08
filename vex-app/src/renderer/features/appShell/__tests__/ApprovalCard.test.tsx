@@ -2046,6 +2046,32 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect((screen.getByRole("button", { name: "Approve transfer" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("draws the footer outside the dock as Cloud's key row: cells 44 high, 13 caps, Reject 120 raised, approve 200 blue", () => {
+    renderCard(makeSummary(), false);
+    const inCard = card().querySelector('[data-vex-area="approval-foot"]');
+    expect(inCard?.getAttribute("data-vex-keys")).toBe("cells");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const scope = '.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *)';
+    const body = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    };
+    expect(body(`${scope} > button`)).toContain("height: 44px");
+    expect(body(`${scope} > button`)).toContain("font-size: 13px");
+    expect(body(`${scope} > button`)).toContain("text-transform: uppercase");
+    expect(body(`${scope} > [data-vex-key="reject"]`)).toContain("min-width: 120px");
+    expect(body(`${scope} > [data-vex-key="reject"]`)).toContain("background: var(--vex-alias-interactive-solid)");
+    expect(body(`${scope} > [data-vex-key="approve"]`)).toContain("min-width: 200px");
+    expect(body(`${scope} > [data-vex-key="approve"]`)).toContain("background: var(--vex-alias-button-accent-fill)");
+    // A held key is never blue and never the raised Reject.
+    expect(body(`${scope} > button:disabled:not([data-vex-approve-working])`)).toContain(
+      "background: var(--vex-alias-bg-layer-3)",
+    );
+  });
+
   it("keeps the footer in the card when no dock is given, as on every other surface", () => {
     renderCard(makeSummary(), false);
     expect(card().hasAttribute("data-vex-decision-docked")).toBe(false);

@@ -101,8 +101,11 @@ export interface ApprovalDecisionActionsProps {
   readonly cue?: ReactNode;
 }
 
-// THE KEYS (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
-// Reject is the ink outline (the refusing choice) and owns the first focus;
+// THE KEYS' BASE (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
+// The sheet redraws them as Cloud's cell keys wherever this footer is drawn
+// (approval.css: the docked row, and "The key row outside the dock", 44 high
+// in 13 caps); these classes are what the Lighter desk's Review order card
+// narrows (lighter-ticket.css). Reject is the ink outline (the refusing choice) and owns the first focus;
 // the action button is the view's one blue fill. Focus is the 2px focus
 // outline, 3px out. The ARMED (second click) key turns into an ink outline
 // with a 2px ink ring 3px out: the second press is the irreversible one, and
@@ -256,6 +259,9 @@ export function ApprovalDecisionActions({
         // across the top, then Reject | the gate line | the approve key. Out of
         // the card's region, so the group takes the card's title as its name.
         data-docked={dock !== null ? "" : undefined}
+        // Outside the dock the keys are Cloud's cells on the card's rule
+        // (approval.css, "The key row outside the dock").
+        data-vex-keys={dock === null ? "cells" : undefined}
         role={dock !== null ? "group" : undefined}
         aria-labelledby={dock?.labelledBy}
         className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
