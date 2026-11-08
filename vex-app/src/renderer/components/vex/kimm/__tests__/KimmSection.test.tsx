@@ -250,6 +250,39 @@ describe("KimmSection, her large art loads only when she opens (S4-05)", () => {
   });
 });
 
+describe("KimmSection, her ground and her figure's frame (VEX Cloud's stage)", () => {
+  it("paints her ground from the field's baked frames the seam hands her", () => {
+    render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    expect(section().style.getPropertyValue("--vex-kimm-baked")).toBe(`url("/${KIMM_FILES.field.still}")`);
+    expect(section().style.getPropertyValue("--vex-kimm-baked-wide")).toBe(`url("/${KIMM_FILES.field.wide}")`);
+  });
+
+  it("sets no frame where its file is missing, so the ground is the page", () => {
+    const bare: KimmArtSet = { ...OFFER_ONLY, field: { still: MISSING, wide: MISSING } };
+    render(withArt(bare, <KimmSection mood="offer" open onOpenChange={() => undefined} />));
+    expect(section().style.getPropertyValue("--vex-kimm-baked")).toBe("");
+    expect(section().style.getPropertyValue("--vex-kimm-baked-wide")).toBe("");
+  });
+
+  it("lays the frame from her top centre under a fall to the page from 48%, the wide frame alone from 1600", () => {
+    const ground = rule(".vex-kimm__ground");
+    expect(ground).toMatch(/linear-gradient\(to bottom, transparent 48%, var\(--vex-alias-bg-base\)\)/);
+    expect(ground).toMatch(/var\(--vex-kimm-baked, none\) 50% 0 \/ cover no-repeat var\(--vex-alias-bg-base\)/);
+    const css = KIMM_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const wide = /@media \(min-width: 1600px\)\s*\{\s*\.vex-kimm__ground\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(wide).toMatch(/var\(--vex-alias-bg-base\) var\(--vex-kimm-baked-wide, none\) 50% 0 \/ cover no-repeat/);
+    expect(wide).not.toMatch(/gradient/);
+  });
+
+  it("frames her figure as Cloud frames her still: 48 from her top, 88% wide, centred", () => {
+    const figure = rule(".vex-kimm__figure");
+    expect(figure).toMatch(/top:\s*48px/);
+    expect(figure).toMatch(/left:\s*50%/);
+    expect(figure).toMatch(/width:\s*88%/);
+    expect(figure).toMatch(/transform:\s*translateX\(-50%\)/);
+  });
+});
+
 describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
 
   it("keeps the same key in the same corner, now Show Vex with a down chevron, and it opens her", () => {

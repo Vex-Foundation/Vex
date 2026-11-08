@@ -1,6 +1,6 @@
 /**
  * KIMM'S SECTION (docs/design/H3-DESKTOP.md sections 1.5, 3 and 3.6; plan rows
- * S4-04 to S4-11): her figure on its blue ground, a fixed box laid OVER Vex's
+ * S4-04 to S4-11): her figure on the glyph field, a fixed box laid OVER Vex's
  * column, with her corner key in its top right.
  *
  * THE BOX. Not a row of the column: a box over it, whose size is a function
@@ -14,14 +14,16 @@
  * stands where it stands and she covers its rest. That is the second leg of
  * the money rule (section 3.6): a waiting card beside her never moves.
  *
- * WHAT IS IN IT, back to front: her ground (Kimm's blue gradient, one of the
- * two gradients H3 allows, section 2), the falling V, X and E of her glyph
- * field (`KimmField`, running only while she is open and on screen), her
- * figure for her mood, and the corner key. The figure is her art for the mood (`KimmArtSet.sections`); a
- * mood whose art is `missing` shows the ground alone, never another mood's
- * figure and never a placeholder. Her art comes from the nearest
- * `KimmArtProvider` (the shipped art in the app, the stand-ins in the H3
- * harness).
+ * WHAT IS IN IT, back to front: her ground (the glyph field's baked frame
+ * under a fall to the page, VEX Cloud's; `KimmArtSet.field`, its URLs set on
+ * her box as `--vex-kimm-baked` and `--vex-kimm-baked-wide` for kimm.css),
+ * her glyph field (`KimmField`, running only while she is open and on
+ * screen), her figure for her mood (framed as Cloud frames her still: 48
+ * from her top, 88% of her width, centred), and the corner key. The figure
+ * is her art for the mood (`KimmArtSet.sections`); a mood whose art is
+ * `missing` shows the ground alone, never another mood's figure and never a
+ * placeholder. Her art comes from the nearest `KimmArtProvider` (the shipped
+ * art in the app, the stand-ins in the H3 harness).
  *
  * CLOSED COSTS LITTLE (section 3.5; plan row S4-05). Her figure is her large
  * art (the sheet: 415 KB closed against 15 MB open), so its element is not
@@ -144,7 +146,7 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type JSX } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
 import {
   DURATION_VEX_CLOSE_MS,
@@ -153,7 +155,7 @@ import {
 } from "../../../lib/motion/index.js";
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isWindowResizing } from "../../../lib/wide-zoom.js";
-import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
+import { isKimmArtReady, type KimmArt, type KimmArtSet, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { handFocusToVexKey, vexKeyElement } from "./kimm-focus.js";
 import { KimmField } from "./KimmField.js";
@@ -183,6 +185,26 @@ export function legOf(open: boolean): KimmLeg {
   return open
     ? { moving: "opening", rest: "open", ms: DURATION_VEX_OPEN_MS }
     : { moving: "closing", rest: "closed", ms: DURATION_VEX_CLOSE_MS };
+}
+
+/** A piece of her art as a CSS image, or nothing where its file is missing. */
+function cssImage(art: KimmArt): string | undefined {
+  return isKimmArtReady(art) ? `url("${art.src}")` : undefined;
+}
+
+/**
+ * Her ground's two frames as the custom properties kimm.css paints them from
+ * (VEX Cloud's `--vx-kimm-baked`, `--vx-kimm-baked-wide`). A CSSOM property
+ * set by React, which the strict CSP allows (MOTION-POLICY.md, "CSP precise
+ * semantics"); a missing frame sets nothing, and the ground is the page.
+ */
+export function kimmGroundStyle(field: KimmArtSet["field"]): CSSProperties {
+  const style: Record<string, string> = {};
+  const still = cssImage(field.still);
+  const wide = cssImage(field.wide);
+  if (still !== undefined) style["--vex-kimm-baked"] = still;
+  if (wide !== undefined) style["--vex-kimm-baked-wide"] = wide;
+  return style as CSSProperties;
 }
 
 /** The Vex toggle's chord on this platform, as the corner key spells it. */
@@ -384,6 +406,7 @@ export function KimmSection({
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       data-kimm-seat={band === undefined ? undefined : "band"}
       className={band === undefined ? "vex-kimm" : "vex-kimm vex-kimm--band"}
+      style={kimmGroundStyle(art.field)}
     >
       {/* Inert while she moves: nothing in her body takes a click or focus
         * (see "WHILE SHE MOVES"). Her corner key is outside it and stays

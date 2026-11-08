@@ -252,7 +252,7 @@
   --vex-alias-composer: var(--vex-alias-field);
   /* The selected nav row: its fill fades from #181A1C at the chats column's
    * left edge to the ground at its right, as measured. One of H3's two
-   * gradients (the other is Kimm's blue ground); the left column's restyle
+   * gradients (the other is Kimm's ground); the left column's restyle
    * paints it (S5), so no rule reads it yet. */
   --vex-alias-row-selected: linear-gradient(
     90deg,
@@ -398,7 +398,7 @@
   --vex-alias-tooltip-bg: var(--color-h3-tooltip);
   --vex-alias-toast-bg: var(--color-h3-tooltip);
   /* The header's ground made opaque (Cloud's --vx-header-solid): her corner
-   * key over her blue ground, a solid cell with no blur. */
+   * key over her ground, a solid cell with no blur. */
   --vex-alias-header-solid: var(--color-h3-header-solid);
   --vex-alias-label-on-plate: var(--color-h3-ink);
   --vex-alias-card: var(--color-h3-card);
