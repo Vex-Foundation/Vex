@@ -133,7 +133,12 @@ describe("ReceiptCard", () => {
     expect(stamp?.firstElementChild?.getAttribute("data-state")).toBe("done");
     expect(stamp?.className).toContain("bg-stamp-filled");
     expect(stamp?.className).toContain("text-ink-on-stamp-filled");
-    expect(container.textContent).toContain("USDC → ETH");
+    // The route reads "USDC to ETH": a 14 glyph, its word for a screen reader.
+    const pair = container.querySelector(".vex-receipt__pair");
+    expect(pair?.textContent).toBe("USDC to ETH");
+    expect(pair?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(pair?.querySelector(".sr-only")?.textContent).toBe(" to ");
+    expect(container.textContent).not.toContain("→");
   });
 
   it("fills its rows from the entry alone, the USD as the feed's estimate", () => {
@@ -150,6 +155,15 @@ describe("ReceiptCard", () => {
     ).toContain("vex-field-label");
     // Approvals are not joined to activity: no approval row is drawn.
     expect(container.textContent).not.toMatch(/approv/i);
+  });
+
+  it("says a quoted amount as about, never with a tilde (DG5-40)", () => {
+    const { container } = render(createElement(ReceiptCard, { entry: swapEntry({ amountBasis: "estimated" }) }));
+    const value = (label: string): string | null | undefined =>
+      container.querySelector(`[data-vex-receipt-row="${label}"] dd`)?.textContent;
+    expect(value("Sell")).toBe("about 200 USDC");
+    expect(value("Received")).toBe("about 0.05709 ETH");
+    expect(container.textContent).not.toContain("~");
   });
 
   it("leaves out a row the entry does not hold, never fills it", () => {

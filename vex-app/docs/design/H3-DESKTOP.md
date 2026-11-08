@@ -839,7 +839,7 @@ An error, a concern, sleep and the rest keep the rest line. The band's foot row 
 | H3 | Desktop | Why |
 |---|---|---|
 | SWAP · MAINNET, a time, FILLED | the kind and its chain ("Swap · Base"), MAINNET on the quiet hatch, the time, and desktop's outcome word (Confirmed) on Cloud's tag: the green fill, the solid square and the word, 24 high, padding 0 7, caps 11; the chain stays in the title line. The card is Cloud's result card (6f067702): the card ground, a head row of at least 44, the title in 18 / 1.3 with the place word in 15 ink 2, 16 over the rows; rows with names in mono 12 at 0.06em and values in mono 12 at 0.01em | Cloud's EC-10: a settled mainnet money card carries the quiet hatch and the word Mainnet, never the solid stamp |
-| "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry | |
+| "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry; the arrow is Cloud's `RouteArrow`, a 14 glyph a screen reader reads as "to"; a quoted leg amount says "about 200 USDC", never "~" | |
 | SELL, VALUE (USD), RECEIVED, VEX FEE | those the activity entry holds | |
 | a dollar estimate, "about $200.00" (Cloud's DG5-40) | same on the receipt, Portfolio's activity table and Agent Scan; it replaces "~$200.00 est." | the feed's dollar values are quote-time estimates, so they say "about" |
 | APPROVAL, "Approved by you" | left out | approvals are not joined to activity yet |

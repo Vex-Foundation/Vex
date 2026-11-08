@@ -637,6 +637,18 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-primary);
 }
+/* The route: from, the arrow read as "to", to (Cloud's `.vx-xc-route`). */
+.vex-receipt__pair {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+.vex-receipt__arrow {
+  flex: none;
+  transform: rotate(90deg);
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-receipt__where {
   font-size: 15px;
   letter-spacing: 0;

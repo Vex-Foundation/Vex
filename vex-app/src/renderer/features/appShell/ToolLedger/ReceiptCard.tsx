@@ -5,7 +5,7 @@
  * OWN ENTRY for it, never from the tool's output.
  *
  *   SWAP · BASE                     //// MAINNET  14:28  [CONFIRMED]
- *   USDC → ETH · Base
+ *   USDC (arrow) ETH · Base
  *   ---------------------------------------------------------------
  *   SELL                                                   200 USDC
  *   VALUE (USD)                                       about $200.00
@@ -53,6 +53,7 @@
 import { useMemo, type JSX } from "react";
 import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
+import { LineArrowUp } from "../../../components/icons/line/index.js";
 import { StateSquare } from "../../../components/ui/state-square.js";
 import { MainnetMark } from "../../../components/ui/stamp.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
@@ -110,15 +111,31 @@ function chainNameOf(entry: AgentScanActivityEntry): string | null {
   return entry.chainId !== null ? chainDisplay(entry.chainId).name : null;
 }
 
-/** "200 USDC", marked "~" when the entry says its amounts are quoted. */
+/**
+ * "200 USDC", said as "about 200 USDC" when the entry says its amounts are
+ * quoted (Cloud's DG5-40: an estimate says "about", never "~").
+ */
 function legText(
   entry: AgentScanActivityEntry,
   leg: AgentScanActivityEntry["input"],
 ): string | null {
   const amount = legAmountText(leg);
   if (amount === null) return null;
-  const figure = isEstimatedBasis(entry) ? `~${amount}` : amount;
+  const figure = isEstimatedBasis(entry) ? `about ${amount}` : amount;
   return `${figure} ${legSymbolText(leg)}`;
+}
+
+/**
+ * The route's arrow (Cloud's `RouteArrow`): a 14 glyph, unseen by a screen
+ * reader, which reads " to " in its place.
+ */
+function RouteArrow(): JSX.Element {
+  return (
+    <>
+      <LineArrowUp size={14} className="vex-receipt__arrow" />
+      <span className="sr-only"> to </span>
+    </>
+  );
 }
 
 interface ReceiptRow {
@@ -174,7 +191,9 @@ export function ReceiptCard({
         </div>
         <p className="vex-receipt__title">
           <span className="vex-receipt__pair">
-            {legSymbolText(entry.input)} → {legSymbolText(entry.output)}
+            {legSymbolText(entry.input)}
+            <RouteArrow />
+            {legSymbolText(entry.output)}
           </span>
           {chain !== null ? (
             <span className="vex-receipt__where"> · {chain}</span>
