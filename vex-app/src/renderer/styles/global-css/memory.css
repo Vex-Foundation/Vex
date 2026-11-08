@@ -6,7 +6,8 @@
  * shadow, no blur, tokens only.
  *
  *   .vex-mem                   the register (the seven sections)
- *   .vex-mem-lead              the page's lead line (14.5, ink 2, max 640)
+ *   .vex-mem-lead              the page's lead line (14 / 1.5, ink 2, max 760:
+ *                              VEX Cloud's `.vx-pglead`)
  *   .vex-mem-card              the advisory-only guarantee: a 1px rule frame
  *   .vex-mem-more              "How memory works", a native disclosure
  *   .vex-mem-sec               one section of the register
@@ -36,9 +37,9 @@
 }
 
 .vex-mem-lead {
-  max-width: 640px;
+  max-width: 760px;
   margin: 0 0 24px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }

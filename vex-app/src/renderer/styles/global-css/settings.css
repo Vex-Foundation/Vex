@@ -155,7 +155,8 @@
 }
 
 /* The section head: the name as H3's card sentence (20 / 400) with its status
- * word (13 caps, ink 2), the lead 15 / 1.55 ink 2. */
+ * word (13 caps, ink 2), the lead VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2,
+ * at most 760. */
 .vex-set__head {
   margin: 0 0 24px;
 }
@@ -181,10 +182,10 @@
   color: var(--vex-alias-label-secondary);
 }
 .vex-set__lead {
-  max-width: 620px;
+  max-width: 760px;
   margin: 0;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
 

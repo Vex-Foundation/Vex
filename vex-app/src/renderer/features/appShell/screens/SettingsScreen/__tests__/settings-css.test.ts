@@ -56,7 +56,8 @@ describe("settings.css", () => {
     expect(rule(settings, ".vex-set__sh-title")).toMatch(
       /font-size: 13px;[\s\S]*font-weight: 600;[\s\S]*text-transform: uppercase/,
     );
-    expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 620px;[\s\S]*font-size: 15px/);
+    // The lead is the page kit's (C3-E-05): 14 / 1.5 at most 760.
+    expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 760px;[\s\S]*font-size: 14px;[\s\S]*line-height: 1.5;/);
     expect(rule(settings, ".vex-pref__title")).toMatch(/font-size: 15px;[\s\S]*font-weight: 400/);
     expect(rule(settings, ".vex-pref__help")).toContain("font-size: 13px");
     expect(rule(settings, ".vex-pref")).toContain("padding: 16px 20px");

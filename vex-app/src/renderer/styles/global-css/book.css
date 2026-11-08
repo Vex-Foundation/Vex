@@ -273,8 +273,9 @@
 
 /* ---- the lead line and the tiles --------------------------------------
  * docs/design/H3-DESKTOP.md sections 1.9 and 2.3 (`PositionBlock`): the quiet
- * hatch and MAINNET (PD-05) and the lead (15, "Real money on mainnet." in
- * ink, the rest in ink 2), then the tiles: square cells told apart by 1px rules (the grid's
+ * hatch and MAINNET (PD-05) and the lead (at most 760, VEX Cloud's
+ * `.vx-pglead`: "Real money on mainnet." in ink 2, what the total includes
+ * muted, as Cloud's `.vx-pfo-lead > span`), then the tiles: square cells told apart by 1px rules (the grid's
  * 1px gaps over the rule colour, so two cells share one rule and the frame is
  * one rule all round), each a caps label (13, muted), the figure (sans, 24 /
  * 400; the wallet total 33 / 600) and a muted line (14). As many columns as
@@ -289,6 +290,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 20px;
+  max-width: 760px;
   margin: 0 0 20px;
   font-size: 15px;
   line-height: 1.45;
@@ -298,7 +300,10 @@
   flex: none;
 }
 .vex-pf-lead__ink {
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pf-lead .vex-pf-top__line {
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tiles {
   display: grid;
@@ -1099,7 +1104,7 @@
  *     confirmation" in caps;
  *   - Load more is a key cell. */
 .vex-ov[data-frame="h3"] .vex-scan-lead {
-  max-width: none;
+  max-width: 760px;
   font-size: 15px;
 }
 .vex-ov[data-frame="h3"] .vex-scan-filters {
@@ -1237,6 +1242,7 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-mk__lead {
+  max-width: 760px;
   margin: 0;
   font-size: 15px;
   color: var(--vex-alias-label-secondary);

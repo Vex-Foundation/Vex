@@ -55,3 +55,23 @@ describe("the Board keeps the whole column (section 4.9)", () => {
     );
   });
 });
+
+const memory = readFileSync(resolve(here, "../../../../styles/global-css/memory.css"), "utf8");
+
+describe("page leads (C3-E-05, VEX Cloud's `.vx-pglead`)", () => {
+  it("set every lead at most 760 wide", () => {
+    expect(rule(book, ".vex-pf-lead")).toContain("max-width: 760px;");
+    expect(rule(book, '.vex-ov[data-frame="h3"] .vex-scan-lead')).toContain("max-width: 760px;");
+    expect(rule(book, ".vex-mk__lead")).toContain("max-width: 760px;");
+    expect(rule(memory, ".vex-mem-lead")).toMatch(
+      /max-width: 760px;[\s\S]*font-size: 14px;[\s\S]*line-height: 1.5;[\s\S]*label-secondary/,
+    );
+  });
+
+  it("on Portfolio, the sentence in ink 2 and what the total includes muted", () => {
+    expect(rule(book, ".vex-pf-lead__ink")).toContain("color: var(--vex-alias-label-secondary);");
+    expect(rule(book, ".vex-pf-lead .vex-pf-top__line")).toContain(
+      "color: var(--vex-alias-label-tertiary);",
+    );
+  });
+});
