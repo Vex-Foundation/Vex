@@ -1244,6 +1244,23 @@
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
+/* Agent Scan's feed (C3-E-07, VEX Cloud's `.vx-rows` and `.vx-arow`): one
+ * rule frame on the card ground (an inset outline, so the virtual list's
+ * measured heights stay whole), each row at least 56 high and 20 in from the
+ * frame, the day heads on the same inset. The value column, the filters and
+ * the outcome words stay desktop's. */
+.vex-ov[data-frame="h3"] .vex-scan-rows {
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+  background: var(--vex-alias-card);
+}
+.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-row {
+  min-height: 56px;
+  padding: 10px 20px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-day {
+  padding-inline: 20px;
+}
 @container (max-width: 760px) {
   .vex-ov[data-frame="h3"] .vex-scan-row {
     grid-template-columns: 110px minmax(0, 1fr) 100px 200px;

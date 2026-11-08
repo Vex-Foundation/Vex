@@ -571,6 +571,12 @@ describe("AgentScanScreen - pagination", () => {
     expect(mockFetchNextPage).toHaveBeenCalled();
   });
 
+  it("draws the feed as the framed rows list (C3-E-07)", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    mountScreen();
+    expect(screen.getByRole("list", { name: "Activity" }).classList.contains("vex-scan-rows")).toBe(true);
+  });
+
   it("notes a degraded LATER page instead of wiping the rows already shown", () => {
     mockQuery([
       availablePage([entry({ id: "1" })], { hasMore: true }),

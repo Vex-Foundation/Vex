@@ -92,3 +92,19 @@ describe("Balances and All assets tables (C3-E-06, VEX Cloud's data table)", () 
     );
   });
 });
+
+describe("Agent Scan's feed (C3-E-07, VEX Cloud's `.vx-rows`)", () => {
+  it("frames the rows on the card ground without changing their measured heights", () => {
+    expect(rule(book, '.vex-ov[data-frame="h3"] .vex-scan-rows')).toMatch(
+      /outline: 1px solid var\(--vex-alias-rule\);\s*outline-offset: -1px;\s*background: var\(--vex-alias-card\);/,
+    );
+  });
+  it("sets each row at least 56 high and 20 in, and the day heads on that inset", () => {
+    expect(rule(book, '.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-row')).toMatch(
+      /min-height: 56px;\s*padding: 10px 20px;/,
+    );
+    expect(rule(book, '.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-day')).toContain(
+      "padding-inline: 20px;",
+    );
+  });
+});

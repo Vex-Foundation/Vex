@@ -81,7 +81,7 @@ function screenSubtitle(scope: AgentScanRouteScope): string {
   }
 }
 
-/** Starting height guess per row (the 52 min height plus its rule); real heights are measured after mount. */
+/** Starting height guess per row (the 56 min height plus its rule); real heights are measured after mount. */
 const ESTIMATED_ROW_PX = 60;
 
 /** Rows kept mounted beyond the visible window, to cover fast scrolling. */
@@ -296,7 +296,7 @@ export function AgentScanScreen({
     body = (
       <ul
         aria-label="Activity"
-        className="relative w-full list-none"
+        className="vex-scan-rows relative w-full list-none"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
         {virtualRows.map((virtualRow) => {
