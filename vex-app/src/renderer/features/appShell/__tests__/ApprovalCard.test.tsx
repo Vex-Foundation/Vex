@@ -2145,6 +2145,15 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain("padding: 0 32px");
     });
 
+    it("steps the keys down on a narrow column as Cloud does: Reject 128, approve 168 at 20 a side, the middle 18 in", () => {
+      const narrow = /@container \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
+      expect(narrow).toMatch(/\.vex-appr__foot\[data-docked\] \{\s*grid-template-columns: 128px minmax\(0, 1fr\) 168px;\s*\}/);
+      expect(narrow).toMatch(/\[data-vex-key="approve"\] \{\s*padding: 0 20px;\s*\}/);
+      expect(narrow).toMatch(/\.vex-appr__gate \{\s*padding: 0 18px;\s*\}/);
+      // The 560 step comes after it, so the narrowest chat still stacks its keys.
+      expect(sheet.indexOf("@container (max-width: 720px)")).toBeLessThan(sheet.indexOf("@container (max-width: 560px)"));
+    });
+
     it("fills Reject raised and the approve key blue, an armed key in reversed ink and never a second blue", () => {
       expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="reject"]')).toContain(
         "background: var(--vex-alias-interactive-solid)",

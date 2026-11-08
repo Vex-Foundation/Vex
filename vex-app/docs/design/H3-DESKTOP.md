@@ -558,7 +558,7 @@ What this does to the layout: the console's top block is 40 shorter and her box 
 ### 4.3 The approval gate
 H3 swaps desktop's two-step confirm for a tick ("I understand real funds can be lost") and adds Ctrl+Enter to approve and Esc to reject. `AGENTS.md` forbids weakening an approval gate without a reviewed product decision, so desktop keeps its gate and takes H3's look:
 
-- Reject and the approve key sit in the bottom row's chat cells (section 1.8). Reject keeps the first focus.
+- Reject and the approve key sit in the bottom row's chat cells (section 1.8). Reject keeps the first focus. On a column 720 wide or less (the chat at 1280 and 1366) the keys step down as Cloud's do: Reject 128, the approve key 168 with 20 each side of its word, the middle cell 18 in; under 560 the gate line takes its own row as before.
 - A high-risk card (risk level high or critical, or an action kind of `destructive` or `user_wallet_broadcast`, `ApprovalCard/risk.ts`) still takes two presses, for Approve and for Reject alike. The first press arms the key for 4 seconds (`CONFIRM_RESET_MS`, `ApprovalCard.tsx`) and its label reads "Click again to confirm approve" or "Click again to confirm reject"; the second decides. Any other card decides on one press.
 - No tick box, no Ctrl+Enter, and Esc never decides a card.
 - The middle cell holds the line for the card's gate (Appendix A.7) and no control.

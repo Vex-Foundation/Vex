@@ -824,6 +824,21 @@
   color: var(--vex-alias-label-secondary);
   border-right: 1px solid var(--vex-alias-rule);
 }
+/* A narrow column (Cloud's `@container vx-tk (width <= 720px)`, the content
+ * column at 1280 and 1366): shorter outer keys, Reject 128 and the approve
+ * key 168 with 20 each side of its word, and the middle cell 18 in, so the
+ * gate line keeps its room. */
+@container (max-width: 720px) {
+  .vex-appr__foot[data-docked] {
+    grid-template-columns: 128px minmax(0, 1fr) 168px;
+  }
+  .vex-appr__foot[data-docked] > [data-vex-key="approve"] {
+    padding: 0 20px;
+  }
+  .vex-appr__gate {
+    padding: 0 18px;
+  }
+}
 /* A narrow chat (the 1024 window's 469) keeps both keys whole: the gate line
  * moves to a slim row of its own over them, and the keys share the row. */
 @container (max-width: 560px) {
