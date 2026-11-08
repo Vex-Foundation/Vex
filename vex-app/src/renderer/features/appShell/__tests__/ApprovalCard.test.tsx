@@ -1110,7 +1110,8 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
   it("frames the card as an H3 cell: a 1px rule, square, no shadow and no hatch band, never a hue", () => {
     const frame = ruleBody(".vex-appr");
     expect(frame).toContain("border: 1px solid var(--vex-alias-rule)");
-    expect(frame).toContain("background: var(--vex-alias-bg-base)");
+    // Cloud's card ground, `--vx-card` (#030405).
+    expect(frame).toContain("background: var(--vex-alias-card)");
     // R3's ink frame and its band are gone; nothing rounds, shadows or blurs.
     const sheet = APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(sheet).not.toMatch(/\.vex-real-funds|border-radius|box-shadow|backdrop-filter|1\.5px solid/);

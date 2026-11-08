@@ -28,6 +28,9 @@
 
 /* ── The card ──────────────────────────────────────────────────────────── */
 
+/* The card's ground is Cloud's `--vx-card` (#030405, `--vex-alias-card`),
+ * the takeover's and the result card's own (`styles/takeover.css`,
+ * `styles/cards.css`). */
 .vex-appr {
   --vex-appr-inset: 24px;
   position: relative;
@@ -35,7 +38,7 @@
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--vex-alias-label-primary);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
   border: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__in {
@@ -541,7 +544,7 @@
   gap: 10px;
   margin: 0;
   padding: 12px var(--vex-appr-inset);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
   border-top: 1px solid var(--vex-alias-rule);
 }
 
