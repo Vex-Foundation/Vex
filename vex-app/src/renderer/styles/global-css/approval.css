@@ -193,20 +193,29 @@
  * the element; the row gives it only its muted ink), at Cloud's card measure,
  * mono 12 tracked 0.06em (`.vex-appr .vex-field-label` below; H3 app.css
  * `.fr > dt`), and the value at the right, 24 in, sans 13 in ink with its
- * figures in mono 12 (`.vex-appr__num`). The label column grows to
- * the longest label and never past half the card; a long value wraps inside
- * its own cell. The rows and their data are exactly the bound ones. */
+ * figures in mono 12 (`.vex-appr__num`). A long value wraps inside its own
+ * cell. The rows and their data are exactly the bound ones. */
+/* Cloud's field row grid (`rows.css` `.vx-fr`): the name column at least
+ * 120 and as wide as its longest name, the value the rest, 16 between, and
+ * each row's rule under it. The table draws the rule over its first row and
+ * its last row leaves its own off, so the cell under the table keeps the one
+ * rule it draws. */
 .vex-appr__dl {
   display: grid;
-  grid-template-columns: fit-content(50%) minmax(0, 1fr);
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
   margin: 0;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__dl dt,
 .vex-appr__dl dd {
   margin: 0;
   padding: 8px 0;
   line-height: 17px;
-  border-top: 1px solid var(--vex-alias-rule);
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__dl > :last-child > dt,
+.vex-appr__dl > :last-child > dd {
+  border-bottom: 0;
 }
 .vex-appr__dl dt {
   padding-right: 16px;

@@ -1445,10 +1445,14 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
   });
 
   it("draws each row as a ruled cell edge to edge, the label 24 in at the left and the value 24 in at the right", () => {
-    expect(ruleBody(".vex-appr__dl")).toContain("grid-template-columns: fit-content(50%) minmax(0, 1fr)");
+    // Cloud's field row grid: the name column at least 120, each row's rule under it.
+    expect(ruleBody(".vex-appr__dl")).toContain("grid-template-columns: minmax(120px, auto) minmax(0, 1fr)");
     expect(ruleBody(".vex-appr__dl")).toContain("margin: 0;");
+    expect(ruleBody(".vex-appr__dl")).toContain("border-top: 1px solid var(--vex-alias-rule)");
     const cell = ruleBody(".vex-appr__dl dt,\n.vex-appr__dl dd");
-    expect(cell).toContain("border-top: 1px solid var(--vex-alias-rule)");
+    expect(cell).toContain("border-bottom: 1px solid var(--vex-alias-rule)");
+    // The last row leaves its rule to the cell under the table, so no rule doubles.
+    expect(ruleBody(".vex-appr__dl > :last-child > dt,\n.vex-appr__dl > :last-child > dd")).toContain("border-bottom: 0");
     expect(cell).toContain("padding: 8px 0");
     expect(cell).toContain("line-height: 17px");
     const label = ruleBody(".vex-appr__dl dt");
