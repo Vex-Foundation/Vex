@@ -32,6 +32,11 @@
   --vex-ov-pad: 24px;
   --vex-ov-top: 24px;
 }
+/* The page's h1 takes the focus on open (the route focus, `ShellScreen`):
+ * a heading is not a control, so it draws no ring. */
+.vex-ov[data-frame="h3"] h1[tabindex="-1"]:focus {
+  outline: none;
+}
 /* The row stands above the scroller: the sheet's one grid row becomes two. */
 .vex-ov[data-frame="h3"]:has(> .vex-pg-bar) {
   grid-template-rows: auto minmax(0, 1fr);

@@ -106,12 +106,12 @@ afterEach(() => {
 });
 
 describe("TokenHistoryScreen - chrome and disclosure", () => {
-  it("mounts as the '<name> history' dialog with the identity cluster, the scope disclosure, and NO serif H1", () => {
+  it("mounts as the '<name> history' region with the identity cluster, the scope disclosure, and NO serif H1", () => {
     mockQuery([availablePage([swapEntry({ id: "a-1" })])]);
     mountScreen();
 
-    const dialog = screen.getByRole("dialog", { name: "USD Coin history" });
-    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    const dialog = screen.getByRole("region", { name: "USD Coin history" });
+    expect(dialog.getAttribute("aria-modal")).toBeNull();
     // Token head: display name + chain, then the full address.
     expect(screen.getByText("USD Coin")).not.toBeNull();
     expect(screen.getByText("(Base)")).not.toBeNull();

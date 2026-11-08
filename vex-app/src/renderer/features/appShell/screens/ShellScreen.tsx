@@ -12,6 +12,11 @@
  *   - The title: the serif page head (`chapter`, Memory and the like), a
  *     custom head (`header`, the token history's mark and name), or, when a
  *     page draws neither, a visually hidden h1 so every page still has one.
+ *   - A page is a labelled region of the shell, never a modal dialog
+ *     (docs/design/H3-DESKTOP.md section 1.9; VEX Cloud's `PageBody`): the
+ *     side columns stay live beside it, so nothing about it is modal. It is
+ *     `aria-busy` while its first read runs (`busy`), and on open its h1
+ *     takes the focus (`tabIndex -1`), so a reader lands on the page's name.
  *   - Escape returns to the PREVIOUS route: the page the user came from
  *     (`page-trail.ts`), else the host's own close. Where a page has no other
  *     way back, the title bar carries a close key that does the same.
@@ -122,6 +127,7 @@ export function ShellScreen({
   width = "reading",
   fill,
   bar,
+  busy = false,
   children,
 }: {
   readonly title: string;
@@ -135,7 +141,7 @@ export function ShellScreen({
   /**
    * Optional custom head replacing the serif page head (the token-history
    * screen composes its own mark, name and chain). `title` still names the
-   * dialog (aria-label) and the close key either way.
+   * page's region (aria-label) and the close key either way.
    */
   readonly header?: ReactNode;
   /**
@@ -160,6 +166,8 @@ export function ShellScreen({
    * a `PageBar` with nothing in it, draws no row.
    */
   readonly bar?: ReactNode;
+  /** The page's first read is running: the region says so (`aria-busy`). */
+  readonly busy?: boolean;
   readonly children: ReactNode;
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -182,7 +190,7 @@ export function ShellScreen({
     closePageToPrevious(onClose);
   }, [onClose]);
 
-  // Escape closes from anywhere - the screen is a modal layer over the shell -
+  // Escape closes from anywhere - the page stands over the chat it replaced -
   // but ONLY while this screen is the surface the key belongs to. The three
   // guards below are one rule stated three ways: a global listener may take a
   // key no nearer owner wanted and no later surface owns.
@@ -241,15 +249,17 @@ export function ShellScreen({
     };
   }, []);
 
-  // Move focus into the screen on open (the page itself, a focusable
-  // dialog), unless a child already claimed it (child effects run first: the
-  // Sessions screen focuses its search field).
+  // Move focus into the page on open: its h1 (the route focus, VEX Cloud's
+  // `PageHeader`), else the region itself for a custom head that draws none,
+  // unless a child already claimed it (child effects run first: the Sessions
+  // screen focuses its search field).
   useEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && root.contains(active)) return;
-    root.focus({ preventScroll: true });
+    const heading = root.querySelector<HTMLElement>("h1[tabindex]");
+    (heading ?? root).focus({ preventScroll: true });
   }, []);
 
   const chapterText = chapter === undefined ? (header === undefined ? title : null) : chapter;
@@ -257,9 +267,8 @@ export function ShellScreen({
   return (
     <motion.section
       ref={rootRef}
-      role="dialog"
-      aria-modal="true"
       aria-label={title}
+      aria-busy={busy ? true : undefined}
       tabIndex={-1}
       data-vex-area="shell-screen"
       data-width={width}
@@ -320,11 +329,13 @@ export function ShellScreen({
           {header !== undefined ? (
             header
           ) : chapterText !== null ? (
-            <h1 className="vex-ov__chapter" data-vex-chapter>
+            <h1 className="vex-ov__chapter" data-vex-chapter tabIndex={-1}>
               {chapterText}
             </h1>
           ) : (
-            <h1 className="sr-only">{title}</h1>
+            <h1 className="sr-only" tabIndex={-1}>
+              {title}
+            </h1>
           )}
           {children}
         </div>

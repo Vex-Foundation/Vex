@@ -331,18 +331,32 @@ afterEach(() => {
 });
 
 describe("PortfolioScreen - the chrome", () => {
-  it("opens as the titled Portfolio dialog with a hidden h1", async () => {
+  it("opens as the titled Portfolio region with a hidden h1", async () => {
     renderPage();
     await settleGlobal();
 
-    const dialog = screen.getByRole("dialog", { name: "Portfolio" });
-    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    const dialog = screen.getByRole("region", { name: "Portfolio" });
+    expect(dialog.getAttribute("aria-modal")).toBeNull();
+    expect(dialog.getAttribute("aria-busy")).toBeNull();
     const heading = screen.getByRole("heading", { level: 1, name: "Portfolio" });
     // The page draws its own head (the total): the page's h1 stays for
     // assistive tech only.
     expect(heading.classList.contains("sr-only")).toBe(true);
     // The title bar owns the close key and the crumb; the page draws neither.
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+  });
+
+  it("is busy while its first read runs, then not", async () => {
+    let answerFirst: (value: Result<PortfolioDto>) => void = () => undefined;
+    readMock.mockImplementationOnce(
+      () => new Promise<Result<PortfolioDto>>((resolve) => (answerFirst = resolve)),
+    );
+    renderPage();
+    const region = screen.getByRole("region", { name: "Portfolio" });
+    expect(region.getAttribute("aria-busy")).toBe("true");
+    act(() => answerFirst(answer({ scope: "global" })));
+    await within(header()).findByText("$1,234.56");
+    expect(region.getAttribute("aria-busy")).toBeNull();
   });
 
   it("stamps its tabs row with the total's read's own fetch time", async () => {

@@ -293,7 +293,7 @@ describe("SettingsScreen", () => {
     render(<ShellScreens />);
     openSettings();
 
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(nav.hasAttribute("data-vex-settings-register")).toBe(true);
     expect(
@@ -425,7 +425,7 @@ describe("SettingsScreen", () => {
       });
       render(<ShellScreens />);
       openSettings();
-      await screen.findByRole("dialog", { name: "Settings" });
+      await screen.findByRole("region", { name: "Settings" });
       // Status is a fill, not a hue: the swatch beside the word carries the tone.
       expect(
         within(navRow("superboardKey")).getByText(word).querySelector(".vex-swatch")?.getAttribute("data-s"),
@@ -474,7 +474,7 @@ describe("SettingsScreen", () => {
     async (section, selector) => {
       const { container } = render(<ShellScreens />);
       openSettings(section);
-      await screen.findByRole("dialog", { name: "Settings" });
+      await screen.findByRole("region", { name: "Settings" });
       expect(container.querySelector(selector)).not.toBeNull();
       expect(container.querySelector("[data-vex-settings-preferences]")).toBeNull();
       expect(navRow(section).getAttribute("aria-current")).toBe("page");
@@ -510,7 +510,7 @@ describe("SettingsScreen", () => {
     render(<ShellScreens />);
     openSettings();
 
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     // vault "Not set" (warning) + model "Not set" (warning) render twice.
     expect(screen.getAllByText("Not set").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("EVM only")).not.toBeNull();
@@ -586,7 +586,7 @@ describe("SettingsScreen", () => {
   it("hides Vex's sidebar by default on the page, and the nav needs no Vex", async () => {
     render(<ShellScreens />);
     openSettings();
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     const state = useUiStore.getState();
     expect(vexPageClass(state)).toBe("pages");
     // The store default for the table pages: closed, whatever chats do.
@@ -597,7 +597,7 @@ describe("SettingsScreen", () => {
   it("Escape closes back to { kind: 'none' }", async () => {
     render(<ShellScreens />);
     openSettings();
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
@@ -607,7 +607,7 @@ describe("SettingsScreen", () => {
     runtimeMode.native = true;
     render(<ShellScreens />);
     openSettings();
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
     expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
       "preferences", "vault", "wallets", "apiKeys", "inference", "memory", "tuning", "localRuntime",
@@ -627,7 +627,7 @@ describe("SettingsScreen", () => {
   it("never opens the Local runtime section off the native runtime, even deep-linked", async () => {
     render(<ShellScreens />);
     openSettings("localRuntime");
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     expect(screen.queryByText("Local runtime (stub)")).toBeNull();
     // Preferences and the eight sections every runtime lists.
     expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(10);
@@ -646,7 +646,7 @@ describe("SettingsScreen - one Inference tab", () => {
     act(() => {
       useUiStore.getState().setShellRoute(inferenceSettingsRoute("vexcloud"));
     });
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     expect(document.querySelector('[data-vex-settings-section="inference"]')).not.toBeNull();
     expect(navRow("inference").getAttribute("aria-current")).toBe("page");
     expect(requestedChoice()).toBe("vexcloud");
@@ -662,7 +662,7 @@ describe("SettingsScreen - one Inference tab", () => {
   it("closes a page opened from the Vex Inference choice back to that choice (Fund's way back)", async () => {
     render(<ShellScreens />);
     openSettings();
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("region", { name: "Settings" });
     fireEvent.click(navRow("inference"));
     await screen.findByText("Save provider (stub)");
     // The route follows the section, replacing in place.

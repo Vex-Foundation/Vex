@@ -105,7 +105,7 @@ describe("ShellScreen - the H3 frame", () => {
         <p>body</p>
       </ShellScreen>,
     );
-    const sheet = screen.getByRole("dialog", { name: "Portfolio" });
+    const sheet = screen.getByRole("region", { name: "Portfolio" });
     expect(sheet.getAttribute("data-frame")).toBe("h3");
     const row = sheet.querySelector('[data-vex-area="page-tabs-row"]');
     const scroller = sheet.querySelector(".vex-ov__scroll");

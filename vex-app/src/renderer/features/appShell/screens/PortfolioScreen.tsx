@@ -86,6 +86,7 @@ export function PortfolioScreen({
       origin={origin}
       onClose={onClose}
       chapter={null}
+      busy={read.loading}
       bar={
         <PageBar
           // One option is "All wallets" alone, which is already what the page

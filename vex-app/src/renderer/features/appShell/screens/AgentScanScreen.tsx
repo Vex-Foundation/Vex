@@ -332,6 +332,7 @@ export function AgentScanScreen({
       chapter={null}
       width="wide"
       fill
+      busy={query.isLoading}
       // The H3 frame's row (docs/design/H3-DESKTOP.md section 1.9): no tabs
       // (the four filter menus narrow the feed, they do not switch pages),
       // and "Updated" at the fetch time of the rows on screen (after a failed
