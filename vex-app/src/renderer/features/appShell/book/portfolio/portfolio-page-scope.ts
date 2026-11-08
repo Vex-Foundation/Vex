@@ -24,6 +24,7 @@ import type { PortfolioDto, PortfolioReadInput } from "@shared/schemas/portfolio
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import { usePortfolio, useWalletPortfolio } from "../../../../lib/api/portfolio.js";
+import { useKeptRead } from "../../screens/kept-read.js";
 import type { PortfolioWallet } from "./wallet-scope.js";
 import {
   GLOBAL_PORTFOLIO_SCOPE,
@@ -191,6 +192,45 @@ export function usePageScopePortfolio(
     scope.kind === "wallet" ? scope.wallet.address : null,
   );
   return scope.kind === "wallet" ? wallet : scoped;
+}
+
+/** The page's read with its last good figures kept (`useKeptRead`). */
+export interface KeptPortfolioRead {
+  /** Nothing has answered yet for this scope. */
+  readonly loading: boolean;
+  /** The figures to draw: the newest good read, or the one kept before a failure. */
+  readonly portfolio: PortfolioDto | null;
+  /** When `portfolio` was read (epoch ms), 0 when there is none. */
+  readonly at: number;
+  /** The newest read failed: refused by main, timed out or thrown. */
+  readonly failed: boolean;
+  /** Runs the read again. */
+  readonly retry: () => Promise<unknown>;
+}
+
+/**
+ * The page-scope read as the page draws it: a failed refresh keeps the
+ * figures already shown and says so (H3-DESKTOP section 1.9), never a wipe.
+ * Each caller keeps its own copy, all of the one cached read.
+ */
+export function useKeptPageScopePortfolio(scope: PortfolioPageScope): KeptPortfolioRead {
+  const query = usePageScopePortfolio(scope);
+  const result = query.data;
+  const fresh = result?.ok === true ? result.data : null;
+  const failed = (result !== undefined && !result.ok) || query.isError;
+  const kept = useKeptRead(
+    JSON.stringify(pageScopeReadInput(scope)),
+    fresh,
+    query.dataUpdatedAt,
+    failed,
+  );
+  return {
+    loading: query.isLoading,
+    portfolio: kept.value,
+    at: kept.at,
+    failed: kept.failed,
+    retry: query.refetch,
+  };
 }
 
 /** "wallet" or "wallets". */

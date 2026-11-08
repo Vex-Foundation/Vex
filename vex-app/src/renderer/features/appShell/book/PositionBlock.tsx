@@ -44,7 +44,9 @@
  * FRESHNESS: the tabs row's "Updated {time}" is this read's own fetch time,
  * true for the app and not a claim about when the chain was read (the DTO
  * carries no read time). Chain read problems are printed under the tiles
- * (`ChainReadWarning`).
+ * (`ChainReadWarning`). A failed refresh keeps the tiles already drawn, with
+ * "Couldn't refresh your portfolio." and Retry above them; only a scope that
+ * never answered shows the could-not-load block (H3-DESKTOP section 1.9).
  *
  * The activity terminalization and progress pushes that keep these figures
  * following a pending transaction are subscribed once for the whole app, in
@@ -62,9 +64,10 @@ import { lighterTileFigures, type LighterTileFigures } from "./portfolio/Lighter
 import { CardStateNote, SectionLink, originOf } from "./portfolio/PortfolioCard.js";
 import {
   totalIncludesLine,
-  usePageScopePortfolio,
+  useKeptPageScopePortfolio,
   type PortfolioPageScope,
 } from "./portfolio/portfolio-page-scope.js";
+import { LoadFailedBlock, RefreshFailedNotice } from "../screens/RefreshNotice.js";
 import { NOT_AVAILABLE, usdDeltaFigure, usdFigure } from "./portfolio/portfolio-format.js";
 import { snapshotAge } from "./portfolio/snapshot-age.js";
 
@@ -74,16 +77,22 @@ export function PositionBlock({
   /** The page's scope - never session or project state read inside. */
   readonly scope: PortfolioPageScope;
 }): JSX.Element {
-  const query = usePageScopePortfolio(scope);
-  const result = query.data;
-  const portfolio = result?.ok ? result.data : null;
+  const read = useKeptPageScopePortfolio(scope);
+  const portfolio = read.portfolio;
   const lighter = useLighterTiles(scope.kind === "global");
 
   let main: JSX.Element;
-  if (query.isLoading) {
+  if (read.loading) {
     main = <CardStateNote tone="loading">Loading your portfolio…</CardStateNote>;
-  } else if ((result !== undefined && !result.ok) || query.isError) {
-    main = <CardStateNote tone="warn">Couldn&apos;t load your portfolio.</CardStateNote>;
+  } else if (portfolio === null && read.failed) {
+    // Nothing was ever read for this scope: the block, with Retry.
+    main = (
+      <LoadFailedBlock
+        scope="Portfolio"
+        text="Couldn't load your portfolio."
+        onRetry={read.retry}
+      />
+    );
   } else if (portfolio === null || portfolio.walletCount === 0) {
     main = <EmptyScope scope={scope} />;
   } else {
@@ -92,6 +101,11 @@ export function PositionBlock({
 
   return (
     <header className="vex-pf-top" data-vex-area="portfolio-total">
+      {/* A failed refresh over figures already read: they stay, and this
+          line says the newest read failed (H3-DESKTOP section 1.9). */}
+      {portfolio !== null && read.failed ? (
+        <RefreshFailedNotice text="Couldn't refresh your portfolio." onRetry={read.retry} />
+      ) : null}
       {main}
     </header>
   );

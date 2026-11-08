@@ -162,6 +162,62 @@
   outline-offset: -2px;
 }
 
+/* ---- a failed refresh (`RefreshFailedNotice`) -------------------------
+ * docs/design/H3-DESKTOP.md section 1.9, VEX Cloud's `.vx-notice` retry
+ * notice: one framed cell on the card ground, at least 48 high, over the
+ * figures it leaves standing. The cross in a 44 column, the sentence (14,
+ * ink), then Retry as a key cell on the right edge, its left rule the
+ * notice's own line. Never red: the cross says it. */
+.vex-pg-notice {
+  display: flex;
+  align-items: stretch;
+  min-height: 48px;
+  margin: 0 0 20px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-notice__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+}
+.vex-pg-notice__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 13px 16px 14px 0;
+}
+.vex-pg-notice__key {
+  flex: none;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-notice__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-notice__key[aria-disabled="true"] {
+  cursor: progress;
+}
+.vex-pg-notice__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
 .vex-pf {
   container: vex-pf / inline-size;
   min-width: 0;

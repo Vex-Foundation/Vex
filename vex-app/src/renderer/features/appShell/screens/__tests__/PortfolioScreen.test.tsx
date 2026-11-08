@@ -856,3 +856,68 @@ describe("PortfolioScreen - the scope chips", () => {
     expect(section("wallets").querySelectorAll("[data-selected]")).toHaveLength(0);
   });
 });
+
+describe("PortfolioScreen - a failed refresh keeps the figures (H3-DESKTOP section 1.9)", () => {
+  const REFUSED: Result<PortfolioDto> = {
+    ok: false,
+    error: {
+      code: "internal.unexpected",
+      domain: "portfolio",
+      message: "boom",
+      retryable: true,
+      userActionable: false,
+      redacted: true,
+      correlationId: "11111111-1111-4111-8111-111111111111",
+    },
+  };
+
+  it("keeps the total and the balances, says the refresh failed and Retry reads again", async () => {
+    const { client } = renderPage();
+    await settleGlobal();
+
+    readMock.mockImplementation(() => Promise.resolve(REFUSED));
+    await act(async () => {
+      await client.refetchQueries();
+    });
+
+    // One line says the newest read failed, with Retry.
+    const alert = await within(header()).findByRole("alert");
+    expect(alert.textContent).toBe("Couldn't refresh your portfolio.");
+    // The figures already read stay on screen.
+    expect(within(header()).getByText("$1,234.56")).not.toBeNull();
+    expect(within(section("balances")).getByText("Global Token")).not.toBeNull();
+    expect(within(header()).queryByText("Couldn't load your portfolio.")).toBeNull();
+
+    readMock.mockImplementation((input) => Promise.resolve(answer(input)));
+    const calls = readMock.mock.calls.length;
+    fireEvent.click(within(header()).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(within(header()).queryByRole("alert")).toBeNull();
+    });
+    expect(readMock.mock.calls.length).toBeGreaterThan(calls);
+    expect(within(header()).getByText("$1,234.56")).not.toBeNull();
+  });
+
+  it("with nothing read yet, says it could not load and offers Retry", async () => {
+    readMock.mockImplementation(() => Promise.resolve(REFUSED));
+    renderPage();
+    await within(header()).findByText("Couldn't load your portfolio.");
+    expect(within(header()).queryByText("Couldn't refresh your portfolio.")).toBeNull();
+
+    readMock.mockImplementation((input) => Promise.resolve(answer(input)));
+    fireEvent.click(within(header()).getByRole("button", { name: "Retry" }));
+    await within(header()).findByText("$1,234.56");
+  });
+
+  it("never lends one scope's kept figures to another scope", async () => {
+    readMock.mockImplementation((input) =>
+      Promise.resolve(input.walletAddress === MAIN.address ? REFUSED : answer(input)),
+    );
+    renderPage();
+    await within(header()).findByText("$1,234.56");
+
+    fireEvent.click(chip(/^Main/));
+    await within(header()).findByText("Couldn't load your portfolio.");
+    expect(within(header()).queryByText("$1,234.56")).toBeNull();
+  });
+});
