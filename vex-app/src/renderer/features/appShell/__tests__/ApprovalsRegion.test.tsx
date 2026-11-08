@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -280,7 +280,10 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     const closed = document.querySelector("[data-vex-area='approval-closed']");
     expect(closed?.getAttribute("data-vex-closed")).toBe("expired");
     expect(closed?.textContent).toContain("Expired. Nothing was run.");
-    expect(screen.getByRole("alert").textContent).toBe("This confirmation expired before it was answered.");
+    // The waiting card beside it keeps its own (empty) failure line, so read the closed card's.
+    expect(within(closed as HTMLElement).getByRole("alert").textContent).toBe(
+      "This confirmation expired before it was answered.",
+    );
     // In its place: still first, the waiting card after it.
     expect(stackIds()).toEqual(["appr-a", "appr-b"]);
     // No network, no stamp, no outcome the record does not hold.

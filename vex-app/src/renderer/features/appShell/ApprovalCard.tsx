@@ -370,6 +370,9 @@ export function ApprovalCard({
   // are exactly the card's either way. Docked, it names itself by the card's
   // title and adds the gate line in its middle cell (Appendix A.7).
   const docked = decisionDock !== null;
+  // The failure line rides with the footer (Cloud's `FooterAlert`, DG5-28):
+  // right over the keys wherever they are drawn, so a docked card's failure
+  // is said over the bottom row, not in the transcript behind it.
   const decisionActions = (
     <ApprovalDecisionActions
       isHighRisk={isHighRisk}
@@ -388,6 +391,7 @@ export function ApprovalCard({
       settledDecision={settledDecision}
       wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
       rejectReasonInput={summary.origin !== "desk"}
+      failure={inlineError}
       dock={docked ? { labelledBy: titleId, gateLine: approvalGateLine(isHighRisk, CONFIRM_RESET_MS) } : null}
     />
   );
@@ -425,7 +429,6 @@ export function ApprovalCard({
           namespace={namespace}
           toolName={toolName}
           criticalArgs={criticalArgs}
-          inlineError={inlineError}
           projectName={projectName}
           signedGlint={signedGlint}
         />

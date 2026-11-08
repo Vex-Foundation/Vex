@@ -352,27 +352,32 @@
   font-size: 12px;
 }
 
-/* THE FAILURE LINE (Cloud's DG5-28, the money gaps sheet's `.tk-fail`): when
- * a decision does not go through, one ink line above the decision band: the
- * cross (the error swatch, ink, never red), then the sentence in sans 14 ink.
- * A ruled cell edge to edge like every other, its text 24 in, on the raised
- * ground, one lightness step over the card. `role="alert"` is on the element;
- * nothing here is a refusal, so nothing here is red. */
+/* THE FAILURE LINE (Cloud's DG5-28, `.vx-tk-fail`): when a decision does not
+ * go through, one ink line right over the decision band, in the card or in
+ * the chat's dock: the sentence in sans 14 ink, padding 10, no mark. A ruled
+ * cell edge to edge like every other, its text 24 in, on the raised ground,
+ * one lightness step over the card. `role="alert"` is on the element, which
+ * is mounted empty so its first text is said; empty, it is out of the layout
+ * but stays in the tree (Cloud's `.vx-tk-fail:empty`). Nothing here is a
+ * refusal, so nothing here is red. */
 .vex-appr__fail {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
   margin: 0;
-  padding: 12px var(--vex-appr-inset);
+  padding: 10px var(--vex-appr-inset);
   font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
   background: var(--vex-alias-interactive-solid);
   border-top: 1px solid var(--vex-alias-rule);
 }
-/* The cross sits on the first line's baseline, as Cloud's square does. */
-.vex-appr__fail-mark {
-  flex: none;
+.vex-appr__fail:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07;
@@ -470,6 +475,7 @@
   grid-template-columns: 168px minmax(0, 1fr) 200px;
   grid-template-areas:
     "reason reason reason"
+    "fail fail fail"
     "reject gate approve";
   gap: 0;
   margin: 0;
@@ -489,6 +495,16 @@
   background: var(--vex-alias-bg-base);
   border: 0;
   border-bottom: 1px solid var(--vex-alias-rule);
+}
+/* The failure line, docked: its own row between the reason field and the
+ * keys. The reason field draws the rule under itself, so the line draws none. */
+.vex-appr__foot[data-docked] > .vex-appr__fail {
+  grid-area: fail;
+  border-top: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-docked] > .vex-appr__fail:empty {
+  border: 0;
 }
 .vex-appr__foot[data-docked] > input::placeholder {
   color: var(--vex-alias-label-tertiary);
@@ -592,6 +608,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "reason reason"
+      "fail fail"
       "gate gate"
       "reject approve";
   }
@@ -681,7 +698,7 @@
   font-size: 10px;
 }
 /* In the folded row the failure line is the row's foot, bled to its frame. */
-.vex-appr-row__fail {
+.vex-appr-row__fail:not(:empty) {
   grid-column: 1 / -1;
   margin: 11px -16px -13px;
   padding: 10px 16px;

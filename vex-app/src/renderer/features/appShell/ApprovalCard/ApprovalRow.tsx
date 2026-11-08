@@ -17,7 +17,7 @@ import { Stamp } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { approvalActorLine } from "../approvals/approvals-copy.js";
 import { approvalExpiryWords, approvalSentence, approvalToolTitle, isUserMcpApproval } from "./approval-sentence.js";
-import { rejectKeyWords } from "./ApprovalDecisionActions.js";
+import { ApprovalFailureLine, rejectKeyWords } from "./ApprovalDecisionActions.js";
 
 const ROW_KEY =
   "inline-flex h-8 shrink-0 items-center justify-center border px-3 font-sans text-[13px] font-medium leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary";
@@ -105,14 +105,9 @@ export function ApprovalRow({
         <span>{meta}</span>
         {isUserMcpApproval(summary) ? null : <Stamp data-testid="real-funds-stamp" className="vex-appr-row__stamp" />}
       </p>
-      {/* The card's failure line (Cloud's DG5-28): one ink line with the
-          cross under the row's words, never red. */}
-      {inlineError !== null ? (
-        <p role="alert" data-vex-area="approval-failure" className="vex-appr__fail vex-appr-row__fail">
-          <Swatch state="error" size={9} className="vex-appr__fail-mark" />
-          <span>{inlineError}</span>
-        </p>
-      ) : null}
+      {/* The card's failure line (Cloud's DG5-28): one ink line under the
+          row's words, never red; mounted empty so its first text is said. */}
+      <ApprovalFailureLine error={inlineError} className="vex-appr-row__fail" />
     </div>
   );
 }

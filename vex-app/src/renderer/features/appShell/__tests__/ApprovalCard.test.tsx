@@ -620,7 +620,7 @@ describe("ApprovalCard", () => {
     );
   });
 
-  it("says a failure as Cloud's one ink line with the cross, right above the decision band (DG5-28)", () => {
+  it("says a failure as Cloud's one ink line, no mark, right above the decision band (DG5-28)", () => {
     mockApproveMutate.mockImplementation((_input, options) => {
       void options?.onSuccess?.({
         ok: false,
@@ -636,12 +636,17 @@ describe("ApprovalCard", () => {
       });
     });
     renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    // Mounted from the start, empty, so its first text is said.
+    const before = screen.getByRole("alert");
+    expect(before.textContent).toBe("");
+    expect(before.getAttribute("data-vex-area")).toBe("approval-failure");
     fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     const line = screen.getByRole("alert");
+    // The same node, never remounted: a live region says only what changes in it.
+    expect(line).toBe(before);
     expect(line.classList.contains("vex-appr__fail")).toBe(true);
-    expect(line.getAttribute("data-vex-area")).toBe("approval-failure");
-    // The cross is the ink error swatch, the words follow it; nothing is red.
-    expect(line.firstElementChild?.getAttribute("data-s")).toBe("error");
+    // No mark: the words alone; nothing is red.
+    expect(line.childElementCount).toBe(0);
     expect(line.textContent).toBe("Wallet rejected the request.");
     expect(line.className).not.toMatch(/danger|red|err/);
     // The decision band follows it at once: the line is the last cell above the footer.
@@ -1778,12 +1783,12 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(foot().getAttribute("aria-labelledby")).toBe(title.id);
   });
 
-  it("orders the cells as H3 does: the reason field, Reject, the gate line, the approve key", () => {
+  it("orders the cells as H3 does: the reason field, the failure line, Reject, the gate line, the approve key", () => {
     renderDocked(makeSummary());
     const cells = Array.from(foot().children).map((child) =>
       child.getAttribute("data-vex-key") ?? child.getAttribute("data-vex-area") ?? child.tagName.toLowerCase(),
     );
-    expect(cells).toEqual(["input", "reject", "approval-gate", "approve"]);
+    expect(cells).toEqual(["input", "approval-failure", "reject", "approval-gate", "approve"]);
     expect(screen.getByLabelText(REJECT_REASON_LABEL).getAttribute("placeholder")).toBe(REJECT_REASON_PLACEHOLDER);
   });
 
@@ -1855,6 +1860,32 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(foot().querySelector('[data-vex-key="approve"]')?.hasAttribute("data-vex-approve-working")).toBe(true);
   });
 
+  it("says a failed decision over the docked keys, never in the card behind them (DG5-28)", () => {
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Wallet rejected the request.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-x",
+        },
+      });
+    });
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+    const line = screen.getByRole("alert");
+    expect(line.textContent).toBe("Wallet rejected the request.");
+    expect(dock.contains(line)).toBe(true);
+    expect(card().contains(line)).toBe(false);
+    expect(line.nextElementSibling?.getAttribute("data-vex-key")).toBe("reject");
+    // The keys are live again for the next try.
+    expect((screen.getByRole("button", { name: "Approve transfer" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("keeps the footer in the card when no dock is given, as on every other surface", () => {
     renderCard(makeSummary(), false);
     expect(card().hasAttribute("data-vex-decision-docked")).toBe(false);
@@ -1893,7 +1924,11 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       const row = rule(".vex-appr__foot[data-docked]");
       expect(row).toContain("grid-template-columns: 168px minmax(0, 1fr) 200px");
       expect(row).toContain('"reason reason reason"');
+      expect(row).toContain('"fail fail fail"');
       expect(row).toContain('"reject gate approve"');
+      // An empty failure line is out of the layout, so a card with no failure keeps the row's measures.
+      expect(rule(".vex-appr__fail:empty")).toContain("position: absolute");
+      expect(rule(".vex-appr__fail")).toContain("padding: 10px var(--vex-appr-inset)");
       expect(row).toContain("position: static");
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
       expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
