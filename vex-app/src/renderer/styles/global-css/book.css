@@ -877,6 +877,36 @@
   line-height: 1.25;
 }
 
+/* BALANCES and ALL ASSETS in VEX Cloud's data table (`data.css`, the page
+ * kit): one rule frame on the card ground; the head 34 high; the rows 48
+ * high, each cell 12 in on both sides and the first 16 in from the frame;
+ * the quiet wash under a hovering pointer. The positions and activity tables
+ * keep their own frames below. */
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) th {
+  height: 34px;
+  padding: 0 12px;
+  vertical-align: middle;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) td {
+  height: 48px;
+  padding: 0 12px;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) :is(th, td):first-child {
+  padding-left: 16px;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) tbody tr:last-child > td {
+  border-bottom: 0;
+}
+@media (hover: hover) {
+  .vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) tbody tr:hover > td {
+    background: var(--vex-alias-interactive-hover);
+  }
+}
+
 /* ALL ASSETS draws the same table at full length (`BalancesTable`, variant
  * `register`), on the wide ledger page rather than a `.vex-pf` page (whose
  * sheet width is the Portfolio page's), so it carries the few rules the table

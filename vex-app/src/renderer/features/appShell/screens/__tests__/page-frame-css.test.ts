@@ -75,3 +75,20 @@ describe("page leads (C3-E-05, VEX Cloud's `.vx-pglead`)", () => {
     );
   });
 });
+
+describe("Balances and All assets tables (C3-E-06, VEX Cloud's data table)", () => {
+  const t = ".vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register)";
+  it("frame the table on the card ground", () => {
+    expect(rule(book, t)).toMatch(/border: 1px solid var\(--vex-alias-rule\);\s*background: var\(--vex-alias-card\);/);
+  });
+  it("draw a 34 head, 48 rows, cells 12 in and the first 16 in", () => {
+    expect(rule(book, `${t} th`)).toMatch(/height: 34px;\s*padding: 0 12px;/);
+    expect(rule(book, `${t} td`)).toMatch(/height: 48px;\s*padding: 0 12px;/);
+    expect(rule(book, `${t} :is(th, td):first-child`)).toContain("padding-left: 16px;");
+  });
+  it("wash a row under a hovering pointer", () => {
+    expect(book).toMatch(
+      /@media \(hover: hover\) \{\s*\.vex-pf-t:is\(\.vex-pf-t--balances, \.vex-pf-t--register\) tbody tr:hover > td \{\s*background: var\(--vex-alias-interactive-hover\);/,
+    );
+  });
+});
