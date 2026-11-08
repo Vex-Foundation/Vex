@@ -280,8 +280,10 @@
  * 1px gaps over the rule colour, so two cells share one rule and the frame is
  * one rule all round), each a caps label (13, muted), the figure (sans, 24 /
  * 400; the wallet total 33 / 600) and a muted line (14). As many columns as
- * tiles, up to four in a row where the page is wide; two in a row when four
- * would not fit; one under 480. */
+ * tiles, up to four in a row where the page is wide, the wallet total's track
+ * a little wider (1.3 to the others' 1, VEX Cloud's `.vx-fstrip` hero); two
+ * in a row when four would not fit (Cloud goes to three under 900, which
+ * would leave four tiles a hole); one under 480. */
 
 .vex-pf-top {
   margin: 0 0 24px;
@@ -316,21 +318,26 @@
 }
 .vex-pf-tiles[data-count="2"] {
   --vex-pf-tiles: 2;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
 }
 .vex-pf-tiles[data-count="3"] {
   --vex-pf-tiles: 3;
+  grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr));
 }
 .vex-pf-tiles[data-count="4"] {
   --vex-pf-tiles: 4;
+  grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));
 }
 @container vex-pf (width < 900px) {
   .vex-pf-tiles[data-count="4"] {
     --vex-pf-tiles: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @container vex-pf (width < 480px) {
   .vex-pf-tiles[data-count] {
     --vex-pf-tiles: 1;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .vex-pf-tile {

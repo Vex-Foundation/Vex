@@ -114,3 +114,22 @@ describe("the tab cells (C3-E-10)", () => {
     expect(rule(book, ".vex-pg-tab")).toContain("padding: 0 22px;");
   });
 });
+
+describe("the figure strip (C3-E-11, VEX Cloud's `.vx-fstrip`)", () => {
+  it("gives the wallet total's track 1.3 to the others' 1", () => {
+    expect(rule(book, '.vex-pf-tiles[data-count="2"]')).toContain(
+      "grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);",
+    );
+    expect(rule(book, '.vex-pf-tiles[data-count="3"]')).toContain(
+      "grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr));",
+    );
+    expect(rule(book, '.vex-pf-tiles[data-count="4"]')).toContain(
+      "grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));",
+    );
+  });
+  it("wraps four tiles two by two under 900, with equal tracks and no hole", () => {
+    expect(book).toMatch(
+      /@container vex-pf \(width < 900px\) \{\s*\.vex-pf-tiles\[data-count="4"\] \{\s*--vex-pf-tiles: 2;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+  });
+});
