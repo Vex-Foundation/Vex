@@ -50,6 +50,22 @@ describe("the chat's header cells", () => {
     expect(rule(".vex-chat-funds__mark")).toMatch(/text-transform:\s*uppercase;/);
   });
 
+  it("say Main with the hatch under 1280, keeping Mainnet and Real funds for assistive tech", () => {
+    const [funds] = cells();
+    const short = funds?.querySelector(".vex-chat-funds__short");
+    expect(short?.textContent).toBe("Main");
+    expect(short?.getAttribute("aria-hidden")).toBe("true");
+    expect(rule(".vex-chat-funds__short")).toMatch(/display:\s*none;/);
+    const narrow = SHEET.slice(SHEET.indexOf("@media (max-width: 1279px)"));
+    // The long word and the mark's words are clipped out of sight, never
+    // removed from the accessibility tree; the hatch (`::before`) stays.
+    expect(narrow).toMatch(
+      /\.vex-chat-funds__net,\s*\.vex-chat-funds__words \{[^}]*clip-path:\s*inset\(50%\);/,
+    );
+    expect(narrow).toMatch(/\.vex-chat-funds__short \{\s*display:\s*inline;/);
+    expect(funds?.querySelector(".vex-chat-funds__words")?.textContent).toBe("Real funds");
+  });
+
   it("offer no menu: no control, no chevron, nothing to choose on a mainnet-only app", () => {
     const [funds] = cells();
     expect(funds?.querySelector("button, [role='button'], [aria-haspopup], svg")).toBeNull();

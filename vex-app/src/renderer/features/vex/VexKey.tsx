@@ -4,21 +4,29 @@
  * One button in three parts, each a cell divided by a 1px rule:
  *
  *   button.vex-key[data-vex-area="vex-key"]
- *     .vex-key__portrait   76 x 76: the fold glyph on the raised fill while
- *                          she is open, her face while she is closed
- *                          (`VexKeyPortrait`, the seam S4-03 fills)
- *     .vex-key__state      line one: the state square and word, and the live
- *                          timer while a turn runs ("Thinking 0:03"); line
- *                          two: the action, Hide Vex or Show Vex, then the
- *                          chord's keycaps
- *     .vex-key__chevron    61 wide: down while she is closed, up while open
+ *     .vex-key__portrait   76 x 76: the portrait glyph on the open ground
+ *                          while she is open, her face while she is closed,
+ *                          crossfading over 200ms (`VexKeyPortrait`, the
+ *                          seam S4-03 fills)
+ *     .vex-key__state      line one: the state square and word (13, caps),
+ *                          and the live timer while a turn runs ("Thinking
+ *                          0:03"); line two, 10 under it: the action (12,
+ *                          caps), Hide Vex or Show Vex, then the chord's
+ *                          keycaps
+ *     .vex-key__chevron    60 wide, then the column's rule: down while she
+ *                          is closed, up while open
  *
- * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6): "Hide Vex" while she is
- * open, "Show Vex" while she is closed, with `aria-expanded` for the section
- * it folds. The tooltip and `aria-keyshortcuts` carry the chord (Appendix
- * A.9: "Show Vex (Ctrl+Shift+B)"); the keycaps are its picture, hidden from
- * assistive technology so the chord is not read twice. The state line
- * describes the key (`aria-describedby`), so it is heard after the name.
+ * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6; VEX Cloud's EC-01):
+ * "Hide Vex" while she is open, "Show Vex" while she is closed, the name
+ * following the words, with `aria-controls` naming her section and no
+ * `aria-expanded` or `aria-pressed` (a changing name and a state attribute
+ * would say it twice). Every press is said once, politely, "Vex shown." or
+ * "Vex hidden." (EC-24), by the announcer beside the key
+ * (`VexSectionAnnouncer`). The tooltip and `aria-keyshortcuts` carry the
+ * chord (Appendix A.9: "Show Vex (Ctrl+Shift+B)"); the keycaps are its
+ * picture, hidden from assistive technology so the chord is not read twice.
+ * The state word describes the key (`aria-describedby`), so it is heard
+ * after the name; its short word and the ticking timer are pictures, hidden.
  *
  * THE WORDS CHANGE AT THE PRESS (section 3.3), never at the end of a motion:
  * while her close plays (`vex-hide.ts`) the key already reads Show Vex, and a
@@ -55,8 +63,10 @@ import { useVexPresence } from "./useVexPresence.js";
 import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
+import { VexSectionAnnouncer } from "./VexSectionAnnouncer.js";
+import { VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
-import type { VexState } from "./vex-state.js";
+import { vexShortWordOf, type VexState } from "./vex-state.js";
 import {
   VEX_TOGGLE_CHORD,
   vexToggleAriaShortcut,
@@ -106,6 +116,8 @@ export interface VexKeyProps {
   readonly platform?: StudioPlatform;
   /** Her band rests under 1024: why, in words; the key then acts on nothing. */
   readonly held?: string | null;
+  /** Her section's id (`aria-controls`): the shell's by default, the stage names its own. */
+  readonly controls?: string;
 }
 
 export function VexKey({ open, onToggle, platform = studioPlatform, held = null }: VexKeyProps): JSX.Element {
@@ -123,11 +135,12 @@ export function VexKey({ open, onToggle, platform = studioPlatform, held = null 
         word={presence.word}
         timer={
           presence.timerStartedAt === null ? null : (
-            <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" />
+            <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" decorative />
           )
         }
       />
       <VexStateAnnouncer state={presence.state} word={presence.word} live={presence.live} />
+      <VexSectionAnnouncer />
     </>
   );
 }
@@ -162,6 +175,7 @@ export function VexKeyView({
   mood,
   held = null,
   count = null,
+  controls = VEX_SECTION_ID,
 }: VexKeyViewProps): JSX.Element {
   const closing = useVexClosing();
   // While her close plays her section still stands, but the person has
@@ -170,6 +184,10 @@ export function VexKeyView({
   const name = vexToggleName(shown);
   const stateId = useId();
   const square = vexKeySquareOf(state);
+  // Under 1280 the key says the chat row's short word ("Waiting"), so the
+  // word never ends in an ellipsis there; it is a picture of the long one,
+  // which stays the key's description.
+  const short = vexShortWordOf(state, word);
 
   return (
     <Tooltip label={held ?? vexToggleTooltipLabel(shown, platform)} side="bottom">
@@ -180,7 +198,7 @@ export function VexKeyView({
         data-vex-state={state}
         data-vex-key-open={shown ? "true" : "false"}
         aria-label={name}
-        aria-expanded={shown}
+        aria-controls={controls}
         aria-describedby={stateId}
         aria-keyshortcuts={vexToggleAriaShortcut(platform)}
         aria-disabled={held === null ? undefined : true}
@@ -191,7 +209,7 @@ export function VexKeyView({
         }}
       >
         <span className="vex-key__portrait" data-open={shown ? "" : undefined}>
-          <VexKeyPortrait open={shown} state={state} {...(mood === undefined ? {} : { mood })} />
+          <VexKeyPortrait state={state} {...(mood === undefined ? {} : { mood })} />
         </span>
         <span className="vex-key__state">
           <span id={stateId} className="vex-key__line vex-key__status">
@@ -204,7 +222,14 @@ export function VexKeyView({
               className="vex-key__square"
               data-key-square={square}
             />
-            <span className="vex-key__word">{word}</span>
+            <span className="vex-key__word" data-short={short === word ? undefined : ""}>
+              <span className="vex-key__long">{word}</span>
+              {short === word ? null : (
+                <span className="vex-key__short" aria-hidden="true">
+                  {short}
+                </span>
+              )}
+            </span>
             {timer}
           </span>
           <span className="vex-key__line vex-key__action">

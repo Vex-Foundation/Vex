@@ -88,6 +88,32 @@
     transparent 1.5px 4px
   );
 }
+/* MAIN, under 1280 (VEX Cloud's H3 mockup, `.hd-short` and `.rf-word`): the
+ * network's short word stands where MAINNET stood, and the mark keeps its
+ * hatch; "Mainnet" and "Real funds" stay in the accessibility tree, clipped
+ * out of sight, so the cell still says the whole statement. */
+.vex-chat-funds__short {
+  display: none;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@media (max-width: 1279px) {
+  .vex-chat-funds__net,
+  .vex-chat-funds__words {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .vex-chat-funds__short {
+    display: inline;
+  }
+}
 /* THE CAPTION RESERVE, where H3 draws PAUSE ALL: the Windows and Linux
  * caption buttons stand over it, so it is a cell of its own, divided by the
  * rule, only while the overlay is there; elsewhere it is 0 wide and draws

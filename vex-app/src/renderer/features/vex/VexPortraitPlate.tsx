@@ -8,7 +8,9 @@
  * does not: her mood from Vex's presence state (`kimmMoodOf`), the platform's
  * chord for the corner key's tooltip, the corner key's press, which writes the
  * same stored choice the Vex key and the chord write (`setVexOpen`, the
- * current page class's slot), and the first close's hint.
+ * current page class's slot) and is said as theirs is ("Vex shown.", "Vex
+ * hidden."), her section's id for every toggle's `aria-controls`, and the
+ * first close's hint.
  *
  * Decorative: the Vex key's state word carries the state for assistive tech,
  * and her section draws her figure `aria-hidden`.
@@ -20,6 +22,7 @@ import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { studioPlatform } from "../appShell/studio/keybindings-labels.js";
 import { kimmMoodOf } from "./kimm-mood.js";
+import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import type { VexState } from "./vex-state.js";
 import { vexToggleAriaShortcut, vexToggleShortcutLabel } from "./vex-toggle-shortcut.js";
 
@@ -89,6 +92,8 @@ export function VexPortraitPlate({ state, open, onHide }: VexPortraitPlateProps)
   const onOpenChange = (next: boolean): void => {
     if (!next && onHide !== undefined) onHide();
     else setVexOpen(next);
+    // Said once, politely, as every toggle's press is (EC-24).
+    announceVexSection(next);
   };
   const hint = useKimmFirstCloseHint(open);
   return (
@@ -98,6 +103,7 @@ export function VexPortraitPlate({ state, open, onHide }: VexPortraitPlateProps)
         open={open}
         onOpenChange={onOpenChange}
         shortcut={KIMM_SHORTCUT}
+        id={VEX_SECTION_ID}
       />
       {hint ? <KimmHint keys={KIMM_HINT_KEYS} /> : null}
     </>

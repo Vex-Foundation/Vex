@@ -19,6 +19,8 @@
  *       the same glyph and words stand without the fill"): the hatch glyph,
  *       three strokes drawn by the sheet rather than shipped as art, and the
  *       words in caps. MAINNET is sans 14, REAL FUNDS 12 (section 2.3).
+ *       Under 1280, as VEX Cloud's header does, the cell reads MAIN and the
+ *       hatch: "Mainnet" and "Real funds" stay for assistive tech only.
  *   [data-vex-head-cell="caption-reserve"]
  *       PAUSE ALL is left out (desktop has per-run pause and stop, and Lock
  *       Vex, which stops signing, not workers; section 4.1), so its cell
@@ -41,6 +43,8 @@ import type { JSX } from "react";
 /** The network statement's two words, in sentence case: the sheet sets the caps. */
 export const CHAT_HEAD_NETWORK_WORD = "Mainnet";
 export const CHAT_HEAD_FUNDS_WORD = "Real funds";
+/** The network's short word under 1280 (VEX Cloud's "Main"). */
+export const CHAT_HEAD_NETWORK_SHORT = "Main";
 
 export function ChatHeaderCells(): JSX.Element {
   return (
@@ -50,9 +54,14 @@ export function ChatHeaderCells(): JSX.Element {
         className="vex-shell-head__funds vex-chat-funds vex-drag"
       >
         <span className="vex-chat-funds__net">{CHAT_HEAD_NETWORK_WORD}</span>
+        {/* Under 1280 the cell says "Main" and keeps the hatch, the words
+          * only for assistive tech (VEX Cloud's `.hd-short`, `.rf-word`). */}
+        <span className="vex-chat-funds__short" aria-hidden="true">
+          {CHAT_HEAD_NETWORK_SHORT}
+        </span>
         {/* The hatch glyph is the sheet's `::before`: decoration, no text. */}
         <span className="vex-chat-funds__mark" data-vex-real-funds-mark="">
-          {CHAT_HEAD_FUNDS_WORD}
+          <span className="vex-chat-funds__words">{CHAT_HEAD_FUNDS_WORD}</span>
         </span>
       </div>
       <div
