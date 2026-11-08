@@ -20,9 +20,12 @@
  */
 
 import { useEffect, type JSX } from "react";
-import { TAGLINES } from "../../features/vex/TaglineCell.js";
+import { REST_LINE, TaglineView } from "../../features/vex/TaglineCell.js";
+import { vexBarsMoodOf } from "../../features/vex/vex-bars.js";
 import { useVexToggleShortcut } from "../../features/vex/useVexToggleShortcut.js";
 import { VexKeyView } from "../../features/vex/VexKey.js";
+import { VexSectionAnnouncer } from "../../features/vex/VexSectionAnnouncer.js";
+import { announceVexSection, VEX_STAGE_SECTION_ID } from "../../features/vex/vex-section-a11y.js";
 import {
   KIMM_HINT_KEYS,
   KIMM_SHORTCUT,
@@ -94,26 +97,33 @@ function StageVexColumn(): JSX.Element {
           state={view.state}
           word={view.word}
           mood={view.mood}
-          timer={view.note === null ? null : <span className="vex-key__timer vex-num">{view.note}</span>}
+          timer={
+            view.note === null ? null : (
+              <span className="vex-key__timer vex-num" aria-hidden="true">
+                {view.note}
+              </span>
+            )
+          }
+          controls={VEX_STAGE_SECTION_ID}
         />
+        <VexSectionAnnouncer />
       </div>
       <div className="vex-pre-vex__kimm" data-vex-area="vex-sidebar">
         <KimmSection
           mood={view.mood}
           open={open}
-          onOpenChange={setStageVexOpen}
+          onOpenChange={(next) => {
+            setStageVexOpen(next);
+            announceVexSection(next);
+          }}
           shortcut={KIMM_SHORTCUT}
           reportsPhase={false}
+          id={VEX_STAGE_SECTION_ID}
         />
         {hint ? <KimmHint keys={KIMM_HINT_KEYS} /> : null}
       </div>
       <div className="vex-pre-vex__tagline vex-drag">
-        <p className="vex-tagline" data-vex-tagline="rest">
-          <span className="vex-tagline__text">
-            <span className="vex-tagline__lead">{TAGLINES.rest.lead}</span>{" "}
-            <span className="vex-tagline__rest">{TAGLINES.rest.rest}</span>
-          </span>
-        </p>
+        <TaglineView line={REST_LINE} bars={vexBarsMoodOf(view.state)} />
       </div>
     </div>
   );

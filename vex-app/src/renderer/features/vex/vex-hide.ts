@@ -18,6 +18,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { announceVexSection } from "./vex-section-a11y.js";
 
 /** What the open sidebar answers when a toggle asks to hide it. */
 export interface VexCloser {
@@ -94,9 +95,18 @@ export function keepVex(): void {
  * it: `open` is what the frame solved, `onToggle` the store write that flips it. Open and
  * closing, the press keeps her; open, it hides her through her close; closed, it shows her at
  * once. The three controls share this so a click and a chord can never mean different things.
+ * Each press is said once, politely, at the press: "Vex shown." or "Vex hidden." (VEX Cloud's
+ * EC-24, `vex-section-a11y.ts`).
  */
 export function pressVexToggle(open: boolean, onToggle: () => void): void {
-  if (open && closing) keepVex();
-  else if (open) requestVexHide(onToggle);
-  else onToggle();
+  if (open && closing) {
+    keepVex();
+    announceVexSection(true);
+  } else if (open) {
+    requestVexHide(onToggle);
+    announceVexSection(false);
+  } else {
+    onToggle();
+    announceVexSection(true);
+  }
 }

@@ -28,11 +28,11 @@ import {
   LineChevronUp,
   LineMarkets,
   LinePlus,
-  LineSvg,
   LineZen,
 } from "../../../../components/icons/line/index.js";
 import { Keycaps } from "../../../../components/ui/keycaps.js";
 import { vexKeySquareOf } from "../../../../features/vex/VexKey.js";
+import { PortraitGlyph } from "../../../../features/vex/VexKeyPortrait.js";
 import { AgentSidebarHeader } from "../../../../features/appShell/AgentSidebarHeader.js";
 import { ChatHeaderCells } from "../../../../features/appShell/ChatHeaderCells.js";
 import { SessionsList } from "../../../../features/appShell/SessionsList.js";
@@ -76,18 +76,10 @@ const STATE_WORDS: Readonly<Record<PlateVexState, string>> = {
   awaiting: "Waiting for approval",
 };
 
-function FoldGlyph(): JSX.Element {
-  return (
-    <LineSvg size={20}>
-      <path d="M3.5 4h9" />
-      <path d="M4 11.5l4-4 4 4" />
-    </LineSvg>
-  );
-}
 
 /**
  * The Vex key in the key's own classes (`VexKey.tsx`, vex-sidebar.css):
- * the fold glyph while her section is open, her face (the stand-in still)
+ * the portrait glyph while her section is open, her face (the stand-in still)
  * while it is closed; the state square and word; the action and its keycaps;
  * the chevron.
  */
@@ -101,11 +93,10 @@ function PlateVexKey({ open, state }: { readonly open: boolean; readonly state: 
       data-vex-state={state}
       data-vex-key-open={open ? "true" : "false"}
       aria-label={name}
-      aria-expanded={open}
     >
       <span className="vex-key__portrait" data-open={open ? "" : undefined}>
         {open ? (
-          <FoldGlyph />
+          <PortraitGlyph />
         ) : (
           <img className="lp-key-face" src={KIMM_STANDINS.portraits.offer.src} alt="" draggable={false} />
         )}

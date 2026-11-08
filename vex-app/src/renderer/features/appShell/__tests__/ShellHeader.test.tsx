@@ -164,7 +164,12 @@ describe("the header", () => {
   it("states the network and never offers a menu: Mainnet, Real funds", () => {
     render(header({ mode: "agent" }));
     const funds = document.querySelector("[data-vex-head-cell='funds']");
-    expect(funds?.textContent).toBe("MainnetReal funds");
+    // What assistive tech reads: "Main", the narrow window's picture of
+    // Mainnet, is hidden from it.
+    const read = Array.from(funds?.querySelectorAll(":scope > :not([aria-hidden='true'])") ?? [])
+      .map((el) => el.textContent)
+      .join("");
+    expect(read).toBe("MainnetReal funds");
     expect(funds?.querySelector("button")).toBeNull();
     // The chat's own cells (ChatHeaderCells) after its title.
     expect(funds?.querySelector("[data-vex-real-funds-mark]")?.textContent).toBe("Real funds");

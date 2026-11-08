@@ -192,6 +192,12 @@ export interface KimmSectionProps {
    * clauses, and closes the band.
    */
   readonly band?: { readonly line: { readonly lead: string; readonly rest: string } };
+  /**
+   * Her section's id, which every toggle names in `aria-controls` (VEX
+   * Cloud's EC-01: a disclosure named by its words, no `aria-expanded`); her
+   * corner key names it too. The shell's and the stage's differ.
+   */
+  readonly id?: string;
 }
 
 export function KimmSection({
@@ -201,6 +207,7 @@ export function KimmSection({
   shortcut,
   reportsPhase = true,
   band,
+  id,
 }: KimmSectionProps): JSX.Element {
   const art = useKimmArt();
   const figure = art.sections[mood];
@@ -271,6 +278,7 @@ export function KimmSection({
   return (
     <div
       ref={box}
+      id={id}
       data-vex-area="kimm-section"
       data-kimm-open={open ? "true" : "false"}
       data-kimm-phase={phase}
@@ -322,6 +330,7 @@ export function KimmSection({
           ref={key}
           type="button"
           data-vex-area="kimm-key"
+          aria-controls={id}
           title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
           aria-keyshortcuts={shortcut?.aria}
           onClick={() => onOpenChange(!open)}
@@ -339,6 +348,7 @@ export function KimmSection({
           type="button"
           data-vex-area="kimm-key"
           aria-label={action}
+          aria-controls={id}
           title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
           aria-keyshortcuts={shortcut?.aria}
           hidden={!open && phase === "closed"}

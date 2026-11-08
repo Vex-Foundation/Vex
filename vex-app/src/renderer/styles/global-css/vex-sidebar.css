@@ -207,6 +207,17 @@
   font-size: 14px;
   line-height: 18px;
 }
+/* Under 1440 (VEX Cloud's H3 mockup, `.cn-need b` and `.cn-review`): the
+ * decision is 14 and the Review cell 14 in from each side, so the narrower
+ * column keeps the decision's subject. */
+@media (max-width: 1439px) {
+  .vex-console__sentence {
+    font-size: 14px;
+  }
+  .vex-console__key {
+    padding: 0 14px;
+  }
+}
 /* An unreadable inbox: its sentence in two lines at most, in ink. */
 .vex-console__alert {
   display: -webkit-box;
@@ -719,31 +730,79 @@
 
 /* ---- THE TAGLINE (docs/design/H3-DESKTOP.md section 1.8 and Appendix A.6;
  * TaglineCell.tsx) ----
- * The bottom row's cell under the Vex column says the moment: caps at 600,
- * its first clause in ink and its second muted, 24 in, centred in the row.
- * 14: the plates' lines measure about 9 a character at 1440 ("Check the
- * card, then decide.", 268 for 28; the rest line 356 for 40), which the sans
- * at 600 in tracked caps gives at 14, under the type table's 20 read from its
- * cap height. Two lines where the column is narrow; never under the row's
- * rule. */
-.vex-tagline {
-  display: flex;
+ * Vex's line on her column's foot, VEX Cloud's `.moment` (the H3 mockup's
+ * app.css): a strip over the whole cell (`--vex-alias-strip`, Cloud's
+ * `--vx-strip`, without its blur: desktop never blurs), the line on it 24
+ * in, centred in the row. Two registers:
+ *   - caps (`data-reg="caps"`): the moment's tagline, clamp(14px, 1.1vw,
+ *     22px) (14 at 1280, 16 at 1440, 21 at 1920), 600, 0.01em, line height
+ *     1.15, its first clause in ink and its second muted;
+ *   - say (`data-reg="say"`): the narration while she works, in sentence
+ *     case, 14 (times the wide zoom), in ink 2, line height 1.4.
+ * An emptied line (`data-empty`) fades out with its strip, so what lies
+ * under it shows alone. Never under the row's rule. */
+.vex-foot {
+  position: relative;
   box-sizing: border-box;
   height: 100%;
+  overflow: hidden;
+}
+/* The bars (VexBars.tsx): the whole cell, under the strip, a picture that
+ * takes no pointer. Their colour is the canvas's own. */
+.vex-foot__bars {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--vex-alias-bars);
+  pointer-events: none;
+}
+.vex-tagline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  box-sizing: border-box;
   align-items: center;
   margin: 0;
   padding: 0 24px;
   overflow: hidden;
+  background: var(--vex-alias-strip);
+  transition: opacity var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-tagline[data-empty] {
+  opacity: 0;
 }
 .vex-tagline__text {
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  text-wrap: balance;
+}
+.vex-tagline[data-reg="caps"] .vex-tagline__text {
+  font-size: clamp(14px, 1.1vw, 22px);
   font-weight: 600;
-  line-height: 20px;
-  letter-spacing: var(--tracking-label);
+  line-height: 1.15;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 .vex-tagline__rest {
   color: var(--vex-alias-label-tertiary);
+}
+.vex-tagline[data-reg="say"] .vex-tagline__text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--vex-alias-label-secondary);
+  font-size: calc(14px * var(--vex-zoom));
+  font-weight: 400;
+  line-height: 1.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-tagline {
+    transition: none;
+  }
+}
+html[data-still] .vex-tagline {
+  transition: none;
 }

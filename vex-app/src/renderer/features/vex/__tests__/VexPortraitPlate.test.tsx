@@ -10,6 +10,9 @@
  *  - the corner key hides her through the frame's `onHide` when it is given,
  *    and otherwise writes the page class's stored choice (`setVexOpen`), as
  *    it does to show her;
+ *  - her section carries the id every toggle names in `aria-controls`, and
+ *    her corner key names it too, with no state attribute (EC-01); its press
+ *    is said, "Vex shown." or "Vex hidden." (EC-24);
  *  - the plate is her section alone: no print, no other image, no second
  *    figure under it.
  */
@@ -20,6 +23,8 @@ import { useUiStore } from "../../../stores/uiStore.js";
 import { kimmMoodOf } from "../kimm-mood.js";
 import { VEX_STATES } from "../vex-state.js";
 import { KIMM_SHORTCUT, VexPortraitPlate } from "../VexPortraitPlate.js";
+import { VexSectionAnnouncer } from "../VexSectionAnnouncer.js";
+import { VEX_SECTION_ID } from "../vex-section-a11y.js";
 
 function section(container: HTMLElement): HTMLElement {
   const el = container.querySelector<HTMLElement>("[data-vex-area='kimm-section']");
@@ -78,6 +83,38 @@ describe("VexPortraitPlate", () => {
     view.rerender(<VexPortraitPlate state="ready" open={false} onHide={() => undefined} />);
     fireEvent.click(cornerKey(view.container));
     expect(useUiStore.getState().vexOpenChat).toBe(true);
+  });
+
+  it("names her section for every toggle's aria-controls, her corner key too (EC-01)", () => {
+    const view = render(<VexPortraitPlate state="ready" open />);
+    expect(section(view.container).id).toBe(VEX_SECTION_ID);
+    const key = cornerKey(view.container);
+    expect(key.getAttribute("aria-controls")).toBe(VEX_SECTION_ID);
+    expect(key.hasAttribute("aria-expanded")).toBe(false);
+    expect(key.hasAttribute("aria-pressed")).toBe(false);
+  });
+
+  it("says her corner key's press once, politely, as every toggle's (EC-24)", () => {
+    const view = render(
+      <>
+        <VexPortraitPlate state="ready" open onHide={() => undefined} />
+        <VexSectionAnnouncer />
+      </>,
+    );
+    const said = (): string =>
+      Array.from(document.querySelectorAll("[data-vex-area='vex-section-announcer'] [role='status']"))
+        .map((r) => r.textContent)
+        .join("");
+    fireEvent.click(cornerKey(view.container));
+    expect(said()).toBe("Vex hidden.");
+    view.rerender(
+      <>
+        <VexPortraitPlate state="ready" open={false} onHide={() => undefined} />
+        <VexSectionAnnouncer />
+      </>,
+    );
+    fireEvent.click(cornerKey(view.container));
+    expect(said()).toBe("Vex shown.");
   });
 
   it("is her section alone: no print window and no second figure beside it", () => {

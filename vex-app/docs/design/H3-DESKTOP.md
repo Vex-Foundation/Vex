@@ -97,16 +97,16 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 |---|---|---|---|
 | logo | 0, 171 | the mark and "CLOUD" | the mark; on macOS it starts after the traffic lights (section 4.7) |
 | sidebar key | 171, 77 | the panel icon | the same key: it folds the chats column to the rail |
-| Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | the same (section 1.6) |
+| Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | her mood still closed; open, Cloud's portrait glyph on the open ground, the two crossfading (section 1.6) |
 | Vex key, state | 324, 295 | the state square and word, a timer while live; then HIDE VEX or SHOW VEX and three keycaps | the same, with desktop's state words |
-| Vex key, chevron | 619, 61 | down when closed, up when open | the same |
+| Vex key, chevron | 619, 61 | down when closed, up when open | the same: 60 and the column's own rule, as Cloud's CSS draws it (`.vk-dir`) |
 | chat title | 680, 398 | the chat's title, and "SAMPLE DATA" under it | the title, and under it the chat's kind and access ("Agent · Restricted") |
 | network | 1078, 240 | MAINNET, the REAL FUNDS mark and a chevron: a network menu | MAINNET and the REAL FUNDS mark, with no chevron: a statement, not a menu |
 | pause | 1318, 122 | PAUSE ALL | left out (no global pause); on Windows and Linux the caption buttons sit here (section 4.7) |
 
-Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344). Under 1024 the Vex key's cell is 288 wide with the waiting count (section 1.10).
+Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344) and 12 from its right. Under 1024 the Vex key's cell is 288 wide with the waiting count (section 1.10).
 
-The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide, and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. Open: how these cells give way under 1280 (shorter words, the network word dropped for its mark, the chevron cell folded into the state cell). Settled in the harness (S2-07) and with Cloud.
+The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide (the chevron's 60 and the column's rule), and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. How they give way is VEX Cloud's (the H3 mockup's width rules, 2026-11-05), on the window's width: under 1440 the Vex key drops its keycaps and sets its state line at 12; under 1280 the key says the short state word ("Waiting") and the network cell says MAIN with the hatch, its words kept for assistive tech (section 1.6, Appendix A.1).
 
 ### 1.4 The chats column
 248 wide. Measured in `h3-merged__welcome-closed-1440`, top to bottom:
@@ -151,11 +151,12 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
-- **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
-- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
-- **Chevron cell.** Down while she is closed, up while she is open.
+- **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, VEX Cloud's portrait glyph (DG-1 `portrait`, a framed bust: the frame she left; the direction is the chevron cell's, never the glyph's) at 20 in ink 2, ink under the pointer, on the open ground (`--vx-cell-open`, #0C0D0F). The two stand in the cell together and crossfade over 200ms, opacity only (MOTION-POLICY.md names it); reduced motion and Save-Data change it at once. The open ground fades in with the glyph, so a face that has not arrived leaves the header's own ground. The plates' fold glyph (an up chevron under a bar) on a raised fill is replaced.
+- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut. At VEX Cloud's measures (the H3 mockup's `.vk`, 2026-11-05): the text 20 in and 12 from the right, the two lines 10 apart; the state word 13 in caps in ink, the timer after it 10 on, in the sans, muted, at 0.04em with tabular figures; the action 12 in caps in ink, its keycaps 12 after it (section 2.4).
+- **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
+- **Width rules** (VEX Cloud's, on the window's width): under 1440 no keycaps (the chord stays in the key's name, `aria-keyshortcuts`, its tooltip and the first-close hint), the state line 12 at 0.06em with its parts 8 apart, the text 16 in, the chevron cell 48, and the console's decision 14 with its Review cell 14 in from each side; under 1280 the state line says the chat row's short word ("Waiting" for Waiting for approval; every other word is already short), the long word staying the key's description; from 1920 the state line is 14 and the keycaps 20 high at 11.
 
-The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
+The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3). It is a disclosure as VEX Cloud's EC-01 draws every control of her section: the name follows the words, `aria-controls` names her section, and there is no `aria-expanded` or `aria-pressed`. Its description is the long state word; the short word and the ticking timer are hidden from assistive tech, as Cloud's are.
 
 Her moods, printed on `landing-r3__plate-key-moods`. Both apps must use the same list:
 
@@ -204,13 +205,15 @@ Open, for the owner:
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
 | account | 0, 248 | the avatar disc, "You", "Account and settings", a chevron | the same |
-| tagline | 248, 432 | the moment's tagline (Appendix A) | the same, in desktop's words |
+| tagline | 248, 432 | the moment's tagline (Appendix A) | Vex's line on a strip over the bars: the same, in desktop's words (Appendix A.6) |
 | model | 680, 75 | the model's glyph: the model choice | the same |
 | field | 755, 471 | "Ask Vex..." | the same, running on to the send key |
 | attach | 1226, 74 | an image key | left out: no attachments |
 | send | 1302, 138 | blue: a three-by-three dot glyph and SEND | the same; STOP while a turn runs; held while the draft is blank (below) |
 
 **The send cell** is H3's `.cmp-send`: 138 wide, padding 0 30 0 32, a 20px dots glyph and SEND in 13px caps; the dots are faint (white at 55%) at rest and white under the pointer. Measured at 140 from the captures before Cloud's CSS was read; the CSS is the source. **While the draft is blank, SEND is held** (Cloud's EC-04, `specs/v99-web/PLAN.md`; `h3-chat-gaps` decision 6): the cell fill, a muted word and the faint dots, no blue and no hover, because a blue key that does nothing is a trust regression. It turns blue the moment the draft has text. Which drafts can be sent is unchanged; only the look follows the key's disabled state. STOP keeps the blue while a turn runs; a stop being acknowledged is the same held look.
+
+**The tagline cell is Vex's line over her bars** (VEX Cloud's `.vx-foot`, the H3 mockup's app.css and js/stage.js, 2026-11-05). The bars are a canvas filling the cell: n = max(12, round(W / 22)) bars 3 apart (20 at 432), each the cell's height, white at 1.4% plus up to 55% by its level; the levels ease on a critically damped spring toward one of three moods taken from her state alone: ready (a slow sweep), busy (a faster sweep while she thinks, works or wakes) and approve (a soft pulse while a decision waits). They are a display only (Cloud's PD-15): no figure, no data, no claim, no key. They draw only while on screen and while the window is shown, and under reduced motion and Save-Data they paint one still frame per mood (MOTION-POLICY.md, "Vex's bars"). Over them lies the strip with her line (Appendix A.6); when the line empties the strip fades and the bars show alone. Cloud grounds the bars on `--vx-key-field`, oklch(7% 0.006 264), one sRGB step from desktop's ground (#010102 against #010203); desktop keeps its ground.
 
 **The status strip** sits above the composer in the chat column, 31 high (797 to 827, measured): the model and its effort ("DeepSeek V4.1 Flash 1017 HIGH", 680 to 928), FUNDS REQUIRE APPROVAL (928 to 1139), an empty cell, and DAILY BUDGET with a ten-cell meter and a percentage (1186 to 1440). Desktop's strip is in section 4.1.
 
@@ -227,7 +230,7 @@ Desktop keeps its two-step confirm in this row (section 4.3).
 ### 1.9 Pages
 From `h3-merged__portfolio-*-1440`.
 
-- **Her section open:** the three columns stand. The page sits in the chat column from the header to the window's foot; there is no bottom row under a page, and the account cell stays at the chats column's foot. At the Vex column's foot is a segmented cell (828 to 900, about twenty segments, thirteen lit). Open: what it is; it looks like a load meter for her live model. Settled by the mockup source.
+- **Her section open:** the three columns stand. The page sits in the chat column from the header to the window's foot; there is no bottom row under a page, and the account cell stays at the chats column's foot. At the Vex column's foot is a segmented cell (828 to 900, about twenty segments, thirteen lit). Settled by the mockup source (2026-11-05): it is Vex's bars, a display of her mood and never a meter (section 1.8).
 - **Her section closed:** the console folds to one line under the header (76 to 123, measured): NEEDS YOU and its count (248, 142), the decision or "Nothing needs you." (390, 290), the missions cell (680, 258), the strategies cell, and OPEN ACTIVITY with an arrow at the right edge (1277, 163). The page takes the whole width right of the chats, 248 to 1440.
 - **The page frame:** a tabs row (about 57 high) with the tabs as cells (OVERVIEW selected on a raised fill, WALLET) and "Updated 12:41" at the right, then the page body, 24 in from each edge.
 
@@ -269,7 +272,8 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
 | card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: menus, dialogs, the ground under a failure's red (section 5) |
 | plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1) |
-| raised 2 | none | | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell; #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
+| open ground | none; Cloud's `--vx-cell-open` oklch(16% 0.004 264) | #0C0D0F | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell | Cloud's value: the Vex key's portrait cell while she is open (section 1.6) |
+| raised 2 | none | | #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
 | bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
 | selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
 | ink | `--ink` oklch(97% 0.005 264) | #F3F5F9 | glyph peaks up to #FFFFFF | the sheet value |
@@ -351,15 +355,16 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 | the greeting; the reason field | sans 18, 400 | welcome, approval |
 | suggestion titles; the composer field; the person's message; the permission sentence | sans 16 to 17, 400 | welcome, approval |
 | rows: chat rows, "Search chats", the chat title, "Nothing needs you.", activity rows, the card's consequence line, "You"; REVIEW and the page tabs; nav labels | sans 15 (nav labels 14 to 15), caps where they are keys or labels | welcome, approval, portfolio |
-| the state word, MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
-| HIDE VEX or SHOW VEX in the Vex key, CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
+| MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
+| the Vex key's state word (13, Cloud's CSS); CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
 | the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 13, caps | approval |
-| group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY, keycap letters | sans 11 to 12, caps (times are figures) | welcome |
+| HIDE VEX or SHOW VEX in the Vex key (12, Cloud's CSS); group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY | sans 11 to 12, caps (times are figures) | welcome |
+| keycap letters | sans 10 at 0.04em, caps, muted (Cloud's CSS) | welcome |
 | a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
 | figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
 
 **As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
-- the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
+- the Needs you row's decision sentence: sans 16, not 20 (14 under 1440, Cloud's width rule); the bottom row's tagline: Cloud's `--moment-size`, clamp(14px, 1.1vw, 22px) (14 at 1280, 16 at 1440, 21 at 1920), 600 caps at 0.01em, line height 1.15, not 20; the narration in its place while Vex works, sans 14 times the wide zoom in ink 2, sentence case, line height 1.4 (Cloud's two registers, `.moment`);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
 - "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
 - the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
@@ -375,7 +380,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
-- **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
+- **Keycaps:** VEX Cloud's keycaps beside a label (the H3 mockup's `.vk-keys kbd`, the kit's plain variant): 18 high and at least 18 wide, 5 in from each side, a 1px chosen-rule border, caps letters 10 at 0.04em, muted, 3 apart (the captures measured 19 high with letters 11 to 12; Cloud's CSS is the source). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
 - **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.
 - **Tick box** (the card's middle cell; not on desktop, section 4.3): 18 x 18, a 1px light border.
@@ -443,6 +448,7 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 - The way back is where the person pressed. After HIDE VEX is pressed, what is under the pointer from 0 to 600ms is Show Vex, and a second press there opens her again (printed at 1024, 1280, 1440 and 2560). The strip's key (531 to 680) covers the open key's box (542 to 680).
 - A press acts at once: no confirm, no delay.
 - Focused from the keyboard, each key shows the 2px white ring inside its cell.
+- **For assistive tech** (VEX Cloud's EC-01 and EC-24): each control is a disclosure named by its words, with `aria-controls` naming her section (`vex-section` in the shell, `vex-stage-section` on the stage before it) and no `aria-expanded` or `aria-pressed`. Every press, by the Vex key, her corner key or the shortcut, is said once in a polite live region beside the Vex key: "Vex shown." or "Vex hidden." (Cloud's DRAFT words). Open: the console line's key under 1024 (section 1.10) is a toggle too and does not say its press yet.
 
 ### 3.4 While she moves
 - Her section's body is inert while it moves: nothing in it takes a click or focus. The console's rest under her is inert while she is open and until a close has ended. The two keys stay live.
@@ -695,6 +701,8 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | CLOUD, beside the mark | the mark alone | desktop is not Cloud. Open: a word beside the mark, if the owner wants one |
 | READY, THINKING 0:03, WAITING FOR APPROVAL, DONE | Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up (`features/vex/vex-state.ts`), with the timer while Thinking or Working | desktop's state machine has ten states |
 | HIDE VEX, SHOW VEX | same | |
+| (spoken) "Vex shown.", "Vex hidden." | same, on every toggle's press | Cloud's EC-24 pair, DRAFT in Cloud (PD-27 copy pass) |
+| under 1280: WAITING for WAITING FOR APPROVAL in the Vex key; MAIN and the hatch for MAINNET and REAL FUNDS | same | Cloud's short words (`.vk-short`, `.hd-short`); the long words stay for assistive tech |
 | keycaps CTRL, SHIFT, B | same on Windows and Linux; ⇧, ⌘, B on macOS, in Apple's modifier order | each platform's keys (section A.9) |
 | "SAMPLE DATA" under the chat title | the chat's kind and access: "Agent · Restricted", "Mission · Full access"; a page's own line, or none | "SAMPLE DATA" marks the mockup |
 | MAINNET, REAL FUNDS, a chevron | MAINNET and REAL FUNDS, no chevron | desktop is mainnet only; there is nothing to choose |
@@ -763,14 +771,17 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | DAILY BUDGET, a meter and "38%" | CONTEXT, its meter and the real share ("Context 21%") | desktop has no daily budget; the context meter is real |
 
 ### A.6 Taglines
-The tagline cell says the moment. H3 draws two.
+The tagline cell is Vex's line on her column's foot (VEX Cloud's `.moment`, the H3 mockup's app.css and js/data.js, 2026-11-05): a strip over the bars (Cloud's `--vx-strip`, oklch(6% 0.01 264) at 0.82; Cloud blurs what lies under it by 10px, desktop does not, since desktop never blurs), and on it the moment's line in one of two registers: CAPS, two tones, the first clause in ink and the second muted; or SAY, the narration in sentence case in ink 2. The line is a picture of what the Vex key's state word and the transcript say (Cloud's G14), so it is hidden from assistive tech, as Cloud's is.
 
-| Moment | H3 | Desktop | Why |
+| Moment | H3 (Cloud) | Desktop | Why |
 |---|---|---|---|
-| the welcome and an idle chat | AN AI TRADING AGENT, INSIDE YOUR LIMITS. | AN AI TRADING AGENT, ON YOUR COMPUTER. (proposed) | desktop has no spend limits to be inside |
-| a card waiting | CHECK THE CARD, THEN DECIDE. | same | |
+| the welcome and an idle chat | AN AI TRADING AGENT, INSIDE YOUR LIMITS. (DRAFT in Cloud) | AN AI TRADING AGENT, ON YOUR COMPUTER. (proposed) | desktop has no spend limits to be inside; Cloud shows its line only at the welcome and leaves an idle chat to the bars, desktop keeps its rest line |
+| a card waiting | CHECK THE CARD, THEN DECIDE. (DRAFT in Cloud) | same | |
+| Vex works (Thinking, Working) | the narration: "Running Read balances to answer “…”" (Cloud's REAL templates) | the narration from real parts (`narration.ts`): the live word the turn island shows, the resolved tool title, the person's own last message, as "Running Swap to answer “…”", "Thinking to answer “…”"; the state word alone (Thinking, Working) where it has nothing true to add | the same templates; nothing invented |
+| a settled turn | FILLED, APPROVED BY YOU. (3.4 s); NOT PLACED, OVER THE POLICY'S LIMIT PER ORDER. (4.0 s) (DRAFT in Cloud) | DONE. for 3.4 s, then the line empties and the bars show alone until the moment changes | desktop proves no fill, no approval and no refusal at the turn's end (nothing joins a turn to its activity), so its settled line is the state word alone; Cloud's 4.0 s refusal has no desktop moment |
+| Studio | (none) | CODING AGENTS, ON YOUR COMPUTER. | our approved Studio plate (section 4.9) |
 
-The second clause of each is muted. Open: the taglines for the other moments (thinking, done, an error); default, the first line. Settled by the mockup source or the owner.
+An error, a concern, sleep and the rest keep the rest line. The band's foot row under 1024 says the caps line of the moment (rest, card, Studio); Open: whether it also narrates, as Cloud's band line does.
 
 ### A.7 The chat and the money card
 | H3 | Desktop | Why |

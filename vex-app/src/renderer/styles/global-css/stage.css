@@ -1336,13 +1336,8 @@ html[data-still] .vex-unl__go {
   overflow: hidden;
   border-top: var(--vex-pre-rule);
 }
-/* Under 1024 the Vex key's state cell is too narrow for the keycaps; the
- * key's name stays. */
-@media (max-width: 1023px) {
-  .vex-pre-vex__key .vex-keycaps {
-    display: none;
-  }
-}
+/* The Vex key's own width rules (title-bar.css) drop its keycaps under 1440,
+ * on the stage as in the shell; the key's name stays. */
 
 @media (prefers-reduced-motion: reduce) {
   .vex-pre-key,
