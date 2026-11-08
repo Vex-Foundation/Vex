@@ -144,6 +144,25 @@ describe("StagePlate", () => {
     expect(section?.getAttribute("data-kimm-mood")).toBe("think");
   });
 
+  it("draws her real art on every stage before the shell: the wake, the checks, the wizard and the unlock", () => {
+    for (const view of ["splash", "systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations", "wizard", "unlock"] as const) {
+      stand(view);
+      const { container, unmount } = render(<StagePlate />);
+      const section = sectionOf(container);
+      const mood = section?.getAttribute("data-kimm-mood") ?? "";
+      const drawn = mood === "held" ? "offer" : mood;
+      // Her section is open on the stage: her still for her mood, on the field's baked frame.
+      expect({ view, art: section?.getAttribute("data-kimm-art") }).toEqual({ view, art: "ready" });
+      expect(section?.querySelector("img.vex-kimm__figure")?.getAttribute("src"), view).toBe(
+        `/art/kimm/still-${drawn}.webp`,
+      );
+      expect(section?.style.getPropertyValue("--vex-kimm-baked"), view).toBe('url("/art/kimm/field-still.webp")');
+      expect(container.innerHTML, view).not.toMatch(/kimm-standin-/);
+      unmount();
+      resetStageVex();
+    }
+  });
+
   it("hides and shows her through the shell's own stored choice, from the key and from her corner", () => {
     useUiStore.setState({ vexOpenPages: false });
     stand("systemCheck");
