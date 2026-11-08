@@ -2,35 +2,33 @@
  * KIMM'S FILES IN THE BRAND ASSET REGISTRY (docs/design/H3-DESKTOP.md
  * sections 1.5, 1.6 and 3.5; plan rows S4-01 and S4-18).
  *
- * Her art comes from the designer and is not in the repo yet. These are the
- * files the renderer's Kimm asset seam
- * (`src/renderer/components/vex/kimm/kimm-assets.ts`) expects under
- * `src/renderer/public/art/kimm/`, registered before they exist so their
- * budgets are set before the first byte lands rather than read off whatever
- * arrives. `check-build-artifacts.mjs` spreads them into `BRAND_ASSETS`.
+ * Her art is VEX Cloud's ready-made set (its `apps/web/public/kimm/v1/stills/`,
+ * byte copies, `src/renderer/public/art/kimm/NOTICE.md`), in
+ * `src/renderer/public/art/kimm/`, which the renderer's Kimm asset seam
+ * (`src/renderer/components/vex/kimm/kimm-assets.ts`) draws from.
+ * `check-build-artifacts.mjs` spreads these entries into `BRAND_ASSETS`, so
+ * each file is checked like any other brand asset: present in
+ * dist/renderer/, decodes, WebP, its pinned width and height, its byte
+ * budget, no EXIF, IPTC or XMP.
  *
- * AWAITED, THEN ENFORCED. Every entry here is `awaited`: while its file is
- * absent from the renderer's public source it is reported as awaited and
- * skipped, so the build passes today; the moment the file is in the source
- * it is checked like any other brand asset (present in dist/renderer/,
- * decodes, its format, its byte budget, no EXIF, IPTC or XMP). Its width and
- * height are not known until the art exists, so they are `null` here, and an
- * arrived file whose dimensions are still `null` fails until S4-18 pins them:
- * a file in the bundle with no pinned size is a file nobody checked.
- * Keyed on the source, not on dist/, so a file that is in the source but did
- * not reach the build is a failure, never a skip.
- *
- * THE BUDGETS, chosen on 4 November 2026 before the art exists:
- *   - the key's mood sprite, every drawn mood in one file: 30 KB (30,720
- *     bytes).
- *     The mockup's sprite is 28.5 KB (`stills/key-moods.webp` on the mood
- *     plate); closed, it is the only Kimm file that loads (section 3.5);
- *   - her open section, one per mood: 400 KB (409,600 bytes) each. Loaded only
+ * THE BUDGETS, set on 8 November 2026 with the files in hand (each about a
+ * fifth over the largest file of its kind, so a re-encode of the same render
+ * fits and a different render does not slip in unseen):
+ *   - her chips, 150 x 150, one per drawn mood: 8 KB (8,192 bytes) each.
+ *     The largest is 6,138 bytes (`chip-hi.webp`). Closed, a chip is the only
+ *     Kimm file that loads (section 3.5);
+ *   - her section stills, 720 wide, one per drawn mood: 96 KB (98,304 bytes)
+ *     each. The largest is 81,544 bytes (`still-refused.webp`). Loaded only
  *     when her section first opens (S4-05);
- *   - the closed strip's glyph field frame: 64 KB (65,536 bytes). The strip is
- *     432 x 56 CSS px at 1440, 864 x 112 at 2x; the mockup crop of it
- *     (314 x 61) is 11.6 KB lossless.
+ *   - the field's baked frame, 780 x 652: 24 KB (24,576 bytes); it is 20,358;
+ *   - the field's frame from a 1600 window, 1536 x 1972: 52 KB (53,248
+ *     bytes); it is 43,684.
  * Raise one only with the file in hand and the reason beside it.
+ *
+ * AWAITED ENTRIES. The registry can still hold a file registered before it
+ * exists (`awaited: true`, width and height `null`): skipped while absent
+ * from the renderer's public source, refused once it arrives until its size
+ * is pinned (`brandAssetPlan`). None of Kimm's entries is awaited now.
  *
  * Data plus one pure decision, so the seam's tests can read the same list the
  * build check enforces.
@@ -52,20 +50,34 @@ export const KIMM_ART_DIR = "art/kimm";
 
 /** The byte budgets above. */
 export const KIMM_BUDGETS = Object.freeze({
-  keyMoods: 30 * 1024,
-  section: 400 * 1024,
-  strip: 64 * 1024,
+  chip: 8 * 1024,
+  still: 96 * 1024,
+  fieldStill: 24 * 1024,
+  fieldStillWide: 52 * 1024,
 });
 
-function awaited(file, maxBytes) {
-  return Object.freeze({ file, format: "webp", width: null, height: null, maxBytes, awaited: true });
+/** Each section still's height (720 wide; each pose has its own height, as Cloud's `SECTION_HEIGHT`). */
+export const KIMM_STILL_HEIGHTS = Object.freeze({
+  hi: 1033,
+  think: 1096,
+  offer: 1044,
+  signed: 1042,
+  refused: 1104,
+  rest: 1032,
+});
+
+function pinned(file, width, height, maxBytes) {
+  return Object.freeze({ file, format: "webp", width, height, maxBytes });
 }
 
-/** Every file the seam expects, as `BRAND_ASSETS` entries. */
+/** Every file the seam draws from, as `BRAND_ASSETS` entries. */
 export const KIMM_BRAND_ASSETS = Object.freeze([
-  awaited(`${KIMM_ART_DIR}/key-moods.webp`, KIMM_BUDGETS.keyMoods),
-  ...KIMM_MOODS.map((mood) => awaited(`${KIMM_ART_DIR}/section-${mood}.webp`, KIMM_BUDGETS.section)),
-  awaited(`${KIMM_ART_DIR}/strip.webp`, KIMM_BUDGETS.strip),
+  ...KIMM_MOODS.map((mood) => pinned(`${KIMM_ART_DIR}/chip-${mood}.webp`, 150, 150, KIMM_BUDGETS.chip)),
+  ...KIMM_MOODS.map((mood) =>
+    pinned(`${KIMM_ART_DIR}/still-${mood}.webp`, 720, KIMM_STILL_HEIGHTS[mood], KIMM_BUDGETS.still),
+  ),
+  pinned(`${KIMM_ART_DIR}/field-still.webp`, 780, 652, KIMM_BUDGETS.fieldStill),
+  pinned(`${KIMM_ART_DIR}/field-still-wide.webp`, 1536, 1972, KIMM_BUDGETS.fieldStillWide),
 ]);
 
 /**

@@ -32,14 +32,14 @@
  * file then.
  *
  * CLOSED, SHE IS THE STRIP (section 1.5; plan row S4-06): her section folds
- * to its top 56, the glyph field's frame at the left and the same corner key
- * at the right. The fold is her clip-path alone (inset from the foot by the
- * box less the strip, section 3.2): her box never changes, so neither the
- * column nor the card beside it reflows, and what the clip leaves out takes
- * no pointer, so the console's rest under her is the person's again. In the
- * strip her figure gives way to the field's frame (`KimmArtSet.strip`, a
- * small file that loads with the strip; missing today, the ground's own top
- * then).
+ * to its own top 56, her ground and the glyph field holding its frame, with
+ * the same corner key at the right; the strip has no file of its own (VEX
+ * Cloud dropped `strip.webp`). The fold is her clip-path alone (inset from
+ * the foot by the box less the strip, section 3.2): her box never changes,
+ * so neither the column nor the card beside it reflows, and what the clip
+ * leaves out takes no pointer, so the console's rest under her is the
+ * person's again. In the strip her figure is hidden once the close has
+ * ended.
  *
  * THE CORNER KEY is the same control as the Vex key in the header, in the
  * same corner whatever her state (section 3.3): HIDE VEX and a cross while
@@ -239,7 +239,6 @@ export function KimmSection({
   // for state derived from a prop, so the opening frame already carries it.
   const [asked, setAsked] = useState(open);
   if (open && !asked) setAsked(true);
-  const strip = art.strip;
   // The words change at the press (section 3.3): the key says what a press
   // does now.
   const action = open ? "Hide Vex" : "Show Vex";
@@ -410,17 +409,6 @@ export function KimmSection({
             />
           ) : null}
         </div>
-        {isKimmArtReady(strip) ? (
-          <img
-            src={strip.src}
-            alt=""
-            width={strip.width}
-            height={strip.height}
-            draggable={false}
-            decoding="async"
-            className="vex-kimm__strip"
-          />
-        ) : null}
         <div className="vex-kimm__scan" />
       </div>
       {band === undefined ? (

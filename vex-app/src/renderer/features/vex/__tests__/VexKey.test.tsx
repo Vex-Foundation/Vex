@@ -192,13 +192,13 @@ describe("VexKey: what it draws", () => {
     rerender(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
     expect(part("portrait")?.hasAttribute("data-open")).toBe(false);
     expect(part("pic")).not.toBeNull();
-    // Her face is her portrait key's (S4-03): her mood's cell of the sprite,
-    // and while her art is missing it draws no face at all.
+    // Her face is her portrait key's (S4-03): her mood's chip, VEX Cloud's
+    // header portrait, as the app ships it.
     const face = part("portrait")?.querySelector("[data-vex-area='kimm-portrait-key']");
     expect(face).toBe(part("chip"));
     expect(face?.getAttribute("data-kimm-key")).toBe("closed");
-    expect(face?.getAttribute("data-kimm-art")).toBe("missing");
-    expect(face?.childElementCount).toBe(0);
+    expect(face?.getAttribute("data-kimm-art")).toBe("ready");
+    expect(face?.querySelector("img")?.getAttribute("src")).toMatch(/^\/art\/kimm\/chip-[a-z]+\.webp$/);
     expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 6l4 4 4-4");
   });
 });

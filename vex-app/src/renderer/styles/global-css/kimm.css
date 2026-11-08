@@ -168,25 +168,15 @@
  * Her section folds to its top 56 by its clip alone: inset from the foot by
  * her box less the strip (547 at 1440 x 900), so her box, the column and the
  * card beside it never change. What the clip leaves out takes no pointer:
- * the console's rest under her is live again. In the strip the field's frame
- * stands at the left (her strip art, the strip's height) and her figure
- * gives way to it once the close has ended (`data-kimm-phase`).
+ * the console's rest under her is live again. The strip is her section's own
+ * top 56, her ground and the field holding its frame, with no file of its
+ * own; her figure is hidden once the close has ended (`data-kimm-phase`).
  *
  * HIDE VEX (section 3.1; S4-07): the wipe rises to the strip's edge in 420ms
  * on the push curve, a Web Animation that lands on this inset
  * (`kimm-wipe.ts`). Only clip-path moves. */
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
-}
-.vex-kimm__strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: none;
-  width: auto;
-  max-width: none;
-  height: var(--vex-h3-strip-h);
-  user-select: none;
 }
 /* The strip's room (section 1.5): "the console's rest starts under the
  * strip". Her strip stands over the first 56 of the console's rest in every
@@ -202,9 +192,6 @@
  * pointer has left the pressed key's box. */
 .vex-kimm[data-kimm-guard] ~ .vex-vs__rest {
   pointer-events: none;
-}
-.vex-kimm[data-kimm-phase="closed"] .vex-kimm__strip {
-  display: block;
 }
 .vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
   visibility: hidden;
@@ -291,9 +278,6 @@
   left: 50%;
   width: min(100%, calc((var(--vex-band-h) - 68px) / 0.566));
   transform: translateX(-50%);
-}
-.vex-kimm--band .vex-kimm__strip {
-  display: none;
 }
 .vex-kimm__foot {
   position: absolute;

@@ -1,9 +1,10 @@
 /**
  * KIMM'S ART, ONE SEAM (docs/design/H3-DESKTOP.md sections 1.5, 1.6 and 3.5;
  * plan rows S4-01 to S4-05 and S4-18). The one place that says which file
- * each of her moods, her open section and her closed strip are drawn from.
- * Every Kimm surface (the Vex key's portrait cell, her section, the strip)
- * reads her art through a `KimmArtSet`, so no component names a path.
+ * each of her moods and her section's ground are drawn from. Every Kimm
+ * surface (the Vex key's portrait cell, her section) reads her art through a
+ * `KimmArtSet`, so no component names a path. Closed, her section is its own
+ * top 56 (section 1.5): the strip has no file of its own.
  *
  * THE MOODS. The six printed on the mood plate (`landing-r3__plate-key-moods`),
  * in its order, and the still VEX Cloud draws after a fill (`signed`, its
@@ -20,26 +21,29 @@
  * figure and the portrait at `data-kimm-mood="held"`). A designer's file for
  * it is never asked for.
  *
- * THE FILES, under `public/art/kimm/` (served at `/art/kimm/`):
- *   - `key-moods.webp`: the key's mood sprite, every drawn mood in one file,
- *     so a change of mood never waits on a request. Closed, it is the only
- *     Kimm file that loads (section 3.5). Each drawn mood is one cell of it.
- *   - `section-{mood}.webp`: her open section, her figure on its blue ground,
- *     one per drawn mood. Loaded only when her section first opens (S4-05).
- *   - `strip.webp`: the closed strip's frame of the glyph field.
- * Their byte budgets are pinned in the build check's brand asset registry
+ * THE FILES, under `public/art/kimm/` (served at `/art/kimm/`): VEX Cloud's
+ * ready-made renders of her (its `apps/web/public/kimm/v1/stills/`, byte
+ * copies under the same names; `public/art/kimm/NOTICE.md` says where they
+ * came from):
+ *   - `chip-{mood}.webp`, 150 x 150: her face in the Vex key's portrait cell,
+ *     one per drawn mood, as Cloud's header draws it (`KimmStill` "chip").
+ *     Closed, a chip is the only Kimm file that loads (section 3.5).
+ *   - `still-{mood}.webp`, 720 wide (1032 to 1104 tall by pose): her figure
+ *     in her open section, one per drawn mood. Loaded only when her section
+ *     first opens (S4-05).
+ *   - `field-still.webp` (780 x 652) and `field-still-wide.webp` (1536 x
+ *     1972, from a 1600 window): the glyph field's baked frame, her section's
+ *     ground until the live field has painted (section 1.5).
+ * Cloud's phone stills (head to chest, 1040 x 589) are not taken: desktop's
+ * window floor is 1000 wide and its band (1000 to 1023) frames the section
+ * still. Its `key-moods.webp` sprite is the home page's, not the header's.
+ * Their pixel sizes are pinned here (`KIMM_ARRIVED`) and, with their byte
+ * budgets, in the build check's brand asset registry
  * (`scripts/kimm-brand-assets.mjs`, spread into `BRAND_ASSETS` in
- * `scripts/check-build-artifacts.mjs`), where the reasons are.
- *
- * NOT HERE YET. None of her art is in the repo: it comes from the designer
- * (plan section 4.5). So every piece is `missing` today, and `missing` names
- * the file it waits for. A surface renders `missing` as no art at all: never
- * a placeholder figure, a sample, or a stand-in passed off as her
- * (`AGENTS.md`: no mock presented as production). When a file lands, S4-18
- * adds it to `KIMM_ARRIVED` with its pixel size (and the sprite's cells to
- * `KIMM_KEY_MOOD_CELLS`), pins the same size in the registry, and the piece
- * turns `ready`. The seam's test holds the two honest both ways: a piece is
- * `missing` exactly while its file is absent from `public/art/kimm/`.
+ * `scripts/check-build-artifacts.mjs`), where the reasons are. A file that
+ * leaves the folder turns its piece `missing`: a surface then draws no art
+ * for it, never a placeholder or another mood's figure (`AGENTS.md`: no mock
+ * presented as production). The seam's test holds the two honest both ways.
  *
  * THE STAND-INS. The H3 harness has dev-only crops of the mockup
  * (`src/renderer/dev/h3-shell/standins/`). This module never imports them,
@@ -78,20 +82,30 @@ export const KIMM_ART = `/${KIMM_ART_DIR}/`;
 
 /** Every file the seam expects, relative to the renderer's public root. */
 export const KIMM_FILES = {
-  keyMoods: `${KIMM_ART_DIR}/key-moods.webp`,
-  sections: {
-    hi: `${KIMM_ART_DIR}/section-hi.webp`,
-    think: `${KIMM_ART_DIR}/section-think.webp`,
-    offer: `${KIMM_ART_DIR}/section-offer.webp`,
-    signed: `${KIMM_ART_DIR}/section-signed.webp`,
-    refused: `${KIMM_ART_DIR}/section-refused.webp`,
-    rest: `${KIMM_ART_DIR}/section-rest.webp`,
+  chips: {
+    hi: `${KIMM_ART_DIR}/chip-hi.webp`,
+    think: `${KIMM_ART_DIR}/chip-think.webp`,
+    offer: `${KIMM_ART_DIR}/chip-offer.webp`,
+    signed: `${KIMM_ART_DIR}/chip-signed.webp`,
+    refused: `${KIMM_ART_DIR}/chip-refused.webp`,
+    rest: `${KIMM_ART_DIR}/chip-rest.webp`,
   },
-  strip: `${KIMM_ART_DIR}/strip.webp`,
+  stills: {
+    hi: `${KIMM_ART_DIR}/still-hi.webp`,
+    think: `${KIMM_ART_DIR}/still-think.webp`,
+    offer: `${KIMM_ART_DIR}/still-offer.webp`,
+    signed: `${KIMM_ART_DIR}/still-signed.webp`,
+    refused: `${KIMM_ART_DIR}/still-refused.webp`,
+    rest: `${KIMM_ART_DIR}/still-rest.webp`,
+  },
+  field: {
+    still: `${KIMM_ART_DIR}/field-still.webp`,
+    wide: `${KIMM_ART_DIR}/field-still-wide.webp`,
+  },
 } as const satisfies {
-  readonly keyMoods: string;
-  readonly sections: Readonly<Record<KimmDrawnMood, string>>;
-  readonly strip: string;
+  readonly chips: Readonly<Record<KimmDrawnMood, string>>;
+  readonly stills: Readonly<Record<KimmDrawnMood, string>>;
+  readonly field: { readonly still: string; readonly wide: string };
 };
 
 /** An image her art is drawn from: where it is served and its size in image pixels. */
@@ -104,7 +118,7 @@ export interface KimmImage {
 /** A box in image pixels: left and top included, right and bottom excluded. */
 export type KimmPixelBox = readonly [left: number, top: number, right: number, bottom: number];
 
-/** One mood's portrait: its cell of the key's mood sprite. */
+/** One mood's portrait: a cell of a sheet (her chip is a sheet whose one cell is the whole file). */
 export interface KimmPortraitCell {
   readonly sheet: KimmImage;
   readonly cell: KimmPixelBox;
@@ -123,22 +137,30 @@ export type KimmArt<Ready extends object = KimmImage> =
 export interface KimmArtSet {
   readonly portraits: Readonly<Record<KimmMood, KimmArt<KimmPortraitCell>>>;
   readonly sections: Readonly<Record<KimmMood, KimmArt>>;
-  readonly strip: KimmArt;
+  /** The glyph field's baked frame: under a 1600 window, and from 1600. */
+  readonly field: { readonly still: KimmArt; readonly wide: KimmArt };
 }
 
 /**
  * The files that are in the app, with their pixel sizes, keyed by their path
- * under the public root. EMPTY: none of her art has arrived. S4-18 adds each
- * file as it lands, with the size its `BRAND_ASSETS` entry pins.
+ * under the public root: the same sizes their `BRAND_ASSETS` entries pin.
  */
-const KIMM_ARRIVED: Readonly<Partial<Record<string, { readonly width: number; readonly height: number }>>> = {};
-
-/**
- * Each drawn mood's cell of the key's mood sprite, in the sprite's pixels;
- * `null` until the sprite arrives and its layout is read from the file
- * itself. Held takes offer's cell (`KIMM_ART_MOOD`).
- */
-const KIMM_KEY_MOOD_CELLS: Readonly<Record<KimmDrawnMood, KimmPixelBox>> | null = null;
+const KIMM_ARRIVED: Readonly<Partial<Record<string, { readonly width: number; readonly height: number }>>> = {
+  [KIMM_FILES.chips.hi]: { width: 150, height: 150 },
+  [KIMM_FILES.chips.think]: { width: 150, height: 150 },
+  [KIMM_FILES.chips.offer]: { width: 150, height: 150 },
+  [KIMM_FILES.chips.signed]: { width: 150, height: 150 },
+  [KIMM_FILES.chips.refused]: { width: 150, height: 150 },
+  [KIMM_FILES.chips.rest]: { width: 150, height: 150 },
+  [KIMM_FILES.stills.hi]: { width: 720, height: 1033 },
+  [KIMM_FILES.stills.think]: { width: 720, height: 1096 },
+  [KIMM_FILES.stills.offer]: { width: 720, height: 1044 },
+  [KIMM_FILES.stills.signed]: { width: 720, height: 1042 },
+  [KIMM_FILES.stills.refused]: { width: 720, height: 1104 },
+  [KIMM_FILES.stills.rest]: { width: 720, height: 1032 },
+  [KIMM_FILES.field.still]: { width: 780, height: 652 },
+  [KIMM_FILES.field.wide]: { width: 1536, height: 1972 },
+};
 
 function shipped(file: string): KimmArt {
   const size = KIMM_ARRIVED[file];
@@ -146,15 +168,14 @@ function shipped(file: string): KimmArt {
   return { state: "ready", src: `/${file}`, width: size.width, height: size.height };
 }
 
+/** Her portrait: her mood's chip, a sheet whose one cell is the whole file. */
 function shippedPortrait(mood: KimmMood): KimmArt<KimmPortraitCell> {
-  const sheet = shipped(KIMM_FILES.keyMoods);
-  if (sheet.state === "missing" || KIMM_KEY_MOOD_CELLS === null) {
-    return { state: "missing", file: KIMM_FILES.keyMoods };
-  }
+  const chip = shipped(KIMM_FILES.chips[KIMM_ART_MOOD[mood]]);
+  if (chip.state === "missing") return chip;
   return {
     state: "ready",
-    sheet: { src: sheet.src, width: sheet.width, height: sheet.height },
-    cell: KIMM_KEY_MOOD_CELLS[KIMM_ART_MOOD[mood]],
+    sheet: { src: chip.src, width: chip.width, height: chip.height },
+    cell: [0, 0, chip.width, chip.height],
   };
 }
 
@@ -170,11 +191,11 @@ function byMood<T>(of: (mood: KimmMood) => T): Readonly<Record<KimmMood, T>> {
   };
 }
 
-/** Her art as the app ships it. Every piece is `missing` until her files arrive. */
+/** Her art as the app ships it. */
 export const KIMM_SHIPPED_ART: KimmArtSet = {
   portraits: byMood(shippedPortrait),
-  sections: byMood((mood) => shipped(KIMM_FILES.sections[KIMM_ART_MOOD[mood]])),
-  strip: shipped(KIMM_FILES.strip),
+  sections: byMood((mood) => shipped(KIMM_FILES.stills[KIMM_ART_MOOD[mood]])),
+  field: { still: shipped(KIMM_FILES.field.still), wide: shipped(KIMM_FILES.field.wide) },
 };
 
 /** Whether a piece of her art can be drawn. */

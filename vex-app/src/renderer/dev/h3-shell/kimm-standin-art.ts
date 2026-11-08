@@ -2,8 +2,8 @@
  * KIMM'S STAND-IN ART AS AN ART SET - the dev-only crops of the mockup
  * (`standins/manifest.ts`) in the shape every Kimm surface draws from
  * (`KimmArtSet`, `components/vex/kimm/kimm-assets.ts`), so the harness can
- * hand them to the real shell through `KimmArtProvider` while the app itself
- * ships every piece `missing` until her files arrive (plan row S4-18).
+ * hand them to the real shell through `KimmArtProvider`, beside the art the
+ * app itself ships (plan row S4-18; `?kimm=shipped` shows that instead).
  *
  * HARNESS ONLY, like the manifest it reads: nothing outside `dev/h3-shell/`
  * imports this module, and the build check refuses a production build that
@@ -11,9 +11,7 @@
  *
  * What maps where:
  *   - portraits: each mood's stand-in is its own 83 x 83 file, so each is a
- *     one-cell "sheet" whose cell is the whole file. Her real art is one
- *     sprite with a cell per drawn mood (`key-moods.webp`); the surface draws
- *     either the same way. Held is drawn from offer's crop, as the seam draws
+ *     one-cell "sheet" whose cell is the whole file, as her real chips are. Held is drawn from offer's crop, as the seam draws
  *     it from offer's file (`KIMM_ART_MOOD`), and the sheet dims it; the
  *     plate's own held crop, dimmed already, is not used. Signed has no crop
  *     on the plate, so it stays `missing`.
@@ -22,7 +20,10 @@
  *     no capture, so they stay `missing` here as in the app: her section then
  *     shows its ground and the glyph field with no figure, never another
  *     mood's figure.
- *   - strip: the closed strip's glyph field.
+ *   - field: the glyph field's baked frames have no stand-in; the harness
+ *     takes the app's own (`KIMM_SHIPPED_ART.field`, VEX Cloud's renders in
+ *     `public/art/kimm/`, which the harness's config serves too). The strip
+ *     is her section's own top 56, with no file of its own.
  *
  * The open crops carry the mockup's Hide Vex cell in their top-right corner
  * (`bakedIn`); her section draws its real corner key over that box.
@@ -30,6 +31,7 @@
 
 import {
   KIMM_ART_MOOD,
+  KIMM_SHIPPED_ART,
   type KimmArt,
   type KimmArtSet,
   type KimmImage,
@@ -72,5 +74,5 @@ export const KIMM_STANDIN_ART: KimmArtSet = {
     refused: section("refused"),
     rest: section("rest"),
   },
-  strip: { state: "ready", ...image(KIMM_STANDINS.strip) },
+  field: KIMM_SHIPPED_ART.field,
 };

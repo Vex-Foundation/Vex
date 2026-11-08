@@ -13,8 +13,8 @@
  *    until she first opens; the first open asks once, and a close and a
  *    second open never ask again.
  *  - CLOSED, THE STRIP (S4-06): the same key in the same corner says Show
- *    Vex and opens her; the field's frame stands in the strip; the fold is
- *    her clip alone.
+ *    Vex and opens her; the strip is her section's own top 56, with no file
+ *    of its own; the fold is her clip alone.
  *  - HIDE VEX (S4-07): a 420ms wipe on the clip and the push curve, a Web
  *    Animation (`kimm-wipe.ts`) between the insets the sheet rests her at;
  *    the words change at the press; the `closing` phase ends when the clip's
@@ -50,7 +50,7 @@ import {
 } from "../../../../lib/motion/index.js";
 
 import { KimmArtProvider } from "../kimm-art-context.js";
-import { KIMM_SHIPPED_ART, type KimmArtSet } from "../kimm-assets.js";
+import { KIMM_FILES, KIMM_SHIPPED_ART, type KimmArt, type KimmArtSet } from "../kimm-assets.js";
 import { KimmSection } from "../KimmSection.js";
 import { KIMM_PUSH_EASING, KIMM_SCAN_FADE_AT } from "../kimm-wipe.js";
 import { clearLayout, installFakeAnimations, layOut, type FakeAnimations } from "./fake-animations.js";
@@ -78,11 +78,23 @@ function rule(selector: string): string {
   return match[1] ?? "";
 }
 
-const FIGURE = { src: "/art/kimm/section-offer.webp", width: 860, height: 1206 };
+const FIGURE = { src: "/art/kimm/still-offer.webp", width: 720, height: 1044 };
 
+/** A piece whose file is not there. */
+const MISSING: KimmArt = { state: "missing", file: "art/kimm/absent.webp" };
+
+/** Her offer figure and nothing else: every other mood's section is missing. */
 const OFFER_ONLY: KimmArtSet = {
   ...KIMM_SHIPPED_ART,
-  sections: { ...KIMM_SHIPPED_ART.sections, offer: { state: "ready", ...FIGURE } },
+  sections: {
+    hi: MISSING,
+    think: MISSING,
+    offer: { state: "ready", ...FIGURE },
+    held: { state: "ready", ...FIGURE },
+    signed: MISSING,
+    refused: MISSING,
+    rest: MISSING,
+  },
 };
 
 function withArt(art: KimmArtSet, node: ReactNode): ReactNode {
@@ -115,9 +127,10 @@ describe("KimmSection, open and still (S4-04)", () => {
     expect(section().getAttribute("data-kimm-art")).toBe("missing");
   });
 
-  it("draws no figure at all from the art as the app ships it today", () => {
+  it("draws her real still for her mood from the art as the app ships it", () => {
     render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
-    expect(section().querySelector("img")).toBeNull();
+    expect(section().querySelector(".vex-kimm__figure")?.getAttribute("src")).toBe(`/${KIMM_FILES.stills.hi}`);
+    expect(section().getAttribute("data-kimm-art")).toBe("ready");
   });
 
   it("names her corner key for the action, spells the chord, and writes the choice", () => {
@@ -238,8 +251,6 @@ describe("KimmSection, her large art loads only when she opens (S4-05)", () => {
 });
 
 describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
-  const STRIP = { src: "/art/kimm/strip.webp", width: 628, height: 112 };
-  const WITH_STRIP: KimmArtSet = { ...OFFER_ONLY, strip: { state: "ready", ...STRIP } };
 
   it("keeps the same key in the same corner, now Show Vex with a down chevron, and it opens her", () => {
     const onOpenChange = vi.fn();
@@ -269,10 +280,11 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
     expect(section().hasAttribute("hidden")).toBe(false);
   });
 
-  it("shows the field's frame in the strip, and no figure she never opened for", () => {
-    render(withArt(WITH_STRIP, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />));
-    expect(section().querySelector(".vex-kimm__strip")?.getAttribute("src")).toBe(STRIP.src);
+  it("is her section's own top 56: no strip file, and no figure she never opened for", () => {
+    render(withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />));
+    expect(section().querySelector(".vex-kimm__strip")).toBeNull();
     expect(section().querySelector(".vex-kimm__figure")).toBeNull();
+    expect(section().querySelector(".vex-kimm__field")).not.toBeNull();
   });
 
   it("folds by its clip alone: her box is the same rule open and closed", () => {
@@ -352,7 +364,7 @@ describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => 
     closeFromOpen();
     expect(screen.getByRole("button", { name: "Show Vex" })).not.toBeNull();
     expect(section().getAttribute("data-kimm-phase")).toBe("closing");
-    // Her figure holds through the wipe; the strip's frame waits for its end.
+    // Her figure holds through the wipe and hides once it ends.
     expect(section().querySelector(".vex-kimm__figure")).not.toBeNull();
     const [clip] = engine.live(section());
     await act(async () => {
