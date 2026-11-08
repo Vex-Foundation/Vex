@@ -638,6 +638,7 @@ Already known for those plates:
 - First launch opens her. The sheet's question whether hiding her on the home page also hides her in the app does not apply to desktop.
 - There is no phone layout. The window floor is 1000 x 720, and the band borrows from the phone only between 1000 and 1023 (section 1.10).
 - One release carries the new look, with no flag.
+- **No Background row in Settings** (owner decision, 2026-11-08). It offered the person's own image for the print window of Vex's sidebar, which H3 no longer has. The row, its preview and its tests are gone from the renderer; the stored image and main's store stay as they are, unread, so nothing the person chose is lost.
 - **Parity.** The same states are rendered on both apps at 1440 x 900 and 1280 x 800 (the welcome, a swap waiting and Portfolio, each with her open and closed) and compared side by side (`e2e/h3-parity.spec.ts`). The differences in this section are expected in those captures; any other difference is a defect on one side.
 
 ### 4.11 What Cloud and desktop must agree on

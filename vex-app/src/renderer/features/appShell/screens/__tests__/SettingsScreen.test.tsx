@@ -173,14 +173,6 @@ vi.mock("../../../../lib/api/lighter-points.js", () => ({
     refresh: () => undefined,
   }),
 }));
-// The Background row has its own suite (SettingsBackdropRow.test.tsx); this
-// one owns routing and the register, so its hooks stub to "shipped artwork".
-vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
-  useShellBackdrop: () => ({ data: { ok: true, data: { backdrop: null } } }),
-  currentShellBackdrop: () => null,
-  usePickShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
-  useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
-}));
 // The runtime mode decides whether the native-only Local runtime row is
 // listed; the section itself has its own suite (LocalRuntimeSection.test.tsx).
 const runtimeMode = vi.hoisted(() => ({ native: false }));

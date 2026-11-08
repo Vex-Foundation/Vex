@@ -33,9 +33,9 @@ import { studioPlatform } from "../../studio/keybindings-labels.js";
 import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
 import { SettingsPreferences } from "../SettingsScreen/SettingsPreferences.js";
 
-// The Background row (SettingsBackdropRow, its own suite) reads the backdrop
-// through TanStack Query on mount; the group therefore renders under a
-// QueryClient with the bridge stubbed to "shipped artwork".
+// The retired Background row read the backdrop through TanStack Query; the
+// group still renders under a QueryClient, and the bridge's read is kept as a
+// spy that proves nothing on this page reads the stored image any more.
 const shellBackdropReadMock = vi.fn();
 
 function renderGroup(ui: ReactElement): ReturnType<typeof render> {
@@ -82,21 +82,19 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
-  it("mounts the Background row between the permission row and the Enter key, reading the backdrop once", async () => {
+  it("offers no Background row and reads no backdrop (owner decision, 2026-11-08)", async () => {
     renderGroup(<SettingsPreferences />);
+    expect(document.querySelector("[data-vex-settings-backdrop]")).toBeNull();
+    expect(screen.queryByText("Background")).toBeNull();
+    expect(screen.queryByText(/print window of Vex's sidebar/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Choose image" })).toBeNull();
+    // The permission row is followed straight by the Enter key.
     const rows = Array.from(
-      document.querySelectorAll(
-        "[data-vex-settings-permission], [data-vex-settings-backdrop], [data-vex-settings-enter]",
-      ),
+      document.querySelectorAll("[data-vex-settings-permission], [data-vex-settings-enter]"),
     ).map((row) => row.getAttributeNames().find((name) => name.startsWith("data-vex-settings-")));
-    expect(rows).toEqual([
-      "data-vex-settings-permission",
-      "data-vex-settings-backdrop",
-      "data-vex-settings-enter",
-    ]);
-    expect(screen.getByText(/in the print window of Vex's sidebar/)).not.toBeNull();
-    expect(await screen.findByRole("button", { name: "Choose image" })).not.toBeNull();
-    expect(shellBackdropReadMock).toHaveBeenCalledTimes(1);
+    expect(rows).toEqual(["data-vex-settings-permission", "data-vex-settings-enter"]);
+    await Promise.resolve();
+    expect(shellBackdropReadMock).not.toHaveBeenCalled();
   });
 
   it("the notifications row reads the typed uiStore slot and a click round-trips through its setter", () => {
@@ -135,7 +133,6 @@ describe("SettingsPreferences", () => {
     expect(titles).toEqual([
       "Show Vex",
       "Session permission",
-      "Background",
       "Enter key",
       "Notifications",
       "Price alert notifications",
