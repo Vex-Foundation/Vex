@@ -828,7 +828,7 @@ An error, a concern, sleep and the rest keep the rest line. The band's foot row 
 | TOTAL DEBIT, "Not available" | shown only when every part is known | desktop never shows a total it cannot add up |
 | "up to 10,000 USD per order, 50,000 USD a day", "Change in Settings" | left out | no spend limits (F04 has not started) |
 | ALL SIGNED FIELDS | same | |
-| "Tell Vex what to do instead" | same, for the reason field | the reason reaches Vex |
+| "Tell Vex what to do instead" | same, for the reason field, drawn as Cloud's instruction field (`CustomRow`): sans 16 / 1.45, wrapping and growing to 144 then scrolling, a row of at least 56 (40 on a short window) with 16 around the words, the ring on the whole row, and "{count} / 500" from 450 characters. It stays one line of text, as the old one-line field was: Enter and a pasted break add nothing, so the reason that travels with Reject is unchanged | the reason reaches Vex; desktop's cap is 500, not Cloud's 1,000 |
 | REJECT | same; "Click again to confirm reject" when armed | |
 | the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |
 | CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Two presses decide: the first arms the key for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |

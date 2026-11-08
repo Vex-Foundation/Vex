@@ -1969,7 +1969,7 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     const cells = Array.from(foot().children).map((child) =>
       child.getAttribute("data-vex-key") ?? child.getAttribute("data-vex-area") ?? child.tagName.toLowerCase(),
     );
-    expect(cells).toEqual(["input", "approval-failure", "reject", "approval-gate", "approve"]);
+    expect(cells).toEqual(["approval-reason", "approval-failure", "reject", "approval-gate", "approve"]);
     expect(screen.getByLabelText(REJECT_REASON_LABEL).getAttribute("placeholder")).toBe(REJECT_REASON_PLACEHOLDER);
   });
 
@@ -2020,6 +2020,46 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       expect.any(Object),
     );
     expect(mockApproveMutate).not.toHaveBeenCalled();
+  });
+
+  it("draws the reason as Cloud's instruction field: 16, wrapping and growing to 144, the ring on the row", () => {
+    renderDocked(makeSummary());
+    const field = screen.getByLabelText(REJECT_REASON_LABEL);
+    expect(field.tagName).toBe("TEXTAREA");
+    expect(field.getAttribute("maxlength")).toBe("500");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr__reason-field")).toContain("font-size: 16px");
+    expect(body(".vex-appr__reason-field")).toContain("max-height: 144px");
+    expect(body(".vex-appr__reason-field")).toContain("field-sizing: content");
+    expect(body(".vex-appr__reason-row:focus-within")).toContain("outline-offset: -2px");
+  });
+
+  it("keeps the reason one line, as before: a typed or pasted break adds nothing to what Reject sends", () => {
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    const field = screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "Use 100 USDC\ninstead\r\n" } });
+    expect(field.value).toBe("Use 100 USDCinstead");
+    // Enter adds no line and sends nothing.
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    field.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
+  });
+
+  it("counts the reason near desktop's 500 cap, and not before", () => {
+    renderDocked(makeSummary());
+    const field = screen.getByLabelText(REJECT_REASON_LABEL);
+    fireEvent.change(field, { target: { value: "a".repeat(449) } });
+    expect(dock.querySelector('[data-vex-area="approval-reason-count"]')).toBeNull();
+    fireEvent.change(field, { target: { value: "a".repeat(450) } });
+    expect(dock.querySelector('[data-vex-area="approval-reason-count"]')?.textContent).toBe("450 / 500");
   });
 
   it("never lets the reason ride along with an approve", () => {
@@ -2125,7 +2165,9 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       const block = /@media \(min-width: 1024px\) and \(max-height: 820px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
       expect(block).toMatch(/\.vex-appr__head \{\s*padding: 8px 0 10px;\s*\}/);
       expect(block).toMatch(/\.vex-appr__title \{\s*margin-top: 7px;\s*\}/);
-      expect(block).toMatch(/\.vex-appr__foot\[data-docked\] > input \{\s*height: 40px;\s*\}/);
+      expect(block).toMatch(
+        /\.vex-appr__foot\[data-docked\] > \.vex-appr__reason-row \{\s*min-height: 40px;\s*padding-block: 8px;\s*\}/,
+      );
       // The rows and the decision row keep their measures: nothing else steps down.
       expect(block).not.toMatch(/vex-appr__dl|> button|--vex-h3-bottom-h/);
     });
@@ -2146,7 +2188,9 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       expect(rule(".vex-appr__fail")).toContain("padding: 10px var(--vex-appr-inset)");
       expect(row).toContain("position: static");
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
-      expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
+      // Cloud's instruction row: at least 56 high, 16 around the words.
+      expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("min-height: 56px");
+      expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("padding: 16px var(--vex-appr-inset)");
       // Cloud's keys: 13 caps, the approve key 32 each side of its word.
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("font-size: 13px");
       expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain("padding: 0 32px");

@@ -119,7 +119,24 @@ const KEY_BASE =
 const ARMED_RING = "outline outline-2 outline-offset-[3px] outline-rule-ink";
 
 const REASON_INPUT =
-  "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 font-sans text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none disabled:text-ink-tertiary";
+  "block w-full min-w-0 resize-none border-0 bg-transparent font-sans text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:outline-none disabled:text-ink-tertiary";
+
+/**
+ * The reason field's counter shows from here (Cloud shows "{count} / 1,000"
+ * from 900, nine tenths of its cap; desktop's cap is 500).
+ */
+export const REJECT_REASON_COUNT_FROM = 450;
+
+/**
+ * The reason as a one-line field would hold it. The field wraps and grows
+ * like Cloud's instruction field, but it keeps an `<input>`'s value rule
+ * (HTML strips line breaks from a text input's value), so Enter and a pasted
+ * break add nothing and the reason that travels with Reject is exactly the
+ * text it always was.
+ */
+export function oneLineReason(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
 
 /**
  * THE REASON FIELD'S WORDS (docs/design/H3-DESKTOP.md section 4.3 and
@@ -275,16 +292,34 @@ export function ApprovalDecisionActions({
           </p>
         ) : null}
         {rejectReasonInput ? (
-          <input
-            type="text"
-            value={rejectReason}
-            onChange={(e) => onRejectReasonChange(e.target.value)}
-            disabled={inFlight}
-            maxLength={APPROVAL_REJECT_REASON_MAX}
-            aria-label={REJECT_REASON_LABEL}
-            placeholder={REJECT_REASON_PLACEHOLDER}
-            className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
-          />
+          // Cloud's instruction field (`CustomRow`, `AnswerField`): sans 16,
+          // wrapping and growing to 144, a row of at least 56 with 16 around
+          // the words and the ring on the whole row, and the count once the
+          // words near the cap. One line of text, as before (`oneLineReason`).
+          <div
+            data-vex-area="approval-reason"
+            className={`vex-appr__reason-row${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
+          >
+            <textarea
+              rows={1}
+              value={rejectReason}
+              onChange={(e) => onRejectReasonChange(oneLineReason(e.target.value))}
+              // Enter adds no line, as in a one-line field; it sends nothing.
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) e.preventDefault();
+              }}
+              disabled={inFlight}
+              maxLength={APPROVAL_REJECT_REASON_MAX}
+              aria-label={REJECT_REASON_LABEL}
+              placeholder={REJECT_REASON_PLACEHOLDER}
+              className={`vex-appr__reason-field ${REASON_INPUT}`}
+            />
+            {rejectReason.length >= REJECT_REASON_COUNT_FROM ? (
+              <span data-vex-area="approval-reason-count" className="vex-appr__count">
+                {rejectReason.length} / {APPROVAL_REJECT_REASON_MAX}
+              </span>
+            ) : null}
+          </div>
         ) : null}
         {/* Docked, the failure line is the row's own cell between the reason
             field and the keys (Cloud's dock: the instruction row, the alert,

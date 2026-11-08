@@ -579,6 +579,47 @@
   border-bottom: 1px solid var(--vex-alias-rule);
 }
 
+/* THE REASON FIELD (Cloud's instruction field, `CustomRow` and
+ * `AnswerField`; `styles/takeover.css` `.vx-tk-custom`): a row of its own
+ * with the words in sans 16 / 1.45, wrapping and growing with them up to 144
+ * high, then scrolling; the focus ring is on the whole row. Near the cap the
+ * count shows under the words, mono 12 muted, at the right. The row's size
+ * and inset are set where it stands: the docked row (6.) and the key row
+ * outside the dock (5b.). */
+.vex-appr__reason-row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.vex-appr__reason-row:focus-within {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__reason-field {
+  max-height: 144px;
+  margin: 0;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1.45;
+  field-sizing: content;
+  overflow-y: auto;
+}
+.vex-appr__reason-field::placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__count {
+  align-self: flex-end;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+
 /* 5b. THE KEY ROW OUTSIDE THE DOCK (Cloud 6f067702, `styles/cards.css`
  * `.vx-xc-foot`): on the Needs you page, in the global panel and on a card
  * whose band the chat's dock does not hold, the footer is a row of cells on
@@ -596,15 +637,9 @@
   min-height: 44px;
   padding: 0;
 }
-.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > input {
-  height: 44px;
-  padding: 0 var(--vex-appr-inset);
-  background: transparent;
-  border: 0;
-}
-.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > input:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > .vex-appr__reason-row {
+  min-height: 44px;
+  padding: 10px var(--vex-appr-inset);
 }
 .vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button {
   height: 44px;
@@ -661,7 +696,7 @@
  * While a card waits in a chat, the chat's bottom-row cell (the composer seat,
  * `SessionPanel`) holds the card's footer in its dock (`.vex-appr-dock`,
  * `ApprovalCard/approval-dock.tsx`) and the composer gives way. The footer is
- * then a grid of cells: the reason field across the top, 56 high where the
+ * then a grid of cells: the reason field across the top, at least 56 high where the
  * composer's strip stood, sans 18; under it the bottom row, 72 high
  * (`--vex-h3-bottom-h`): REJECT on the raised fill | the gate line | the
  * approve key in the one blue, 168 | 392 | 200 at 1440 as H3 measures them,
@@ -706,17 +741,11 @@
   background: var(--vex-alias-bg-base);
   border-top: 1px solid var(--vex-alias-rule);
 }
-.vex-appr__foot[data-docked] > input {
+.vex-appr__foot[data-docked] > .vex-appr__reason-row {
   grid-area: reason;
-  width: 100%;
-  height: 56px;
-  margin: 0;
-  padding: 0 var(--vex-appr-inset);
-  font-family: var(--font-sans);
-  font-size: 18px;
-  color: var(--vex-alias-label-primary);
+  min-height: 56px;
+  padding: 16px var(--vex-appr-inset);
   background: var(--vex-alias-bg-base);
-  border: 0;
   border-bottom: 1px solid var(--vex-alias-rule);
 }
 /* The failure line, docked: its own row between the reason field and the
@@ -728,13 +757,6 @@
 }
 .vex-appr__foot[data-docked] > .vex-appr__fail:empty {
   border: 0;
-}
-.vex-appr__foot[data-docked] > input::placeholder {
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-appr__foot[data-docked] > input:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
 }
 .vex-appr__foot[data-docked] > button {
   height: var(--vex-h3-bottom-h);
@@ -878,8 +900,9 @@
   .vex-appr__title {
     margin-top: 7px;
   }
-  .vex-appr__foot[data-docked] > input {
-    height: 40px;
+  .vex-appr__foot[data-docked] > .vex-appr__reason-row {
+    min-height: 40px;
+    padding-block: 8px;
   }
 }
 
