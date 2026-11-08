@@ -1147,7 +1147,10 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     expect(title).toContain("font-size: 18px");
     expect(title).toContain("line-height: 1.3");
     expect(title).toContain("letter-spacing: -0.01em");
-    expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 15px");
+    // Cloud's `.vx-tk-warn`: 14 / 1.45, 6 under the sentence.
+    expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 14px");
+    expect(ruleBody(".vex-appr__consequence")).toContain("line-height: 1.45");
+    expect(ruleBody(".vex-appr__consequence")).toContain("margin: 6px 0 0");
   });
 });
 

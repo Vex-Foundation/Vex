@@ -45,7 +45,7 @@
 /* 1. THE HEAD: one cell, the eyebrow row, the sentence, the consequence line
  * and who asked. Measured at 1440 (section 1.7): the eyebrow row's 24px line
  * (the stamp's height, Cloud's tag) starts 10 under the card's top rule, the sentence 9
- * under it, the consequence 4 under that, and the first rule 14 under the
+ * under it, the consequence 6 under that, and the first rule 14 under the
  * last line. */
 .vex-appr__head {
   padding: 10px 0 14px;
@@ -165,12 +165,13 @@
   color: var(--vex-alias-label-primary);
 }
 
-/* The consequence line: sans 15, ink 2. */
+/* The consequence line (Cloud's `.vx-tk-warn`): sans 14 / 1.45, ink 2, 6
+ * under the sentence. */
 .vex-appr__consequence {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   padding: 0 var(--vex-appr-inset);
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 14px;
+  line-height: 1.45;
   color: var(--vex-alias-label-secondary);
 }
 
