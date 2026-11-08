@@ -233,10 +233,19 @@
   font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
-/* A value the tool did not quote: the word in ink 2, as H3 sets "Not
- * available", never a figure and never a zero. */
+/* A row's note (Cloud's `.vx-fr-note`): its own line under the value, 11
+ * muted, 3 above ("Slippage limit 0.5%" under the minimum receipt). */
+.vex-appr__note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A value the tool did not quote: the word in muted, as Cloud sets "Not
+ * available" (`.vx-fr[data-na] > dd`), never a figure and never a zero. */
 .vex-appr__missing {
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__wrap {
   min-width: 0;

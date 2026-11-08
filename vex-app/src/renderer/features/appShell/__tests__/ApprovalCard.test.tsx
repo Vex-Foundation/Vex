@@ -1350,9 +1350,10 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     renderCard(SWAP, false);
     const rows = moneyRows();
     expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
-    expect(rows[0]?.value).toBe("200 USDC · on Base");
-    expect(rows[1]?.value).toBe("0.05714 ETH · quoted");
-    expect(rows[2]?.value).toBe("0.05686 ETH · slippage limit 0.5%");
+    // A note is its own line under the value (Cloud's row note), so its inline "·" is not drawn.
+    expect(rows[0]?.value).toBe("200 USDC on Base");
+    expect(rows[1]?.value).toBe("0.05714 ETH quoted");
+    expect(rows[2]?.value).toBe("0.05686 ETH slippage limit 0.5%");
     expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%)");
     expect(rows[4]?.value).toBe("Not available");
     // The network fee is never quoted, so the total stays hidden.
@@ -1368,6 +1369,19 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       // The register sets the caps; the source stays words.
       expect(row.label).not.toBe(row.label.toUpperCase());
     }
+  });
+
+  it("draws a row's note on its own line at 11 muted, and Not available muted (Cloud's rows)", () => {
+    renderCard(SWAP, false);
+    const rows = moneyRows();
+    const note = rows[2]?.dd.querySelector(".vex-appr__note");
+    expect(note?.textContent).toBe("slippage limit 0.5%");
+    const sheet = APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(ruleBody(".vex-appr__note")).toContain("display: block");
+    expect(ruleBody(".vex-appr__note")).toContain("font-size: 11px");
+    expect(ruleBody(".vex-appr__note")).toContain("margin-top: 3px");
+    expect(ruleBody(".vex-appr__missing")).toContain("color: var(--vex-alias-label-tertiary)");
+    expect(sheet).toContain(".vex-appr__missing");
   });
 
   it("sets every figure in mono and keeps 'Not available' a word, never a figure", () => {

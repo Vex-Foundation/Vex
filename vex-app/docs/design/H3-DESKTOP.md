@@ -819,7 +819,7 @@ An error, a concern, sleep and the rest keep the rest line. The band's foot row 
 | FROM, "Your trading wallet on Base", "Available 1,240.55 USDC" | left out | the card has no source wallet or balance today |
 | AMOUNT TO SWAP, an editable field, and "At most what you hold is sold..." | YOU SEND, as signed | the card shows the signed arguments; a new amount is a new proposal |
 | QUOTED PRICE | left out | no separate quoted price |
-| YOU RECEIVE, "Not available" | same | |
+| YOU RECEIVE, "Not available" | same, in muted (Cloud's `.vx-fr[data-na]`); a row's note ("on Base", "slippage limit 0.5%", the fee's percent) is its own line under the value, 11 muted, 3 above (`.vx-fr-note`) | |
 | SLIPPAGE LIMIT | MINIMUM RECEIPT, with the slippage limit in its note | desktop's real line |
 | FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it ("Vex fee 0.5 USDC (0.25%)"), on a swap and a bridge; on a transfer, FEES is the network fee and reads "Not available" | Cloud's rows (DG5-06): a transfer has no Vex fee, so its one fee row is the network fee |
 | NETWORK FEE, "Not available" | same, on a swap and a bridge; no second row on a transfer | one unknown said once (DG5-06); the word is DRAFT in Cloud |

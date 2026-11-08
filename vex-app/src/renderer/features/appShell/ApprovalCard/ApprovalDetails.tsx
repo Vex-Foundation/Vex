@@ -280,7 +280,7 @@ function ApprovalExpiry({ expiresAt }: { readonly expiresAt: string }): JSX.Elem
   );
 }
 
-/** One money line's value: figures in mono, words in sans, notes muted. */
+/** One money line's value: figures in mono, words in sans, a note muted on its own line under it. */
 function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
   const parts: ReactNode[] = [];
   line.parts.forEach((part, index) => {
@@ -293,7 +293,13 @@ function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
         parts.push(<span key={index}>{part.text}</span>);
         break;
       case "note":
-        parts.push(<span key={index} className="vex-appr__sub">{part.text}</span>);
+        // Cloud's row note (`.vx-fr-note`): its own line under the value, so
+        // the inline separator the words carry ("· on Base") is not drawn.
+        parts.push(
+          <span key={index} className="vex-appr__note">
+            {part.text.replace(/^·\s*/, "")}
+          </span>,
+        );
         break;
       case "missing":
         parts.push(
