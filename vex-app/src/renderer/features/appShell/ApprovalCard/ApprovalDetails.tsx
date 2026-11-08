@@ -26,6 +26,7 @@
  * the approval does not carry renders no row at all, never a placeholder.
  */
 
+import { useEffect, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import type {
   ApprovalPreview,
@@ -36,7 +37,7 @@ import { approvalMoneyLines, MONEY_NOT_AVAILABLE, type MoneyLine } from "./appro
 import {
   actionKindWords,
   approvalConsequence,
-  approvalExpiryWords,
+  approvalExpiryCountdown,
   approvalEyebrowWord,
   approvalSentence,
   isUserMcpApproval,
@@ -45,6 +46,7 @@ import {
   riskTagWord,
 } from "./approval-sentence.js";
 import { LineChevronRight } from "../../../components/icons/line/index.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { Stamp, Tag } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import {
@@ -245,16 +247,36 @@ function toolLabel(namespace: string | null, toolName: string): string {
   return namespace !== null ? `${namespace}:${toolName}` : toolName;
 }
 
-/** A line of words with its figures set in mono ("Expires at 15:30 UTC"). */
-function withFigures(text: string): ReactNode[] {
-  return text.split(/(\d(?:[\d:.,]*\d)?)/).map((part, index) =>
-    index % 2 === 1 ? (
-      <span key={index} className="vex-num">
-        {part}
-      </span>
-    ) : (
-      part
-    ),
+/**
+ * THE LIVE EXPIRY (Cloud's `TakeoverTimer`, H3-DESKTOP.md Appendix A.7): the
+ * strip counts down to the approval's own bound `expiresAt`, "Expires in 14
+ * min", then "Expires in m:ss" for the last two minutes, in ink for the last
+ * one, "Expired" at zero. `role="timer"`, which is not live, so it never
+ * talks over the card. It wakes at the next change of its words only, and
+ * again when the window comes back into view. Words only: the deadline is
+ * the engine's, and the keys do not read this.
+ */
+function ApprovalExpiry({ expiresAt }: { readonly expiresAt: string }): JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now());
+  const countdown = approvalExpiryCountdown(expiresAt, now);
+  const nextChangeMs = countdown?.nextChangeMs ?? null;
+  useEffect(() => {
+    if (nextChangeMs === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), nextChangeMs);
+    return () => clearTimeout(timer);
+  }, [now, nextChangeMs]);
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+  if (countdown === null) return null;
+  return (
+    <span role="timer" data-warn={countdown.warn ? "" : undefined} className="vex-appr__expiry">
+      {countdown.text}
+    </span>
   );
 }
 
@@ -305,6 +327,11 @@ export interface ApprovalDetailsProps {
    * light in the approvals flow; reject never sets it.
    */
   readonly signedGlint?: boolean;
+  /**
+   * A decision is running: the strip's square blinks (`ongoing`) instead of
+   * the target (`warning`, your move). Paint only.
+   */
+  readonly busy?: boolean;
 }
 
 export function ApprovalDetails({
@@ -315,6 +342,7 @@ export function ApprovalDetails({
   criticalArgs,
   projectName = null,
   signedGlint = false,
+  busy = false,
 }: ApprovalDetailsProps): JSX.Element {
   const actorLine = approvalActorLine({
     origin: summary.origin,
@@ -326,7 +354,6 @@ export function ApprovalDetails({
   const realFunds = !isUserMcpApproval(summary);
   const consequence = approvalConsequence(summary);
   const risks = riskSentences(summary);
-  const expiry = summary.expiresAt === null ? null : approvalExpiryWords(summary.expiresAt, Date.now());
   const moneyLines = approvalMoneyLines(summary);
   const orderFacts = criticalArgs === null ? null : lighterOrderFacts(criticalArgs);
   const curated =
@@ -410,9 +437,13 @@ export function ApprovalDetails({
             does not draw here, because both are bound and both decide how
             the person should read the card: the expiry and the risk tag. */}
         <header className="vex-appr__top">
+          {/* THE STATUS SQUARE (Cloud's strip `StateDot`): the target while
+              the card waits for you, the blinking square while a decision
+              runs. The eyebrow carries the meaning. */}
+          <StateSquare state={busy ? "ongoing" : "warning"} className="vex-appr__sq" />
           <span className="vex-appr__eyebrow">{approvalEyebrowWord(summary)}</span>
           <span className="vex-appr__sp" />
-          {expiry !== null ? <span className="vex-appr__expiry">{withFigures(expiry)}</span> : null}
+          {summary.expiresAt !== null ? <ApprovalExpiry expiresAt={summary.expiresAt} /> : null}
           {riskTag !== null ? (
             <Tag data-testid="risk-chip" quiet={!riskTagIsInk(summary.riskLevel)} className="shrink-0">
               {riskTag}

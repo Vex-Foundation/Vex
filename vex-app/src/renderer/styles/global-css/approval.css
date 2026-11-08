@@ -71,10 +71,18 @@
   flex: none;
   color: var(--vex-alias-label-primary);
 }
-/* The act, "Confirm this swap": sans 13 caps, muted, tracked (section 2.3). */
+/* The strip's status square (Cloud's `StateDot` in `.vx-tk-strip`): first in
+ * the row, the target while the card waits, the blinking square while a
+ * decision runs (`StateSquare`, marks.css). */
+.vex-appr__sq {
+  flex: none;
+}
+/* The act, "Confirm this swap": sans 12 / 1.2 caps, muted, tracked (Cloud's
+ * `.vx-tk-title`). */
 .vex-appr__eyebrow {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.2;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -82,23 +90,34 @@
 .vex-appr__sp {
   flex: 1;
 }
+/* The live expiry (Cloud's `.vx-tk-timer`): 12 caps muted, tabular figures at
+ * 0.04em; the last minute in ink. */
 .vex-appr__expiry {
-  font-size: 13px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-appr__expiry .vex-num {
-  font-size: 12.5px;
+.vex-appr__expiry[data-warn] {
+  color: var(--vex-alias-label-primary);
 }
-/* MAINNET and the stamp, held together as one unit of the row. */
+.vex-appr__expiry .vex-num {
+  font-size: 12px;
+}
+/* MAINNET and the stamp, held together as one unit of the row, 18 apart
+ * (Cloud's `.vx-tk-pair`). */
 .vex-appr__funds {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
 }
-/* MAINNET: a statement in ink caps beside the stamp, never a menu. */
+/* MAINNET: a statement in ink caps 12 beside the stamp, never a menu
+ * (Cloud's `.vx-tk-net`). */
 .vex-appr__net {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;

@@ -22,7 +22,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -1093,13 +1093,15 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     });
   }
 
-  it("names the act in the eyebrow, as H3 draws it, with no status swatch beside it", () => {
+  it("names the act in the eyebrow, as H3 draws it, after the strip's state square and no R3 swatch", () => {
     renderCard(makeSummary(), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
     const eyebrow = header?.querySelector(".vex-appr__eyebrow");
     // Sentence case in the source; the eyebrow's style sets the caps.
     expect(eyebrow?.textContent).toBe("Confirm this transfer");
-    expect(header?.firstElementChild).toBe(eyebrow);
+    // Cloud's strip: the state square first, then the eyebrow.
+    expect(header?.firstElementChild?.classList.contains("vex-sq")).toBe(true);
+    expect(header?.firstElementChild?.nextElementSibling).toBe(eyebrow);
     expect(header?.textContent).not.toContain("Approval needed");
     expect(header?.querySelector('.vex-swatch[data-s="awaiting"]')).toBeNull();
     expect(header?.innerHTML).not.toContain("--vex-pin");
@@ -1136,7 +1138,7 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
   it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at Cloud's 18 / 1.3", () => {
     for (const selector of [".vex-appr__eyebrow", ".vex-appr__net"]) {
       const body = ruleBody(selector);
-      expect(body).toContain("font-size: 13px");
+      expect(body).toContain("font-size: 12px");
       expect(body).toContain("text-transform: uppercase");
       expect(body).toContain("letter-spacing: var(--tracking-label)");
       expect(body).not.toContain("--font-mono");
@@ -1203,8 +1205,76 @@ describe("ApprovalCard, the H3 head", () => {
   it("keeps the expiry and the risk tag in the eyebrow row, read from the approval", () => {
     renderCard(makeSummary({ expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
-    expect(header?.querySelector(".vex-appr__expiry")?.textContent).toMatch(/^Expires (at )?.+ UTC$/);
+    const timer = header?.querySelector(".vex-appr__expiry");
+    expect(timer?.textContent).toBe("Expires in 10 min");
+    expect(timer?.getAttribute("role")).toBe("timer");
     expect(header?.contains(screen.getByTestId("risk-chip"))).toBe(true);
+  });
+
+  it("counts the expiry down live, m:ss in ink for the last minute, and never touches the keys", () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.UTC(2026, 9, 17, 9);
+      vi.setSystemTime(start);
+      renderCard(
+        makeSummary({ riskLevel: "info", actionKind: "read", expiresAt: new Date(start + 3 * 60_000).toISOString() }),
+        false,
+      );
+      const timer = (): Element | null => screen.queryByRole("timer");
+      // One act per second, so each wake renders and schedules the next.
+      const tick = (ms: number): void => {
+        for (let left = ms; left > 0; left -= 1000) {
+          act(() => {
+            vi.advanceTimersByTime(Math.min(1000, left));
+          });
+        }
+      };
+      expect(timer()?.textContent).toBe("Expires in 3 min");
+      tick(60_000);
+      expect(timer()?.textContent).toBe("Expires in 2:00");
+      expect(timer()?.hasAttribute("data-warn")).toBe(false);
+      tick(75_000);
+      expect(timer()?.textContent).toBe("Expires in 0:45");
+      expect(timer()?.hasAttribute("data-warn")).toBe(true);
+      tick(45_000);
+      expect(timer()?.textContent).toBe("Expired");
+      // Words only: the keys stay exactly as they were; the engine owns the deadline.
+      expect((screen.getByRole("button", { name: "Approve transfer" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leads the strip with the status square: the target while it waits, the blink while a decision runs", () => {
+    renderCard(makeSummary(), false);
+    const header = document.querySelector('[data-vex-area="approval-card"] header');
+    const square = header?.firstElementChild;
+    expect(square?.classList.contains("vex-sq")).toBe(true);
+    expect(square?.getAttribute("data-state")).toBe("warning");
+    expect(square?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("sets the strip at Cloud's measures: the eyebrow and MAINNET 12 caps, the pair 18 apart, the timer tabular", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr__eyebrow")).toContain("font-size: 12px");
+    expect(body(".vex-appr__net")).toContain("font-size: 12px");
+    expect(body(".vex-appr__funds")).toContain("gap: 18px");
+    expect(body(".vex-appr__expiry")).toContain("font-variant-numeric: tabular-nums");
+    expect(body(".vex-appr__expiry")).toContain("letter-spacing: 0.04em");
+    expect(body(".vex-appr__expiry[data-warn]")).toContain("color: var(--vex-alias-label-primary)");
+  });
+
+  it("blinks the strip's square while the decision is in flight", () => {
+    approvePending = true;
+    renderCard(makeSummary(), false);
+    const square = document.querySelector('[data-vex-area="approval-card"] header > .vex-sq');
+    expect(square?.getAttribute("data-state")).toBe("ongoing");
   });
 
   it("puts no em or en dash in the head", () => {

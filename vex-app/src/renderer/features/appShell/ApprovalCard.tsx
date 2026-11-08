@@ -431,6 +431,7 @@ export function ApprovalCard({
           criticalArgs={criticalArgs}
           projectName={projectName}
           signedGlint={signedGlint}
+          busy={approve.isPending || reject.isPending || decision === "approving" || decision === "rejecting"}
         />
         {decisionDock === null ? decisionActions : createPortal(decisionActions, decisionDock)}
       </div>
