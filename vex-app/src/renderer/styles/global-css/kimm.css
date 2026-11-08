@@ -368,57 +368,48 @@ html[data-still] .vex-kimm__key {
 }
 
 /* ---- the first close's hint (sections 2.4 and 3.5; S4-15) ----
- * "Show Vex" and its keycaps, larger than the key's own and in title case,
- * under the Vex key's state cell, over Vex's column only (the column clips
- * it), for 2.4 seconds (`KIMM_HINT_MS`, a JS timer with no CSS twin: the hint
- * leaves with its element). It fades in on the entrance curve; under reduced
- * motion and Save-Data it simply stands. It takes no pointer. */
+ * "Show Vex" and its keycaps on the tooltip plate, as VEX Cloud's `.vx-vk-tip`
+ * draws it: under the Vex key at Cloud's top calc(100% + 8px), which here is
+ * 8px into the column (the column starts at the key's foot), and left 88 (the
+ * 76 portrait cell plus 12), over Vex's column only (the column clips it), for
+ * 2.4 seconds (`KIMM_HINT_MS`, a JS timer with no CSS twin: the hint leaves
+ * with its element). Padding 8 10, 12px at 0.02em, line height 1, no fixed
+ * height and no fade: it simply stands, in every motion setting. Its keycaps
+ * are Cloud's tooltip caps: 22 high, 11px at 0.04em, ink-2, a 1px chosen rule,
+ * 3 apart, 12 after the name. It takes no pointer. */
 .vex-kimm-hint {
   position: absolute;
   z-index: 5;
-  top: 0;
-  left: 76px;
-  display: inline-flex;
-  height: 44px;
+  top: 8px;
+  left: 88px;
+  display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 16px;
-  background: var(--vex-alias-bg-overlay);
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--vex-alias-tooltip-bg);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
   pointer-events: none;
-  animation: vex-kimm-hint-in var(--vex-duration-base) var(--vex-ease-out) both;
+}
+.vex-kimm-hint__name {
+  margin-right: 6px;
 }
 .vex-kimm-hint__caps {
-  display: inline-flex;
-  gap: 4px;
+  display: flex;
+  gap: 3px;
 }
 .vex-kimm-hint__cap {
-  display: inline-flex;
-  min-width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 7px;
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0 6px;
   border: 1px solid var(--vex-alias-rule-chosen);
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-sans);
-  font-size: 14px;
-}
-@keyframes vex-kimm-hint-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vex-kimm-hint {
-    animation: none;
-  }
-}
-html[data-still] .vex-kimm-hint {
-  animation: none;
+  color: var(--vex-alias-label-secondary);
+  font: 400 11px / 1 var(--font-sans);
+  letter-spacing: 0.04em;
 }
