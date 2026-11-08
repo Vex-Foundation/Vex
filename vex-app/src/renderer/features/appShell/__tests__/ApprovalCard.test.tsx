@@ -1845,6 +1845,66 @@ describe("ApprovalCard, every kind in the same frame", () => {
  * same footer with the same state, so every gate the card keeps inside itself
  * holds docked too, and these cases press the docked keys to prove it.
  */
+describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
+  const BRIDGE = {
+    toolName: "execute_tool",
+    preview: {
+      toolName: "swap.execute",
+      namespace: "kyberswap",
+      criticalArgs: { toolId: "kyberswap.swap.execute", chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "200" },
+    },
+  } as const;
+
+  /** Lays the card out: every row's bottom at `rowBottom`, the scroller ending at 500, the footer's top at 600. */
+  function layoutWith(rowBottom: number): () => void {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number): DOMRect =>
+        ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      if (this.matches(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt")) return box(rowBottom - 34, rowBottom);
+      if (this.matches('[data-vex-area="approval-foot"]')) return box(600, 672);
+      return box(0, 500);
+    });
+    return () => spy.mockRestore();
+  }
+
+  function renderScrolled(): void {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <div style={{ overflowY: "auto" }}>
+          <ApprovalCard summary={makeSummary(BRIDGE)} sessionId={SESSION} focusOnMount={false} />
+        </div>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("says how many rows are out of view, over the keys and hidden from screen readers", () => {
+    const restore = layoutWith(900);
+    try {
+      renderScrolled();
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      const rows = document.querySelectorAll(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt").length;
+      expect(rows).toBeGreaterThan(1);
+      expect(cue?.textContent).toBe(`${rows} more lines below`);
+      expect(cue?.getAttribute("aria-hidden")).toBe("true");
+      // The footer's first row: over the keys, never over a row.
+      expect(cue?.parentElement?.getAttribute("data-vex-area")).toBe("approval-foot");
+      expect(cue?.parentElement?.firstElementChild).toBe(cue);
+    } finally {
+      restore();
+    }
+  });
+
+  it("draws nothing while every row is in view", () => {
+    const restore = layoutWith(200);
+    try {
+      renderScrolled();
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("ApprovalCard, its decision row docked in the shell's bottom row", () => {
   let dock: HTMLElement;
   beforeEach(() => {

@@ -68,6 +68,7 @@ import { approvalGateLine, approvalReviewWord } from "./ApprovalCard/approval-se
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
 import { APPROVING_WORD, ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
 import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
+import { ClipCue, useRowsBelow } from "./ApprovalCard/clip-cue.js";
 
 const CONFIRM_RESET_MS = 4_000;
 
@@ -198,6 +199,9 @@ export function ApprovalCard({
   const approve = useApprove();
   const reject = useReject();
   const rejectRef = useRef<HTMLButtonElement | null>(null);
+  // The card's box, for the clip cue's measure (display only).
+  const cardRef = useRef<HTMLElement | null>(null);
+  const rowsOutOfView = useRowsBelow(cardRef, layout === "card" ? decisionDock : null, layout === "card");
 
   const isHighRisk = useMemo(
     () => classifyHighRisk(summary),
@@ -398,12 +402,14 @@ export function ApprovalCard({
       wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
       rejectReasonInput={summary.origin !== "desk"}
       failure={inlineError}
+      cue={<ClipCue below={rowsOutOfView} />}
       dock={docked ? { labelledBy: titleId, gateLine: approvalGateLine(isHighRisk, CONFIRM_RESET_MS) } : null}
     />
   );
 
   return (
     <section
+      ref={cardRef}
       role="region"
       // Cloud's card: named by the eyebrow, described by the sentence, busy
       // while a decision runs. No card-wide live region (module note).

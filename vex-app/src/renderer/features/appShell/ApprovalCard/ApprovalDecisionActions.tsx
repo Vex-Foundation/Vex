@@ -26,7 +26,7 @@
  * label, handler and guard below is the one the card draws inside itself.
  */
 
-import type { JSX, RefObject } from "react";
+import type { JSX, ReactNode, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
 import { useInitialFocusRef } from "../../../components/ui/dialog.js";
 import { Swatch } from "../../../components/ui/swatch.js";
@@ -94,6 +94,11 @@ export interface ApprovalDecisionActionsProps {
    * reason field and the keys. Omitted, no line is drawn here.
    */
   readonly failure?: string | null;
+  /**
+   * The clip cue (`ClipCue`, "{n} more lines below"), drawn as the footer's
+   * first row while rows of the card are out of view; nothing otherwise.
+   */
+  readonly cue?: ReactNode;
 }
 
 // THE KEYS (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
@@ -209,6 +214,7 @@ export function ApprovalDecisionActions({
   rejectReasonInput = true,
   dock = null,
   failure,
+  cue = null,
 }: ApprovalDecisionActionsProps): JSX.Element {
   // The Reject key keeps its own ref (the card's first-mount focus) and names
   // itself the initial focus: one ref does both, see `useInitialFocusRef`.
@@ -254,6 +260,9 @@ export function ApprovalDecisionActions({
         aria-labelledby={dock?.labelledBy}
         className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
       >
+        {/* The clip cue, first: under the card's visible rows and over the
+            keys, never over a row. */}
+        {cue}
         {dock === null ? (
           <p role="status" data-vex-area="approval-status" className="sr-only">
             {statusWords}
