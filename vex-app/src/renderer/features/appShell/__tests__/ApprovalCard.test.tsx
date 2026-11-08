@@ -1270,6 +1270,28 @@ describe("ApprovalCard, the H3 head", () => {
     expect(body(".vex-appr__expiry[data-warn]")).toContain("color: var(--vex-alias-label-primary)");
   });
 
+  it("is named by its eyebrow and described by its sentence, with no card-wide live region", () => {
+    renderCard(makeSummary(), false);
+    const card = document.querySelector<HTMLElement>('[data-vex-area="approval-card"]') as HTMLElement;
+    expect(screen.getByRole("region", { name: "Confirm this transfer" })).toBe(card);
+    const sentence = screen.getByRole("heading", { level: 3 });
+    expect(card.getAttribute("aria-describedby")).toBe(sentence.id);
+    expect(card.hasAttribute("aria-live")).toBe(false);
+    expect(card.hasAttribute("aria-busy")).toBe(false);
+    // The footer's status is mounted from the start, empty, so its first words are said.
+    const status = card.querySelector('[data-vex-area="approval-status"]');
+    expect(status?.getAttribute("role")).toBe("status");
+    expect(status?.textContent).toBe("");
+  });
+
+  it("says the running decision through the footer's status and marks the card busy", () => {
+    approvePending = true;
+    renderCard(makeSummary(), false);
+    const card = document.querySelector<HTMLElement>('[data-vex-area="approval-card"]') as HTMLElement;
+    expect(card.getAttribute("aria-busy")).toBe("true");
+    expect(card.querySelector('[data-vex-area="approval-status"]')?.textContent).toBe("Approving…");
+  });
+
   it("blinks the strip's square while the decision is in flight", () => {
     approvePending = true;
     renderCard(makeSummary(), false);
@@ -1867,6 +1889,14 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe(
       "Two presses decide: the first arms the key for 4 s.",
     );
+  });
+
+  it("makes the middle cell the card's status: the gate line at rest, the running decision's word while it runs", () => {
+    rejectPending = true;
+    renderDocked(makeSummary());
+    const gate = dock.querySelector('[data-vex-area="approval-gate"]');
+    expect(gate?.getAttribute("role")).toBe("status");
+    expect(gate?.textContent).toBe("Rejecting…");
   });
 
   it("says nothing signs until you approve on a card that decides on one press", () => {

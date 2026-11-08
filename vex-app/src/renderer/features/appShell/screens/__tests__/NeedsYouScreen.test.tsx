@@ -330,9 +330,13 @@ describe("NeedsYouScreen: the page", () => {
     const card = cardOf(newer.id);
     expect(card.hasAttribute("data-vex-real-funds")).toBe(true);
     // The same approval can render inline in the session under the page: its
-    // title id carries the "global" variant so aria-labelledby stays unique.
+    // ids carry the "global" variant so aria-labelledby stays unique. The card
+    // is named by its eyebrow and described by its sentence (Cloud's card).
+    const eyebrowId = `approval-card-${newer.id}-global-eyebrow`;
     const titleId = `approval-card-${newer.id}-global-title`;
-    expect(card.getAttribute("aria-labelledby")).toBe(titleId);
+    expect(card.getAttribute("aria-labelledby")).toBe(eyebrowId);
+    expect(card.getAttribute("aria-describedby")).toBe(titleId);
+    expect(document.getElementById(eyebrowId)).not.toBeNull();
     expect(document.getElementById(titleId)).not.toBeNull();
     expect(cardOf(older.id).hasAttribute("data-vex-real-funds")).toBe(false);
   });

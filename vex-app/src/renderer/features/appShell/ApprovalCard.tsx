@@ -48,8 +48,11 @@
  *     retry a dangerous action.
  *   - `Result.ok === false` surfaces as an inline error (TanStack `isError`
  *     does not catch application-level `Result` failures: Codex F3 #1).
- *   - `aria-live="polite"` so screen readers announce the card without
- *     stealing focus from existing content.
+ *   - Named as Cloud names its card (`TakeoverCard.tsx`): by the eyebrow
+ *     ("Confirm this swap"), described by the sentence, `aria-busy` while a
+ *     decision runs. No card-wide live region: what changes is said by the
+ *     footer's `role="status"` (the in-flight and settled words) and the
+ *     failure line's `role="alert"`, never the whole card at once.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -321,6 +324,7 @@ export function ApprovalCard({
   const titleId = `approval-card-${summary.id}${
     idVariant ? `-${idVariant}` : ""
   }-title`;
+  const eyebrowId = `approval-card-${summary.id}${idVariant ? `-${idVariant}` : ""}-eyebrow`;
   const previewTool = summary.preview?.toolName ?? null;
   const namespace = summary.preview?.namespace ?? null;
   const toolName = previewTool ?? summary.toolName ?? "(unknown tool)";
@@ -331,13 +335,15 @@ export function ApprovalCard({
 
   const settledDecision = decision === "approved" || decision === "rejected" ? decision : null;
   const rejectPending = reject.isPending || decision === "rejecting";
+  const approvePending = approve.isPending || decision === "approving";
+  const busy = approvePending || rejectPending;
 
   if (layout === "row") {
     return (
       <section
         role="region"
         aria-labelledby={titleId}
-        aria-live="polite"
+        aria-busy={approve.isPending || rejectPending || undefined}
         data-vex-area="approval-card"
         data-vex-approval-layout="row"
         data-approval-id={summary.id}
@@ -386,7 +392,7 @@ export function ApprovalCard({
       approveLabel={approveLabel}
       confirmApproveLabel={confirmApproveLabel}
       pendingApproveLabel={pendingApproveLabel}
-      approvePending={approve.isPending || decision === "approving"}
+      approvePending={approvePending}
       rejectPending={rejectPending}
       settledDecision={settledDecision}
       wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
@@ -399,8 +405,11 @@ export function ApprovalCard({
   return (
     <section
       role="region"
-      aria-labelledby={titleId}
-      aria-live="polite"
+      // Cloud's card: named by the eyebrow, described by the sentence, busy
+      // while a decision runs. No card-wide live region (module note).
+      aria-labelledby={eyebrowId}
+      aria-describedby={titleId}
+      aria-busy={busy || undefined}
       data-vex-area="approval-card"
       data-vex-approval-layout="card"
       // Where this card's decision row is drawn: in the shell's bottom row,
@@ -431,7 +440,8 @@ export function ApprovalCard({
           criticalArgs={criticalArgs}
           projectName={projectName}
           signedGlint={signedGlint}
-          busy={approve.isPending || reject.isPending || decision === "approving" || decision === "rejecting"}
+          eyebrowId={eyebrowId}
+          busy={busy}
         />
         {decisionDock === null ? decisionActions : createPortal(decisionActions, decisionDock)}
       </div>

@@ -227,6 +227,19 @@ export function ApprovalDecisionActions({
     ? "Approved"
     : approveArmed ? "Confirm approve" : approveLabel;
   const failureLine = failure === undefined ? null : <ApprovalFailureLine error={failure} />;
+  // THE STATUS (Cloud's `.vx-tk-status`, `role="status"`, present from
+  // mount): what the decision is doing, said once as it changes, since the
+  // card is no live region of its own. Docked, it is the middle cell, which
+  // reads the gate line until a decision runs; in the card, it is unseen.
+  const statusWords = approvePending
+    ? pendingApproveLabel
+    : rejectPending
+      ? REJECTING_WORD
+      : settledDecision === "approved"
+        ? "Approved."
+        : settledDecision === "rejected"
+          ? "Rejected."
+          : null;
   return (
     <>
       {dock === null ? failureLine : null}
@@ -241,6 +254,11 @@ export function ApprovalDecisionActions({
         aria-labelledby={dock?.labelledBy}
         className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
       >
+        {dock === null ? (
+          <p role="status" data-vex-area="approval-status" className="sr-only">
+            {statusWords}
+          </p>
+        ) : null}
         {rejectReasonInput ? (
           <input
             type="text"
@@ -286,10 +304,11 @@ export function ApprovalDecisionActions({
           {rejectText}
         </button>
         {/* THE MIDDLE CELL, docked only: the line for the card's gate, where H3
-            draws its tick box and key hints (section 4.3). Words, no control. */}
+            draws its tick box and key hints (section 4.3), and the card's
+            status while a decision runs or has landed. Words, no control. */}
         {dock !== null ? (
-          <p data-vex-area="approval-gate" className="vex-appr__gate">
-            {dock.gateLine}
+          <p role="status" data-vex-area="approval-gate" className="vex-appr__gate">
+            {statusWords ?? dock.gateLine}
           </p>
         ) : null}
         {/* THE WORKING KEY. A desk order signs, submits and then waits on the

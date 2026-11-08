@@ -310,6 +310,8 @@ function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
   readonly titleId: string;
+  /** The eyebrow's id: the card's accessible name (Cloud's strip title). */
+  readonly eyebrowId?: string;
   readonly namespace: string | null;
   readonly toolName: string;
   /** `preview.criticalArgs` (JSON-safe scalars) or null, the shape the parent reads. */
@@ -337,6 +339,7 @@ export interface ApprovalDetailsProps {
 export function ApprovalDetails({
   summary,
   titleId,
+  eyebrowId,
   namespace,
   toolName,
   criticalArgs,
@@ -441,7 +444,9 @@ export function ApprovalDetails({
               the card waits for you, the blinking square while a decision
               runs. The eyebrow carries the meaning. */}
           <StateSquare state={busy ? "ongoing" : "warning"} className="vex-appr__sq" />
-          <span className="vex-appr__eyebrow">{approvalEyebrowWord(summary)}</span>
+          <span id={eyebrowId} className="vex-appr__eyebrow">
+            {approvalEyebrowWord(summary)}
+          </span>
           <span className="vex-appr__sp" />
           {summary.expiresAt !== null ? <ApprovalExpiry expiresAt={summary.expiresAt} /> : null}
           {riskTag !== null ? (
