@@ -925,7 +925,9 @@ describe("PortfolioScreen - a failed refresh keeps the figures (H3-DESKTOP secti
 
   it("never lends one scope's kept figures to another scope", async () => {
     readMock.mockImplementation((input) =>
-      Promise.resolve(input.walletAddress === MAIN.address ? REFUSED : answer(input)),
+      Promise.resolve(
+        input.scope === "global" && input.walletAddress === MAIN.address ? REFUSED : answer(input),
+      ),
     );
     renderPage();
     await within(header()).findByText("$1,234.56");
