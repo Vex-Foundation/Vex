@@ -117,11 +117,14 @@
 .vex-mem-sec {
   margin: 0 0 28px;
 }
+/* VEX Cloud's section head (`page.css`, `.vx-psec-h[data-desc]`): a head
+ * with its lead under it keeps 6 to the lead, and the lead 12 to the body;
+ * the count 12, muted, in tabular figures (`.vx-psec-count`). */
 .vex-mem-sec__head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 .vex-mem-sec__title {
   margin: 0;
@@ -133,7 +136,8 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-mem-sec__count {
-  font-size: 13px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mem-sec__lead {

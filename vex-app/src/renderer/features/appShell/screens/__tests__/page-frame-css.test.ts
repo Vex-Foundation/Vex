@@ -147,3 +147,16 @@ describe("the equity box (C3-E-12)", () => {
     expect(book).not.toContain(".vex-pf-chart__h .vex-pg-tab");
   });
 });
+
+describe("section head rhythm (C3-E-13, VEX Cloud's `.vx-psec-h`)", () => {
+  it("keeps 12 under a Portfolio section head", () => {
+    expect(rule(book, ".vex-pf-sec__h")).toContain("margin: 0 0 12px;");
+  });
+  it("keeps 6 to Memory's lead and 12 under it, with the count 12 muted tabular", () => {
+    expect(rule(memory, ".vex-mem-sec__head")).toContain("margin: 0 0 6px;");
+    expect(rule(memory, ".vex-mem-sec__lead")).toContain("margin: 0 0 12px;");
+    expect(rule(memory, ".vex-mem-sec__count")).toMatch(
+      /font-size: 12px;\s*font-variant-numeric: tabular-nums;\s*color: var\(--vex-alias-label-tertiary\);/,
+    );
+  });
+});

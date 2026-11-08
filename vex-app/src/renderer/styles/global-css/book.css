@@ -725,12 +725,13 @@
   min-width: 0;
   overflow-x: auto;
 }
+/* 12 under the head, VEX Cloud's section head (`page.css`, `.vx-psec-h`). */
 .vex-pf-sec__h {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 4px;
+  margin: 0 0 12px;
 }
 /* The section head, H3's label (section 2.3: EQUITY, ALLOCATION, OPEN
  * POSITIONS): the name in 13 caps tracked 0.08em, 600, ink; the note after it
