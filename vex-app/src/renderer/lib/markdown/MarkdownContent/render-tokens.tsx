@@ -264,7 +264,9 @@ export function renderBlock(
             ? "text-right"
             : "text-left";
       return (
-        <div key={key} className="overflow-x-auto">
+        // `vex-md-table`: the hook by which Vex's answer sets a table out of
+        // her bubble at the column's full width (chat-transcript.css).
+        <div key={key} className="vex-md-table overflow-x-auto">
           <table className="w-full border-collapse text-[0.95em]">
             <thead>
               <tr>

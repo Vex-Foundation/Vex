@@ -279,6 +279,9 @@
    * only CSS exceptions (base.css). */
   --vex-radius-bubble-vex: 4px 18px 18px 18px;
   --vex-radius-bubble-you: 18px 4px 18px 18px;
+  /* The same two corners one by one, for her answer's bubble runs. */
+  --vex-radius-bubble-corner: 18px;
+  --vex-radius-bubble-corner-speaker: 4px;
   --vex-alias-composer: var(--vex-alias-field);
   /* The chosen row and the row under the pointer (Cloud's
    * --vx-chosen-row-rail): its fill fades from #1A1B1C at the row's left

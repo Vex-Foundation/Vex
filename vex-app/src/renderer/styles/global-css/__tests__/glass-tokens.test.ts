@@ -169,26 +169,37 @@ describe("the shape law", () => {
     }
   });
 
-  it("names exactly its exceptions: the two chat bubbles, and the avatar circle as SVG geometry", () => {
+  it("names exactly its exceptions: the chat bubbles (her answer in runs), and the avatar circle as SVG geometry", () => {
     // docs/design/H3-DESKTOP.md section 2.4 (VEX Cloud's STYLE 5.5): only
     // the bubbles round, 18 with the speaker's corner sharp at 4. A radius
     // can beat the law only with `!important`; every such declaration in
     // every sheet is one of these, and nothing else.
     const winners = allSheets().flatMap(([name, css]) =>
       [...stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-        .filter(([, , body]) => /border-radius:[^;]*!important/.test(body ?? ""))
+        .filter(([, , body]) => /border(?:-[a-z]+)*-radius:[^;]*!important/.test(body ?? ""))
         .map(([, selector, body]) => [name, (selector ?? "").trim().replace(/\s+/g, " "), body ?? ""] as const)
         .filter(([, selector]) => !selector.startsWith("*,")),
     );
+    const run = ".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose >";
     expect(winners.map(([name, selector]) => `${name}: ${selector}`)).toEqual([
       "base.css: .vex-you__body",
-      "base.css: .vex-reply :is(.vex-answer, .vex-answer-resolve), .vex-welcome__greeting",
+      "base.css: .vex-welcome__greeting",
+      `base.css: ${run} :is(:first-child, :is(.vex-code-block, .vex-md-table) + *):not(.vex-code-block, .vex-md-table)`,
+      `base.css: ${run} :is(:last-child, :has(+ :is(.vex-code-block, .vex-md-table))):not(.vex-code-block, .vex-md-table)`,
     ]);
     expect(winners[0]?.[2]).toContain("border-radius: var(--vex-radius-bubble-you) !important;");
     expect(winners[1]?.[2]).toContain("border-radius: var(--vex-radius-bubble-vex) !important;");
+    // Her answer's runs: the top corners on a run's first part, the bottom
+    // ones on its last; a code block or a table between runs stays square.
+    expect(winners[2]?.[2]).toContain("border-top-left-radius: var(--vex-radius-bubble-corner-speaker) !important;");
+    expect(winners[2]?.[2]).toContain("border-top-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-left-radius: var(--vex-radius-bubble-corner) !important;");
     const room = stripComments(tokensCss);
     expect(declarationValue(room, "--vex-radius-bubble-vex")).toBe("4px 18px 18px 18px");
     expect(declarationValue(room, "--vex-radius-bubble-you")).toBe("18px 4px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner")).toBe("18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner-speaker")).toBe("4px");
     // The avatar is a circle drawn as SVG, never a CSS radius: the law
     // leaves it whole, so it needs no exception.
     const sources = new Map(rendererSources());

@@ -79,15 +79,25 @@ html {
  * the corner next to the speaker sharp at 4, Vex's from the left (her
  * answer and the greeting), the person's from the right; and the avatar
  * circle, which is SVG geometry (`TranscriptMessage.tsx`,
- * `SidebarProfile.tsx`), so it needs no radius here. Each is a class rule
- * with `!important`, so it outranks the law's `*` on specificity.
- * `glass-tokens.test.ts` holds the list to exactly these. */
+ * `SidebarProfile.tsx`), so it needs no radius here. Her answer's bubble is
+ * drawn in runs (chat-transcript.css): a run's first part takes the top
+ * corners and its last part the bottom ones, so a code block or a table
+ * between runs stays square. Each is a class rule with `!important`, so it
+ * outranks the law's `*` on specificity. `glass-tokens.test.ts` holds the
+ * list to exactly these. */
 .vex-you__body {
   border-radius: var(--vex-radius-bubble-you) !important;
 }
-.vex-reply :is(.vex-answer, .vex-answer-resolve),
 .vex-welcome__greeting {
   border-radius: var(--vex-radius-bubble-vex) !important;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(:first-child, :is(.vex-code-block, .vex-md-table) + *):not(.vex-code-block, .vex-md-table) {
+  border-top-left-radius: var(--vex-radius-bubble-corner-speaker) !important;
+  border-top-right-radius: var(--vex-radius-bubble-corner) !important;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(:last-child, :has(+ :is(.vex-code-block, .vex-md-table))):not(.vex-code-block, .vex-md-table) {
+  border-bottom-right-radius: var(--vex-radius-bubble-corner) !important;
+  border-bottom-left-radius: var(--vex-radius-bubble-corner) !important;
 }
 
 /* Respect reduced-motion preference (WCAG AA).

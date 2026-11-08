@@ -360,7 +360,7 @@ The sizes are VEX Cloud's (2026-11-05), read from its mockup source, `v99-ui-reb
 | Portfolio's tile lines | sans 12, muted, 8 under the figure | 758 |
 | the page tabs (ALL WALLETS) | sans 13, caps, ink 2 | 731 |
 | the person's message | sans 16 / 1.45 in their bubble, 12 by 16, at most 74% | 291 |
-| Vex's answer and the greeting | sans 16 / 1.45, -0.005em, in her bubble, 12 by 16, at most 82% | 292 |
+| Vex's answer and the greeting | sans 16 / 1.45, -0.005em, in her bubble, 12 by 16, at most 82%; in the answer a code block or a table leaves the bubble (bubble runs, section 2.4) | 292 |
 | the welcome's notes | sans 11 / 1.55 caps, muted, 10 after a 6px hud square, 6 apart | 308, 309 |
 | a starter's title; its line | sans 15 / 1.3 ink; sans 13 / 1.4 muted, 6 under it | 319, 320 |
 | the chat's title; the line under it | sans 14 / 1.3 ink; sans 11 caps, muted | 196, 156 |
@@ -399,6 +399,7 @@ Settled by the mockup source (2026-11-05): the labels' 8% came from their sizes,
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
 - **Radius** is 0 everywhere (base.css's shape law), with VEX Cloud's two exceptions (STYLE 5.5) and no others: the chat bubbles, 18 round with the corner next to the speaker sharp at 4 (Vex's answer and the greeting 4 18 18 18, from the left; the person's message 18 4 18 18, from the right; `--vex-radius-bubble-vex` and `-you`), and the avatar circle, which desktop draws as SVG geometry and so needs no radius. `glass-tokens.test.ts` holds the exceptions to exactly these.
+- **Her answer in bubble runs** (VEX Cloud's G18, `styles/thread.css`, built in W4): a code block or a table never sits in her bubble. The answer's prose is a grid, `fit-content(82%)` then the rest; consecutive prose parts stand in the first column on the bubble's fill and read as one bubble as wide as its widest part, at most 82%; a code block or a table spans the column's full width as a square cell, 12 above and below, and ends the bubble; the prose after it opens a new one. A run's first part takes the top corners (4 by her, 18 away), its last part the bottom ones (18). The hooks are `.vex-code-block` and `.vex-md-table` (chat-transcript.css, base.css).
 - A cell's text sits 24 in from its left edge (section 1.3).
 - **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover; on SEND (and STOP, the same cell) and the docked approve key it rises from the key's foot over 420ms (`--vex-duration-key-fill`), Cloud's `--vx-blue-fill-hover` layer, never a swap of the fill. A look only: when a key acts is unchanged. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
