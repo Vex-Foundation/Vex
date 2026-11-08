@@ -46,7 +46,7 @@ A fresh agent should be able to rebuild these surfaces from this file.
 Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
 - Head: the header's logo cell and sidebar key (`AgentSidebarHeader.tsx`,
-  H3-DESKTOP.md section 1.3): the vx mark alone, 28 high (`SidebarHomeSigil`,
+  H3-DESKTOP.md section 1.3): the vx mark alone, 34 x 27 (`SidebarHomeSigil`,
   "Back to welcome" in a session), set 92 in on macOS after the traffic lights
   and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
 - New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to

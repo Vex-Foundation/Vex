@@ -5,7 +5,7 @@
  *
  * Open, at 1440 (measured in `h3-merged__welcome-closed-1440`), two cells
  * divided by a rule:
- *   - LOGO, 0 to 171: the vx mark, 35 x 28 in ink, set 24 in from the cell's
+ *   - LOGO, 0 to 171: the vx mark, 34 x 27 in ink (VEX Cloud's `.hd-home svg`), set 24 in from the cell's
  *     edge as every cell's content is (section 2.4). Desktop draws the mark
  *     alone: H3's "CLOUD" beside it is Cloud's name (Appendix A.1). On macOS
  *     the traffic lights stand in this cell, 12px circles from x 20 to 72

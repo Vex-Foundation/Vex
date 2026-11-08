@@ -95,7 +95,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
-| logo | 0, 171 | the mark and "CLOUD" | the mark; on macOS it starts after the traffic lights (section 4.7) |
+| logo | 0, 171 | the mark and "CLOUD" | the mark, 34 x 27 in ink (VEX Cloud's `.hd-home svg`), 24 in from the cell's edge; on macOS it starts after the traffic lights (section 4.7) |
 | sidebar key | 171, 77 | the panel icon | the same key: it folds the chats column to the rail |
 | Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | her mood still closed; open, Cloud's portrait glyph on the open ground, the two crossfading (section 1.6) |
 | Vex key, state | 324, 295 | the state square and word, a timer while live; then HIDE VEX or SHOW VEX and three keycaps | the same, with desktop's state words |
