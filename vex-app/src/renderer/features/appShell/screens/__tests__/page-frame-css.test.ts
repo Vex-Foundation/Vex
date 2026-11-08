@@ -108,3 +108,9 @@ describe("Agent Scan's feed (C3-E-07, VEX Cloud's `.vx-rows`)", () => {
     );
   });
 });
+
+describe("the tab cells (C3-E-10)", () => {
+  it("pad each cell 22 each side, Cloud's tab cell", () => {
+    expect(rule(book, ".vex-pg-tab")).toContain("padding: 0 22px;");
+  });
+});

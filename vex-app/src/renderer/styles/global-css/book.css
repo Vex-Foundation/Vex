@@ -94,7 +94,8 @@
   /* The detail span starts with " · ", whose space a flex item drops. */
   gap: 0.35em;
   margin-left: -1px;
-  padding: 0 24px;
+  /* VEX Cloud's tab cell (`rows.css`, `.vx-tabs`): 22 each side. */
+  padding: 0 22px;
   border: 0;
   border-right: 1px solid var(--vex-alias-rule);
   border-left: 1px solid var(--vex-alias-rule);
