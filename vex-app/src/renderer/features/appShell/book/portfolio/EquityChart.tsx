@@ -1,8 +1,14 @@
 /**
  * THE WALLET TOTAL CHART on the Portfolio page (docs/design/H3-DESKTOP.md
- * section 4.1 item 12 and A.8): H3's EQUITY card, a framed cell with its head
- * (the label at the left, the range keys as cells at the right) over a line
- * chart on a dotted ground, the values at the left and the dates under it.
+ * section 4.1 item 12 and A.8): H3's EQUITY card, a framed cell with its 44
+ * head (the label at the left, the range at the right) over a line chart on a
+ * dotted ground, the values at the left and the dates under it.
+ *
+ * THE RANGE is VEX Cloud's segmented control in its brand tone
+ * (`PortfolioEquity`, `SegmentedControl semantics="radio"`): a radio group
+ * named "Range", one Tab stop on the chosen segment, the arrows, Home and End
+ * moving and choosing at once. The chosen segment is framed on the raised
+ * ground, never blue (blue is the primary key's alone).
  *
  * WHAT IT DRAWS. The wallet total over time from the balance snapshots the
  * engine already publishes (`usePortfolioHistory`, `vex.portfolio.readHistory`,
@@ -27,13 +33,12 @@
  * Read only: nothing here moves, signs or writes.
  */
 
-import { useMemo, useState, type JSX } from "react";
+import { useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import type {
   PortfolioHistoryDto,
   PortfolioHistoryRange,
 } from "@shared/schemas/portfolio-history.js";
 import { usePortfolioHistory } from "../../../../lib/api/portfolio.js";
-import { PageTabs } from "../../screens/PageBar.js";
 import { CardStateNote } from "./PortfolioCard.js";
 import { CHART_VIEWBOX, equityChartModel, type EquityChartModel } from "./equity-chart-model.js";
 import { pageScopeReadInput, type PortfolioPageScope } from "./portfolio-page-scope.js";
@@ -86,19 +91,78 @@ export function EquityChart({ scope }: { readonly scope: PortfolioPageScope }): 
     <section aria-label="Wallet total over time" className="vex-pf-chart" data-vex-area="portfolio-equity-chart">
       <header className="vex-pf-chart__h">
         <h2 className="vex-pf-chart__t">Wallet total</h2>
-        <PageTabs
-          label="History range"
-          size="head"
-          tabs={RANGES}
-          selectedKey={range}
-          onSelect={(key) => {
-            const next = RANGES.find((option) => option.key === key);
-            if (next !== undefined) setRange(next.key);
-          }}
-        />
+        <RangeControl value={range} onChange={setRange} />
       </header>
       <div className="vex-pf-chart__b">{body}</div>
     </section>
+  );
+}
+
+/**
+ * The range: a radio group of segments. The chosen one is the group's one Tab
+ * stop; the arrows (either axis), Home and End move to a segment and choose it.
+ */
+function RangeControl({
+  value,
+  onChange,
+}: {
+  readonly value: PortfolioHistoryRange;
+  readonly onChange: (next: PortfolioHistoryRange) => void;
+}): JSX.Element {
+  const items = useRef<(HTMLButtonElement | null)[]>([]);
+  const chosen = Math.max(
+    0,
+    RANGES.findIndex((option) => option.key === value),
+  );
+  const choose = (index: number): void => {
+    const next = RANGES[index];
+    if (next === undefined) return;
+    onChange(next.key);
+    items.current[index]?.focus();
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, from: number): void => {
+    const last = RANGES.length - 1;
+    let to: number | null = null;
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        to = from === last ? 0 : from + 1;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        to = from === 0 ? last : from - 1;
+        break;
+      case "Home":
+        to = 0;
+        break;
+      case "End":
+        to = last;
+        break;
+    }
+    if (to === null) return;
+    event.preventDefault();
+    choose(to);
+  };
+  return (
+    <div role="radiogroup" aria-label="Range" className="vex-pf-range">
+      {RANGES.map((option, index) => (
+        <button
+          key={option.key}
+          ref={(node) => {
+            items.current[index] = node;
+          }}
+          type="button"
+          role="radio"
+          aria-checked={index === chosen}
+          tabIndex={index === chosen ? 0 : -1}
+          className="vex-pf-range__item"
+          onClick={() => onChange(option.key)}
+          onKeyDown={(event) => onKeyDown(event, index)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

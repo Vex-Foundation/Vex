@@ -98,20 +98,46 @@ describe("EquityChart - what it reads", () => {
     expect(inputs().at(-1)?.wallets).toEqual(wallets);
   });
 
-  it("offers 24 h, 7 d, 30 d and All, and reads the range pressed", () => {
+  it("offers 24 h, 7 d, 30 d and All as a radio group named Range, and reads the range chosen", () => {
     render(<EquityChart scope={{ kind: "global" }} />);
-    const group = screen.getByRole("group", { name: "History range" });
-    expect(within(group).getAllByRole("button").map((button) => button.textContent)).toEqual([
+    const group = screen.getByRole("radiogroup", { name: "Range" });
+    expect(within(group).getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
       "24 h",
       "7 d",
       "30 d",
       "All",
     ]);
-    expect(within(group).getByRole("button", { name: "30 d" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(group).getByRole("button", { name: "24 h" }));
+    expect(within(group).getByRole("radio", { name: "30 d" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(group).getByRole("radio", { name: "24 h" }));
     expect(inputs().at(-1)?.range).toBe("24h");
-    fireEvent.click(within(group).getByRole("button", { name: "All" }));
+    expect(within(group).getByRole("radio", { name: "24 h" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(group).getByRole("radio", { name: "All" }));
     expect(inputs().at(-1)?.range).toBe("all");
+  });
+
+  it("keeps one Tab stop on the chosen range; the arrows, Home and End move and choose", () => {
+    render(<EquityChart scope={{ kind: "global" }} />);
+    const group = screen.getByRole("radiogroup", { name: "Range" });
+    const radio = (name: string): HTMLElement => within(group).getByRole("radio", { name });
+    expect(within(group).getAllByRole("radio").map((r) => r.getAttribute("tabindex"))).toEqual([
+      "-1",
+      "-1",
+      "0",
+      "-1",
+    ]);
+    fireEvent.keyDown(radio("30 d"), { key: "ArrowRight" });
+    expect(inputs().at(-1)?.range).toBe("all");
+    expect(document.activeElement).toBe(radio("All"));
+    // The walk wraps.
+    fireEvent.keyDown(radio("All"), { key: "ArrowRight" });
+    expect(inputs().at(-1)?.range).toBe("24h");
+    fireEvent.keyDown(radio("24 h"), { key: "ArrowLeft" });
+    expect(inputs().at(-1)?.range).toBe("all");
+    fireEvent.keyDown(radio("All"), { key: "Home" });
+    expect(inputs().at(-1)?.range).toBe("24h");
+    fireEvent.keyDown(radio("24 h"), { key: "End" });
+    expect(inputs().at(-1)?.range).toBe("all");
+    expect(radio("All").getAttribute("tabindex")).toBe("0");
   });
 
   it("is headed Wallet total, never Equity (the page's Equity is Lighter's)", () => {

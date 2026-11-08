@@ -133,3 +133,17 @@ describe("the figure strip (C3-E-11, VEX Cloud's `.vx-fstrip`)", () => {
     );
   });
 });
+
+describe("the equity box (C3-E-12)", () => {
+  it("has a 44 head", () => {
+    expect(rule(book, ".vex-pf-chart__h")).toContain("min-height: 44px;");
+  });
+  it("draws the range as Cloud's brand segments: the chosen one framed on the raised ground, never blue", () => {
+    expect(rule(book, ".vex-pf-range__item")).toMatch(/min-height: 32px;[\s\S]*padding: 0 14px;/);
+    const chosen = rule(book, '.vex-pf-range__item[aria-checked="true"]');
+    expect(chosen).toContain("border-color: var(--vex-alias-rule-chosen);");
+    expect(chosen).toContain("background: var(--vex-alias-interactive-solid);");
+    expect(chosen).not.toMatch(/accent|blue/);
+    expect(book).not.toContain(".vex-pf-chart__h .vex-pg-tab");
+  });
+});

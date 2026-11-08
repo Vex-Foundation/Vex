@@ -405,7 +405,7 @@
 }
 .vex-pf-chart__h {
   display: flex;
-  min-height: 48px;
+  min-height: 44px;
   align-items: stretch;
   justify-content: space-between;
   border-bottom: 1px solid var(--vex-alias-rule);
@@ -421,14 +421,55 @@
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
-.vex-pf-chart__h .vex-pg-tab {
-  margin-left: 0;
-  border-right: 0;
-  border-bottom: 2px solid transparent;
+/* The range (C3-E-12): VEX Cloud's segmented control in its brand tone
+ * (`controls.css`, `.vx-seg[data-tone="brand"]`): segments at least 32 high,
+ * 14 in, the 11 caps muted, a rule between them; the chosen one framed in
+ * the chosen rule on the raised ground, in ink. Each segment's press reaches
+ * 44 high with the head. */
+.vex-pf-range {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 16px;
 }
-.vex-pf-chart__h .vex-pg-tab[aria-pressed="true"] {
+.vex-pf-range__item {
+  position: relative;
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-left-color: var(--vex-alias-rule);
   background: transparent;
-  border-bottom-color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-range__item::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+.vex-pf-range__item:first-child,
+.vex-pf-range__item[aria-checked="true"] + .vex-pf-range__item {
+  border-left-color: transparent;
+}
+.vex-pf-range__item:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-range__item[aria-checked="true"] {
+  border-color: var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-range__item:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
 }
 .vex-pf-chart__b {
   padding: 20px 20px 16px;
