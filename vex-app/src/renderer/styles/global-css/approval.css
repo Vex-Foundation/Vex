@@ -399,14 +399,24 @@
   white-space: nowrap;
 }
 
-/* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07;
- * `ApprovalCard/ClosedApprovalCard.tsx`): the card's frame with what the
- * attempt recorded. The strip: the square (an empty frame for Rejected and
- * Expired, the ink square for Result uncertain) and the words in sans 13
- * caps, ink. Then the card's own sentence, the answer row when the person
- * chose here, the line in ink 15 (`.tk-alert`: 14 above, 18 under), and the
- * footer's keys, each at least 160 wide. No network, no stamp: nothing is
- * decided here. */
+/* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07 and
+ * its `RefusalCard`, `styles/takeover.css` `.vx-tk-answers`, `.vx-tk-alert`,
+ * `.vx-tk-band[data-closed]`; `ApprovalCard/ClosedApprovalCard.tsx`): the
+ * card's frame with what the attempt recorded. The strip, 44 high: the
+ * square (an empty frame for Rejected and Expired, the target for Result
+ * uncertain) and the title, the card's only heading, in sans 12 caps ink.
+ * The body: the answer row (the card's title 11 caps muted, its sentence 14
+ * ink, "You chose to ..." ink 2), and for an expiry its line in ink 15 (14
+ * above, 18 under). Then the alert line over the band (the failure line's
+ * look), and the band: 72 high and its rule, a fill, the keys at its end,
+ * each a cell at least 160 wide with its left rule, sans 13 caps, never
+ * blue. No network, no stamp: nothing is decided here. */
+.vex-appr__closed-strip {
+  min-height: 44px;
+}
+.vex-appr__in > .vex-appr__top.vex-appr__closed-strip {
+  padding-top: 0;
+}
 .vex-appr__closed-sq {
   display: inline-flex;
   flex: none;
@@ -417,11 +427,42 @@
 }
 .vex-appr__closed-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.2;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
+}
+.vex-appr__answers {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__answers > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px var(--vex-appr-inset);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__answer-k {
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__answer-v {
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__answer-said {
+  color: var(--vex-alias-label-secondary);
 }
 .vex-appr__closed-alert {
   margin: 0;
@@ -431,8 +472,40 @@
   color: var(--vex-alias-label-primary);
   border-top: 1px solid var(--vex-alias-rule);
 }
-.vex-appr--closed .vex-appr__foot > button {
+.vex-appr__foot[data-closed] {
+  position: static;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  min-height: var(--vex-h3-bottom-h);
+  padding: 0;
+}
+.vex-appr__closed-fill {
+  flex: 1;
+}
+.vex-appr__closed-key {
+  flex: none;
   min-width: 160px;
+  margin: 0;
+  padding: 0 20px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  cursor: pointer;
+}
+.vex-appr__closed-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-appr__closed-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
 }
 
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
