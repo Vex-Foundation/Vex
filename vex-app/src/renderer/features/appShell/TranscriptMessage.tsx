@@ -119,9 +119,9 @@ function turnSeams(turnHead: boolean, working: boolean): TurnSeams {
  * Drawn as ONE SVG, as `VxToken` draws its disc, so the disc is a circle while
  * every box keeps radius 0 (base.css's shape law). Desktop has no profile
  * picture, so the glyph is the only honest face: the same person for every
- * message, never initials or a stand-in portrait. The disc's measured fill
- * (#151718) has no token of its own; `.vex-you__disc` paints the nearest
- * raised step. Decorative: the caption's sr-only "You" names the speaker.
+ * message, never initials or a stand-in portrait. The disc's fill is Cloud's
+ * avatar ground (--vx-avatar, #151618, `--vex-alias-avatar`). Decorative:
+ * the caption's sr-only "You" names the speaker.
  */
 function YouAvatar(): JSX.Element {
   return (

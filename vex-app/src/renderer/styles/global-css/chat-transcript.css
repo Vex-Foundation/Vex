@@ -103,7 +103,7 @@
 /* ── The person's message ────────────────────────────────────────────────
  * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
  * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
- * right. The bubble is the bubble fill (#212325) with the words in sans 16 /
+ * right. The bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16 /
  * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
  * column (VEX Cloud's `.t-you p`); square, by the shape law (base.css), where
  * the capture rounds three corners. The avatar is a 36px disc. The clock and
@@ -154,8 +154,7 @@
   color: var(--vex-alias-label-tertiary);
 }
 /* The avatar cell: the disc on the chosen rule, the person glyph in ink. The
- * disc's measured #151718 has no token; raised 2 (#101214) is the nearest
- * step the alias tier has. */
+ * disc is Cloud's avatar ground (--vx-avatar, #151618), the plate step. */
 .vex-you__avatar {
   display: flex;
   flex: none;
@@ -168,7 +167,7 @@
   display: block;
 }
 .vex-you__disc {
-  fill: var(--vex-alias-bg-overlay);
+  fill: var(--vex-alias-avatar);
   stroke: var(--vex-alias-rule-chosen);
 }
 .vex-you__glyph {
@@ -201,7 +200,7 @@
   width: fit-content;
   max-width: 82%;
   padding: 12px 16px;
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-bubble-vex);
 }
 /* A table's head cells in an answer are labels: caps 11, tracked, muted, as
  * VEX Cloud sets its table heads (`.tbl th`). */

@@ -379,8 +379,17 @@ describe("composer capsule - send cell", () => {
     expect(CONSOLE_CSS).toMatch(
       /\.vex-composer-send,\s*\.vex-composer-stop \{[^}]*background-color: var\(--vex-alias-button-accent-fill\);[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
+    // The blue hover rises from the key's foot (VEX Cloud's
+    // --vx-blue-fill-hover): a layer scaled up from 0, never a swap of the
+    // key's own fill.
     expect(CONSOLE_CSS).toMatch(
-      /:hover:not\(:disabled\) \{[^}]*background-color: var\(--vex-alias-button-accent-hover\);/,
+      /\.vex-composer-send::before,\s*\.vex-composer-stop::before \{[^}]*background: var\(--vex-alias-button-accent-hover\);[^}]*transform: scaleY\(0\);[^}]*transform-origin: bottom;[^}]*transition: transform var\(--vex-duration-key-fill\)/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:hover:not\(:disabled\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
+    );
+    expect(CONSOLE_CSS).not.toMatch(
+      /\.vex-composer-send:hover:not\(:disabled\),\s*\.vex-composer-stop:hover:not\(:disabled\) \{[^}]*background-color/,
     );
     // EC-04: an empty draft holds SEND. The held look is the cell fill with a
     // muted word, never the blue: a blue key that does nothing is a trust

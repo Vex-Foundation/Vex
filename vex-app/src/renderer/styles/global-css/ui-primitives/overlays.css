@@ -213,7 +213,7 @@ dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-
  * quiet rules divide it, and both sidebars stay in view. */
 dialog.vex-dialog.vex-sheet {
   border: 0;
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
 }
 
 /* The nudge (sheet.tsx): a press on the inert window outside the sheet. An

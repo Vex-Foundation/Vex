@@ -38,7 +38,7 @@ import {
 const BTC = { marketId: 1, baseAssetId: 0, symbol: "BTC", marketType: "perp" } as const;
 const ETH = { marketId: 0, baseAssetId: 0, symbol: "ETH", marketType: "perp" } as const;
 
-/** A row of cells where one is chosen (on raised 2). Static: nothing switches. */
+/** A row of cells where one is chosen (on the open ground). Static: nothing switches. */
 function Seg({ items, chosen, className }: {
   readonly items: readonly ReactNode[];
   readonly chosen: number;

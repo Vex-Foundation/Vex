@@ -1,7 +1,7 @@
 /* Chart analysis toolbar, studies, the drawing rail and the drag-to-order
  * handle, in H3 cells (docs/design/H3-DESKTOP.md section 4.9, the approved
  * desk plate; plan row S8-08). A 40 row of square cells with the rule
- * below: the interval cells (mono 12, the chosen one on raised 2), CANDLES
+ * below: the interval cells (mono 12, the chosen one on the open ground), CANDLES
  * with its chevron, INDICATORS (Volume, Fills and Log fold into it), and the
  * snapshot key at the row's right end; under it the 40 wide drawing-tools
  * strip. Labels in caps, tracked; figures in Roboto Mono; the line icons at
@@ -147,7 +147,7 @@
 }
 
 /* Volume, Fills and Log, folded in: three cells across the popover's head,
- * the one that shows on raised 2 in ink. Status is the fill. */
+ * the one that shows on the open ground in ink. Status is the fill. */
 .lit-study-show {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -226,7 +226,7 @@
 }
 
 /* Drawing tools: a 40 wide strip on the canvas's left edge, behind its rule,
- * 28 keys; the chosen tool on raised 2 in ink. */
+ * 28 keys; the chosen tool on the open ground in ink. */
 .lit-drawing-rail {
   position: absolute;
   z-index: 4;

@@ -10,13 +10,13 @@
  * it is the disc alone, centred in its cell.
  *
  * The disc is the transcript's (chat-transcript.css, `.vex-you__disc`): the
- * circle in raised 2, the nearest step to its measured #151718, which has no
- * token, on the chosen rule (#3C3F3E measured), the person glyph in ink.
+ * circle on Cloud's avatar ground (--vx-avatar, #151618), on the chosen
+ * rule (#3C3F3E measured), the person glyph in ink.
  *
  * The menu is the Menu primitive's card (ui-primitives/menu.css); opened
  * upward from the cell it becomes the profile panel: 316 wide, 12 in from the
- * window's edge, its foot on the cell's top rule, raised 2 (a menu over
- * the ground, section 2.1) inside the chosen rule, padding 6 0, rows of a
+ * window's edge, its foot on the cell's top rule, the card ground (a menu
+ * over the column, section 2.1) inside the chosen rule, padding 6 0, rows of a
  * 20px icon column, a 14 title over a 12.5 muted line and a 12 muted
  * shortcut at the right. No shadow, no scale. It only fades, over the 150ms
  * base duration; the keyframe names stay because SidebarProfile closes the
@@ -61,7 +61,7 @@
   display: block;
 }
 .vex-prof__disc {
-  fill: var(--vex-alias-bg-overlay);
+  fill: var(--vex-alias-avatar);
   stroke: var(--vex-alias-rule-chosen);
 }
 .vex-prof__glyph {

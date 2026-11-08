@@ -66,8 +66,13 @@
    *   - THE GROUND is the sheet's --panel, not its --page: the captures read
    *     #000002 to #020202 in every column, level with --panel (8.5%) and a
    *     shade under --page (9%). So there is one ground and no page step.
-   *   - RAISED 2, THE BUBBLE AND THE SELECTED ROW are measured: the captures
-   *     draw fills between 15 and 26% that the sheet has no token for.
+   *   - VEX Cloud's built tokens (apps/web/src/styles.css, W3 to W5) settle
+   *     what the captures could only measure: the page (#020205) under the
+   *     columns, the side columns' rail (#010101), the card (#030405), the
+   *     open ground (#0C0D0F), the chosen row (#1A1B1C fading out) and the
+   *     two bubbles, white at 6% (Vex) and 13% (the person). Raised 2
+   *     (#101214) and the solid bubble (#212325), measured before Cloud
+   *     built them, retire onto those values.
    *   - THE STATUS GREEN AND RED are measured: the squares and the FILLED
    *     stamp are darker than the sheet's --live and --err, which are TYPE
    *     colours, for gains and losses.
@@ -78,16 +83,23 @@
    * `theme-matrix.test.ts` converts the sheet's oklch itself and holds each
    * sheet-sourced hex to it. Two sheet values fall outside sRGB, the blue
    * hover and the loss red; the contract takes their channel-clipped sRGB
-   * (#1557FF, #FF7A6E), and so does this tier.
+   * (#1557FF, #FF887C), and so does this tier.
    *
    * Measured on the ground (#010203): ink 19.03:1, ink-2 11.14:1, muted
-   * 5.69:1, gain 10.94:1, loss 8.17:1. The blue measures 2.42:1 there, so it
+   * 5.69:1, gain 11.68:1, loss 8.96:1. The blue measures 2.42:1 there, so it
    * is a FILL (white on it 8.59:1, on its hover 5.47:1) and never type on
    * the ground. White on status green 5.11:1, on status red 5.91:1; the two
    * squares read 4.06:1 and 3.51:1 on the ground, above the 3:1 for a mark
    * beside a word. */
-  /* The ground: the sheet's --panel, oklch(8.5% 0.008 264). */
+  /* The ground: the sheet's --panel, oklch(8.5% 0.008 264): the chat
+   * column, the window's first paint and every field. */
   --color-h3-ground: #010203;
+  /* VEX Cloud's --vx-page, oklch(9% 0.012 264): the page under the columns
+   * (html, body, #root), the frame's own ground. */
+  --color-h3-page: #020205;
+  /* VEX Cloud's --vx-rail, oklch(6% 0.006 264): the side columns, the chats
+   * column (and its 76 rail) and Vex's column. */
+  --color-h3-rail: #010101;
   --color-h3-cell: #040406; /* oklch(11% 0.006 264) */
   --color-h3-raised: #070709; /* oklch(13% 0.004 264) */
   /* VEX Cloud's card ground, oklch(10.5% 0.006 264): menus, dialogs and the
@@ -100,14 +112,10 @@
    * the Vex key's portrait cell while her section is open, under the
    * portrait glyph. */
   --color-h3-cell-open: #0c0d0f;
-  /* Measured, no sheet token (about oklch 18%): the greeting bubble, the
-   * selected tab. */
-  --color-h3-raised-2: #101214;
-  /* Measured, no sheet token (oklch 25.5%): the person's message bubble. */
-  --color-h3-bubble: #212325;
-  /* Measured, no sheet token (oklch 21.6%): where the selected nav row's
-   * fill starts, at the chats column's left edge; it fades to the ground. */
-  --color-h3-row: #181a1c;
+  /* VEX Cloud's chosen row, oklch(22% 0.004 264) (its --vx-chosen-row-rail):
+   * where a chosen or hovered row's fill starts, at the row's left edge; it
+   * fades to transparent at its right. */
+  --color-h3-row: #1a1b1c;
   --color-h3-ink: #f3f5f9; /* oklch(97% 0.005 264) */
   --color-h3-ink-2: #babec6; /* oklch(80% 0.012 264) */
   --color-h3-muted: #808693; /* oklch(62% 0.02 264) */
@@ -115,12 +123,13 @@
   --color-h3-blue: #0000ff;
   /* oklch(56% 0.28 264), outside sRGB: channel-clipped. */
   --color-h3-blue-hover: #1557ff;
-  /* Gains in trading values, as type: the sheet's --live,
-   * oklch(78% 0.13 150). */
-  --color-h3-gain: #76cf8a;
-  /* Losses in trading values, as type: the sheet's --err,
-   * oklch(74% 0.17 27), outside sRGB: channel-clipped. */
-  --color-h3-loss: #ff7a6e;
+  /* Gains in trading values, as type: VEX Cloud's built --vx-pnl-up and
+   * --vx-trade-up, its --vx-live-bubble-text, oklch(80% 0.12 150). */
+  --color-h3-gain: #83d494;
+  /* Losses in trading values, as type: VEX Cloud's built --vx-pnl-down and
+   * --vx-trade-down, its --vx-err-bubble-text, oklch(76% 0.15 27), outside
+   * sRGB: channel-clipped. */
+  --color-h3-loss: #ff887c;
   /* Measured, no sheet token (about oklch 52% 0.13 150): the status square
    * of FILLED and the receipt's stamp. */
   --color-h3-status-green: #1d7e3f;
@@ -133,8 +142,8 @@
    *     (PD-06). Never green: green is Filled;
    *   - the REFUSAL INK, --vx-err-text, oklch(74% 0.17 27), outside sRGB:
    *     channel-clipped. The failed cross, a failed step's word and the turn
-   *     error row's title. Its hex is the loss type colour's, kept a
-   *     primitive of its own so no status alias reads a trading colour. */
+   *     error row's title. A primitive of its own, apart from the loss type
+   *     colour, so no status alias reads a trading colour. */
   --color-h3-hud: #ebebeb;
   --color-h3-err-text: #ff7a6e;
 
@@ -214,27 +223,33 @@
  * on it any more: `theme-matrix.test.ts` refuses a theme override anywhere
  * in the sheets. */
 :root {
-  /* Surfaces (docs/design/H3-DESKTOP.md sections 2.1 and 2.4): ONE ground,
-   * #010203, under every column, card, rail and field; a cell is told from
-   * its neighbour by a 1px rule, never by a shadow. The few fills above the
-   * ground are the contract's own steps, each named by what it paints:
-   *   cell     #040406  a control at rest (New chat, the model cell), the
-   *                     code and signed-fields wells
-   *   raised   #070709  a key cell (REVIEW, REJECT), a pressed segment
-   *   raised 2 #101214  a popover, a selected tab, the greeting bubble
-   *   bubble   #212325  the person's message
+  /* Surfaces (docs/design/H3-DESKTOP.md sections 2.1 and 2.4), VEX Cloud's
+   * ladder: the page (#020205) under the frame, the rail (#010101) under the
+   * side columns, and the ground (#010203) under the chat column, its cards
+   * and every field; a cell is told from its neighbour by a 1px rule, never
+   * by a shadow. The fills above the ground are Cloud's own steps, each
+   * named by what it paints:
+   *   card       #030405  menus, popovers, dialogs, the connection banner
+   *   cell       #040406  a control at rest (New chat, the model cell), the
+   *                       code and signed-fields wells
+   *   raised     #070709  a key cell (REVIEW, REJECT), a pressed segment
+   *   open       #0C0D0F  a selected tab or cell, a pressed key, the washes
+   *   plate      #151618  the tooltip, the toast, the avatar's disc
+   *   bubbles    white at 6% (Vex) and 13% (the person)
    * The captures put the composer's field and the card's amount field on
    * the ground itself, framed by the rule, so the field is the ground. H3
    * recesses nothing under the ground, so the deep tier is the ground too. */
   --vex-alias-bg-base: var(--color-h3-ground);
+  /* The page under the frame (Cloud's --vx-page): html, body and #root. */
+  --vex-alias-bg-page: var(--color-h3-page);
   --vex-alias-bg-deep: var(--color-h3-ground);
   --vex-alias-bg-layer-1: var(--color-h3-ground);
   --vex-alias-bg-layer-2: var(--color-h3-ground);
   /* The wells (code, signed fields, the connection banner): the cell step. */
   --vex-alias-bg-layer-3: var(--color-h3-cell);
-  /* Popovers, menus and hover cards: raised 2, so a menu over the ground
-   * reads as its own cell before its rule does. */
-  --vex-alias-bg-overlay: var(--color-h3-raised-2);
+  /* Popovers, menus, hover cards and the connection banner: Cloud's card
+   * ground (--vx-card), which its 24% rule frames over the column. */
+  --vex-alias-bg-overlay: var(--color-h3-card);
   --vex-alias-bg-skeleton: rgba(255, 255, 255, 0.06);
   /* The parked cover's 1px head (VEX Cloud's --vx-scan-head): the ink at
    * 85%, on the cover's raised fill (`.vex-cover`). */
@@ -247,20 +262,27 @@
   /* The bars under it (Cloud's bars canvas): white, each bar at 1.4% plus
    * up to 55% by its level (the canvas sets the alpha, `vex-bars.ts`). */
   --vex-alias-bars: var(--color-white);
-  --vex-alias-sidebar-fill: var(--color-h3-ground);
+  /* The side columns, the chats column and Vex's (Cloud's --vx-rail). */
+  --vex-alias-sidebar-fill: var(--color-h3-rail);
   /* The field: inputs and the composer, on the ground behind their rule. */
   --vex-alias-field: var(--color-h3-ground);
-  /* The person's message bubble, as measured (no sheet token). */
-  --vex-alias-bubble: var(--color-h3-bubble);
+  /* The bubbles (Cloud's --vx-bubble-you and --vx-bubble): the person's
+   * message on white at 13%, Vex's answer and greeting on white at 6%. Ink
+   * reads 14.4:1 and 17.3:1 on them over the ground. */
+  --vex-alias-bubble: rgba(255, 255, 255, 0.13);
+  --vex-alias-bubble-vex: rgba(255, 255, 255, 0.06);
+  /* The avatar's disc under the person glyph (Cloud's --vx-avatar,
+   * oklch(20% 0.004 264)): the plate step. */
+  --vex-alias-avatar: var(--color-h3-tooltip);
   --vex-alias-composer: var(--vex-alias-field);
-  /* The selected nav row: its fill fades from #181A1C at the chats column's
-   * left edge to the ground at its right, as measured. One of H3's two
-   * gradients (the other is Kimm's blue ground); the left column's restyle
-   * paints it (S5), so no rule reads it yet. */
+  /* The chosen row and the row under the pointer (Cloud's
+   * --vx-chosen-row-rail): its fill fades from #1A1B1C at the row's left
+   * edge to transparent at its right, over whatever column it crosses. One
+   * of H3's two gradients (the other is Kimm's blue ground). */
   --vex-alias-row-selected: linear-gradient(
     90deg,
     var(--color-h3-row),
-    var(--color-h3-ground)
+    transparent
   );
 
   /* Rules: ALWAYS alpha so they compose over any surface, in the sheet's
@@ -281,13 +303,16 @@
 
   /* Labels: the sheet's three inks, solid, never opacity-stacked: ink
    * 19.03:1, ink 2 11.14:1 and muted 5.69:1 on the ground. Caption is the
-   * muted step: there is no unreadable fourth tier. Dimmed is decoration and
-   * disabled marks only. */
+   * muted step: there is no unreadable fourth tier. Dimmed (white at 24%,
+   * Cloud's chosen rule) is decoration and disabled marks only. The
+   * placeholder is Cloud's --vx-placeholder, white at 55%, which reads
+   * 6.3:1 on the field (Cloud raised v99's 40% to reach AA). */
   --vex-alias-label-primary: var(--color-h3-ink);
   --vex-alias-label-secondary: var(--color-h3-ink-2);
   --vex-alias-label-tertiary: var(--color-h3-muted);
   --vex-alias-label-caption: var(--color-h3-muted);
-  --vex-alias-label-dimmed: rgba(255, 255, 255, 0.18);
+  --vex-alias-label-dimmed: rgba(255, 255, 255, 0.24);
+  --vex-alias-label-placeholder: rgba(255, 255, 255, 0.55);
   /* Faint: a glyph at rest that the pointer lights, never a word (VEX
    * Cloud's --vx-faint, white at 55%: the Send key's dots). */
   --vex-alias-label-faint: rgba(255, 255, 255, 0.55);
@@ -303,7 +328,9 @@
 
   /* Keys (docs/design/H3-DESKTOP.md section 2.4). THE PRIMARY KEY is the one
    * saturated blue, #0000FF, with white caps (SEND, the card's decision key),
-   * one blue cell in view at a time; its hover is the blue hover, #1557FF.
+   * one blue cell in view at a time; its hover is the blue hover, #1557FF
+   * (Cloud's --vx-blue-fill-hover), which on SEND and the docked approve
+   * key rises from the key's foot over 420ms rather than swapping at once.
    * White reads 8.59:1 on the blue and 5.47:1 on its hover. The captures
    * draw the blue cell bare on the ground, so the edge R3 drew round a blue
    * fill at night is transparent. The ink key (a primary-fill button) is the
@@ -328,20 +355,21 @@
   --vex-alias-accent-primary: var(--color-h3-ink);
   --vex-alias-accent-hover: var(--color-h3-ink-2);
   --vex-alias-accent-brand: var(--color-h3-ink);
-  --vex-alias-accent-wash: var(--color-h3-raised-2);
+  --vex-alias-accent-wash: var(--color-h3-cell-open);
   /* Counters and numerals and display titles: ink (H3 sets no figure or
-   * title in a hue). The focus ring is the 2px white ring drawn inside the
-   * cell (section 2.4): the ink. */
+   * title in a hue). The focus ring is the 2px white ring, drawn 2px inside
+   * a cell (outline-offset -2px) and outside a link or a box (Cloud's
+   * --vx-focus-ring-color, --vx-white). */
   --vex-alias-counter: var(--color-h3-ink);
   --vex-alias-title: var(--color-h3-ink);
-  --vex-alias-focus: var(--color-h3-ink);
+  --vex-alias-focus: var(--color-white);
 
   /* Interactive fills. A hover is white at 4% over the cell (the open Vex
    * key's fold cell reads that much above the ground); a pressed or selected
-   * cell takes raised 2 (the selected tab); a solid pressed segment takes
-   * raised (a key cell). */
+   * cell takes the open ground (the selected tab); a solid pressed segment
+   * takes raised (a key cell). */
   --vex-alias-interactive-hover: rgba(255, 255, 255, 0.04);
-  --vex-alias-interactive-active: var(--color-h3-raised-2);
+  --vex-alias-interactive-active: var(--color-h3-cell-open);
   --vex-alias-interactive-solid: var(--color-h3-raised);
   --vex-alias-interactive-danger: rgba(255, 255, 255, 0.06);
   /* The open ground (Cloud's --vx-cell-open): the Vex key's portrait cell
@@ -351,15 +379,15 @@
   /* Status words (section 2.2): ink, every one of them. The state inks keep
    * their names because they paint words and plates (`text-success`, the
    * connection banner's error plate); in H3 a word is never the colour.
-   * Each wash is a raised step, so ink on its wash sits between ink and the
-   * ground. `status-contrast.test.ts` measures every family. */
+   * Each wash is the open ground, so ink on its wash sits between ink and
+   * the ground. `status-contrast.test.ts` measures every family. */
   --vex-alias-state-success: var(--color-h3-ink);
-  --vex-alias-state-success-wash: var(--color-h3-raised-2);
+  --vex-alias-state-success-wash: var(--color-h3-cell-open);
   --vex-alias-state-warn: var(--color-h3-ink);
   --vex-alias-state-warn-label: var(--color-h3-ink);
-  --vex-alias-state-warn-wash: var(--color-h3-raised-2);
+  --vex-alias-state-warn-wash: var(--color-h3-cell-open);
   --vex-alias-state-error: var(--color-h3-ink);
-  --vex-alias-state-error-wash: var(--color-h3-raised-2);
+  --vex-alias-state-error-wash: var(--color-h3-cell-open);
 
   /* Status SQUARES (section 2.2): every status has its own drawing, so a
    * colour never stands alone (PD-03; `.vex-sq` in ui-primitives/marks.css).
@@ -379,8 +407,8 @@
   --vex-alias-stamp-filled: var(--color-h3-status-green);
   --vex-alias-stamp-filled-ink: var(--color-white);
 
-  /* Gains and losses in trading values, as TYPE (section 2.2): the sheet's
-   * --live and --err, 10.94:1 and 8.17:1 on the ground. They replace R3's
+  /* Gains and losses in trading values, as TYPE (section 2.2): VEX Cloud's
+   * built pnl and trade pair, 11.68:1 and 8.96:1 on the ground. They replace R3's
    * night trading pair and are never a status: a state keeps its square and
    * its ink word. `status-contrast.test.ts` measures the pair on every text
    * ground. */
@@ -490,8 +518,8 @@
   --vex-alias-term-selection: rgba(243, 245, 249, 0.24);
 
   --vex-alias-term-black: #1c2030;
-  --vex-alias-term-red: #ff7a6e;
-  --vex-alias-term-green: #76cf8a;
+  --vex-alias-term-red: #ff887c;
+  --vex-alias-term-green: #83d494;
   --vex-alias-term-yellow: #e0b155;
   --vex-alias-term-blue: #a3abff;
   --vex-alias-term-magenta: #c69af3;
@@ -679,6 +707,7 @@
   --color-ink-tertiary: var(--vex-alias-label-tertiary);
   --color-ink-caption: var(--vex-alias-label-caption);
   --color-ink-dimmed: var(--vex-alias-label-dimmed);
+  --color-ink-placeholder: var(--vex-alias-label-placeholder);
   --color-ink-on-primary: var(--vex-alias-label-on-primary);
   --color-ink-on-accent: var(--vex-alias-label-on-accent);
 

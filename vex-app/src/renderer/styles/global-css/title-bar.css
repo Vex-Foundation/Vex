@@ -280,7 +280,7 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
     .vex-tb-notice__dismiss
   ):focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
   .vex-tb-needs__key,
@@ -453,7 +453,7 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   position: absolute;
   z-index: 40;
   border: 1.5px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-bg-overlay);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
   text-align: left;
@@ -691,7 +691,7 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   gap: 8px;
   padding: 14px 16px;
   border: 1.5px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-bg-overlay);
   text-align: left;
 }
 

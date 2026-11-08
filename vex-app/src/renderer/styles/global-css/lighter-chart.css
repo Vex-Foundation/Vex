@@ -29,7 +29,7 @@
 }
 
 /* Intervals: mono cells the toolbar's height, one rule between each and
- * after the last; the chosen one on raised 2 in ink. */
+ * after the last; the chosen one on the open ground in ink. */
 .lit-resolution-tabs {
   display: flex;
   min-width: 0;

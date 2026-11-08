@@ -150,7 +150,7 @@
 }
 .vex-seg > button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 /* A framed tag (PROPOSED, OPEN): 22 high, sans 11 / 600 caps at `.08em`,
@@ -225,7 +225,7 @@
 }
 .vex-scan-filter__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-scan-filter__name {
   color: var(--vex-alias-label-tertiary);
@@ -628,7 +628,7 @@
 }
 .vex-scan-more:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-scan-more:disabled {
   cursor: progress;

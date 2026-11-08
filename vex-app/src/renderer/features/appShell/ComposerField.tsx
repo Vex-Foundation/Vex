@@ -73,7 +73,7 @@ export function ComposerField({
         <span
           aria-hidden
           data-vex-composer-placeholder
-          className="pointer-events-none absolute inset-0 overflow-hidden font-sans text-[16px] leading-6 text-ink-tertiary"
+          className="pointer-events-none absolute inset-0 overflow-hidden font-sans text-[16px] leading-6 text-ink-placeholder"
         >
           <AnimatePresence initial={false}>
             <motion.span

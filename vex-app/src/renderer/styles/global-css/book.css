@@ -17,7 +17,7 @@
 
 /* ---- the H3 page frame (every page) ----------------------------------
  * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57
- * high across the page, the tabs at the left (the selected one on raised 2,
+ * high across the page, the tabs at the left (the selected one on the open ground,
  * the contract's selected tab fill) and "Updated {time}" with the page's
  * keys at the right; under its rule the page body, 24 in from each edge and
  * as wide as the column, not R3's centred reading column.
@@ -47,7 +47,7 @@
 }
 /* The tab cells: each bounded by the rule on both sides (two neighbours
  * share one), a key's caps 13 tracked 0.08em (VEX Cloud's `.pg-tabs a`),
- * ink 2 at rest, ink on raised 2 when selected. */
+ * ink 2 at rest, ink on the open ground when selected. */
 .vex-pg-tabs {
   display: flex;
   min-width: 0;

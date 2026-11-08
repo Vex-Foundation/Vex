@@ -25,7 +25,7 @@
   flex-direction: column;
   overflow: hidden;
   border-left: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-sidebar-fill);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
 }

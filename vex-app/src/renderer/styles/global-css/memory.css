@@ -190,7 +190,7 @@
   caret-color: var(--vex-alias-accent-primary);
 }
 .vex-mem-field::placeholder {
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-placeholder);
 }
 .vex-mem-field:focus-visible {
   border-color: var(--vex-alias-accent-primary);
@@ -227,7 +227,7 @@
 }
 .vex-mem-seg > button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 /* A register list: one framed cell, a rule between rows. */
@@ -390,7 +390,7 @@
 }
 .vex-article__list button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 /* Under about 1000 the contents sit above the text instead of beside it. */
 @media (max-width: 1099px) {

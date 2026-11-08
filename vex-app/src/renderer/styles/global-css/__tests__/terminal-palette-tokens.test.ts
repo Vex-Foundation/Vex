@@ -233,7 +233,7 @@ describe("terminal palette tokens", () => {
 
   it("gives the ANSI green and red the H3 gain and loss type colours", () => {
     // A test runner's pass and fail read as the app's gains and losses
-    // (H3-DESKTOP.md section 2.1: --live #76cf8a, --err #ff7a6e).
+    // (H3-DESKTOP.md section 2.1: #83d494 and #ff887c, Cloud's pnl pair).
     expect(resolveHex(chronos, "--vex-alias-term-green")).toBe(resolveHex(tokensCss, "--color-h3-gain"));
     expect(resolveHex(chronos, "--vex-alias-term-red")).toBe(resolveHex(tokensCss, "--color-h3-loss"));
   });

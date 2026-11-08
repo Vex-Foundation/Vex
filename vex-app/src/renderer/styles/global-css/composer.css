@@ -65,15 +65,14 @@
 
 /* The greeting bubble: "Ready when you are." in Vex's bubble, as her
  * answers are (VEX Cloud's `.t-vex p`): sans 16 / 1.45 at -0.005em, 400,
- * ink, on the raised 2 fill (H3's measured #101214: the bubble, the selected
- * tab, a popover; the alias tier names it for the overlay), padded 12 by 16,
+ * ink, on Vex's bubble (white at 6%, Cloud's --vx-bubble), padded 12 by 16,
  * square like every cell (the radius law, base.css). As wide as its words,
  * at most 82% of the column. */
 .vex-welcome__greeting {
   margin: 0;
   max-width: 82%;
   padding: 12px 16px;
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-bubble-vex);
   font-family: var(--font-sans);
   font-size: 16px;
   font-weight: 400;

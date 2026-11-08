@@ -122,7 +122,7 @@
 }
 
 .vex-tab-shell[data-active] {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-interactive-active);
 }
 
 .vex-terminal-tab-strip .vex-tab-shell:not([data-active]):hover {
@@ -338,7 +338,7 @@
 }
 
 .vex-ws-pane[data-active] > .vex-ws-pane__head {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }
 

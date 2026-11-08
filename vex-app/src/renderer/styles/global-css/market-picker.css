@@ -84,7 +84,7 @@
   letter-spacing: normal;
 }
 
-.lit-picker-search input::placeholder { color: var(--lit-ink-muted); }
+.lit-picker-search input::placeholder { color: var(--vex-alias-label-placeholder); }
 .lit-picker-search input:focus-visible { outline: none; }
 .lit-picker-search > svg { width: 16px; height: 16px; flex-shrink: 0; }
 

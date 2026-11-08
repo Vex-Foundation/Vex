@@ -236,8 +236,8 @@ describe("the tokens the register stands on", () => {
     expect(ruleBody(BASE, "html")).toMatch(/font-synthesis-weight:\s*none\s*;/);
   });
 
-  it("gives placeholders the muted ink", () => {
-    expect(ruleBody(BASE, "::placeholder")).toMatch(/color:\s*var\(--color-ink-tertiary\)\s*;/);
+  it("gives placeholders VEX Cloud's placeholder ink, white at 55%", () => {
+    expect(ruleBody(BASE, "::placeholder")).toMatch(/color:\s*var\(--vex-alias-label-placeholder\)\s*;/);
   });
 
   it("sets the default body text at 14 / 1.45 on body, never on html", () => {

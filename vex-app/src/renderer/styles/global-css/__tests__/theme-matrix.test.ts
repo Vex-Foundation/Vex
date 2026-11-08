@@ -111,6 +111,10 @@ const gateAliases = [
  */
 const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   "--color-h3-ground": [0.085, 0.008, 264],
+  // VEX Cloud's page under the frame and its rail under the side columns
+  // (--vx-page, --vx-rail).
+  "--color-h3-page": [0.09, 0.012, 264],
+  "--color-h3-rail": [0.06, 0.006, 264],
   "--color-h3-cell": [0.11, 0.006, 264],
   "--color-h3-raised": [0.13, 0.004, 264],
   // VEX Cloud's card ground and tooltip plate (--vx-card, --vx-tooltip).
@@ -118,13 +122,17 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   "--color-h3-tooltip": [0.2, 0.004, 264],
   // VEX Cloud's open ground (--vx-cell-open): the Vex key's open portrait cell.
   "--color-h3-cell-open": [0.16, 0.004, 264],
+  // VEX Cloud's chosen row, where its gradient starts (--vx-chosen-row-rail).
+  "--color-h3-row": [0.22, 0.004, 264],
   "--color-h3-ink": [0.97, 0.005, 264],
   "--color-h3-ink-2": [0.8, 0.012, 264],
   "--color-h3-muted": [0.62, 0.02, 264],
   "--color-h3-blue": [0.452, 0.313, 264.1],
   "--color-h3-blue-hover": [0.56, 0.28, 264],
-  "--color-h3-gain": [0.78, 0.13, 150],
-  "--color-h3-loss": [0.74, 0.17, 27],
+  // VEX Cloud's built pnl and trade pair (--vx-live-bubble-text and
+  // --vx-err-bubble-text), which replaced the sheet's --live and --err.
+  "--color-h3-gain": [0.8, 0.12, 150],
+  "--color-h3-loss": [0.76, 0.15, 27],
   // VEX Cloud's built tokens (apps/web/src/styles.css), which win over the
   // mockup where they differ: the running square's hud and the refusal ink.
   "--color-h3-hud": [0.94, 0, 0],
@@ -132,14 +140,13 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
 };
 
 /**
- * The H3 primitives the sheet has no token for, measured from the app
- * captures (section 2.1's "none" rows). Pinned as values: the contract's
- * measurement is their only source until the mockup source arrives.
+ * The H3 primitives neither the sheet nor Cloud's built tokens give, measured
+ * from the app captures (section 2.1's "none" rows). Pinned as values. Raised
+ * 2 (#101214), the solid bubble (#212325) and the measured row (#181A1C)
+ * retired onto Cloud's built values (the open ground, the white bubbles and
+ * its chosen row).
  */
 const H3_MEASURED: Readonly<Record<string, string>> = {
-  "--color-h3-raised-2": "#101214",
-  "--color-h3-bubble": "#212325",
-  "--color-h3-row": "#181a1c",
   "--color-h3-status-green": "#1d7e3f",
   "--color-h3-status-red": "#c22226",
 };
@@ -165,8 +172,8 @@ const inSrgb = (rgb: readonly number[]): boolean => rgb.every((c) => c >= -1e-6 
 
 /**
  * The sheet's value as sRGB hex. A value outside sRGB is channel-clipped,
- * which is the sRGB the contract records for the two that fall outside (the
- * blue hover #1557FF and the loss red #FF7A6E).
+ * which is the sRGB the contract records for those that fall outside (the
+ * blue hover #1557FF, the loss red #FF887C and the refusal ink #FF7A6E).
  */
 function oklchToHex(lightness: number, chroma: number, hue: number): string {
   const rgb = oklchToSrgb(lightness, chroma, hue);
@@ -186,21 +193,21 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-candle-up": "#22c55e",
   "--color-candle-down": "#ef4444",
   "--color-h3-ground": "#010203",
+  "--color-h3-page": "#020205",
+  "--color-h3-rail": "#010101",
   "--color-h3-cell": "#040406",
   "--color-h3-raised": "#070709",
   "--color-h3-card": "#030405",
   "--color-h3-tooltip": "#151618",
   "--color-h3-cell-open": "#0c0d0f",
-  "--color-h3-raised-2": "#101214",
-  "--color-h3-bubble": "#212325",
-  "--color-h3-row": "#181a1c",
+  "--color-h3-row": "#1a1b1c",
   "--color-h3-ink": "#f3f5f9",
   "--color-h3-ink-2": "#babec6",
   "--color-h3-muted": "#808693",
   "--color-h3-blue": "#0000ff",
   "--color-h3-blue-hover": "#1557ff",
-  "--color-h3-gain": "#76cf8a",
-  "--color-h3-loss": "#ff7a6e",
+  "--color-h3-gain": "#83d494",
+  "--color-h3-loss": "#ff887c",
   "--color-h3-status-green": "#1d7e3f",
   "--color-h3-status-red": "#c22226",
   "--color-h3-hud": "#ebebeb",
@@ -243,9 +250,8 @@ describe("the static tier", () => {
   });
 
   it("names the three values the clip moved, and only those", () => {
-    // The blue hover, the loss red and Cloud's refusal ink (the loss red's
-    // own oklch) sit outside sRGB as stated; every other value is inside and
-    // converts unchanged.
+    // The blue hover, the loss red and Cloud's refusal ink sit outside sRGB
+    // as stated; every other value is inside and converts unchanged.
     const moved = Object.entries(H3_SHEET)
       .filter(([, [l, c, h]]) => !inSrgb(oklchToSrgb(l, c, h)))
       .map(([name]) => name);
@@ -306,6 +312,36 @@ describe("the alias tier", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("stands the page, the side columns and the floating cells on VEX Cloud's ladder", () => {
+    // docs/design/H3-DESKTOP.md section 2.1: the page under the frame, the
+    // rail under the chats column and Vex's, the card under menus and
+    // popovers, the open ground under a selected cell and every wash.
+    expect(room.get("--vex-alias-bg-page")).toBe("var(--color-h3-page)");
+    expect(room.get("--vex-alias-sidebar-fill")).toBe("var(--color-h3-rail)");
+    expect(room.get("--vex-alias-bg-overlay")).toBe("var(--color-h3-card)");
+    for (const name of [
+      "--vex-alias-interactive-active",
+      "--vex-alias-accent-wash",
+      "--vex-alias-state-success-wash",
+      "--vex-alias-state-warn-wash",
+      "--vex-alias-state-error-wash",
+    ]) {
+      expect(room.get(name), name).toBe("var(--color-h3-cell-open)");
+    }
+    // Cloud's white alphas: the bubbles, the placeholder and the dimmed mark.
+    expect(room.get("--vex-alias-bubble")).toBe("rgba(255, 255, 255, 0.13)");
+    expect(room.get("--vex-alias-bubble-vex")).toBe("rgba(255, 255, 255, 0.06)");
+    expect(room.get("--vex-alias-label-placeholder")).toBe("rgba(255, 255, 255, 0.55)");
+    expect(room.get("--vex-alias-label-dimmed")).toBe("rgba(255, 255, 255, 0.24)");
+    expect(room.get("--vex-alias-avatar")).toBe("var(--color-h3-tooltip)");
+    expect(room.get("--vex-alias-row-selected")).toBe(
+      "linear-gradient( 90deg, var(--color-h3-row), transparent )",
+    );
+    const base = stripComments(read("base.css"));
+    expect(base).toMatch(/#root \{[^}]*background-color: var\(--vex-alias-bg-page\);/);
+    expect(base).toMatch(/::placeholder \{[^}]*color: var\(--vex-alias-label-placeholder\);/);
+  });
+
   it("reaches only the primitives through its var() hops", () => {
     const primitives = new Set(Object.keys(PRIMITIVES));
     for (const [, value] of room) {
@@ -321,8 +357,8 @@ describe("the trading pair and the night edge", () => {
   const themeInline = declarations(ruleBody(tokensCss, "@theme inline"));
 
   it("paints gains and losses in the sheet's type colours", () => {
-    // docs/design/H3-DESKTOP.md section 2.2: the sheet's --live and --err,
-    // replacing R3's night trading pair.
+    // docs/design/H3-DESKTOP.md section 2.2: VEX Cloud's built pnl and
+    // trade pair, replacing R3's night trading pair.
     expect(chronos.get("--vex-alias-trade-up")).toBe("var(--color-h3-gain)");
     expect(chronos.get("--vex-alias-trade-down")).toBe("var(--color-h3-loss)");
     // Type on a solid Long or Short key: the ground.
@@ -375,9 +411,10 @@ describe("the trading pair and the night edge", () => {
       .filter(([, value]) => /var\(--color-(?:h3-blue|h3-blue-hover|blue|blue-hi|peri|peri-hi)\)/.test(value))
       .map(([name]) => name);
     expect(blueOutsideKeys).toEqual([]);
-    // The accent as type is the ink, and so is the focus ring.
+    // The accent as type is the ink; the focus ring is white (Cloud's
+    // --vx-focus-ring-color), never the blue.
     expect(chronos.get("--vex-alias-accent-primary")).toBe("var(--color-h3-ink)");
-    expect(chronos.get("--vex-alias-focus")).toBe("var(--color-h3-ink)");
+    expect(chronos.get("--vex-alias-focus")).toBe("var(--color-white)");
     expect(themeInline.get("--color-button-accent-edge")).toBe(
       "var(--vex-alias-button-accent-edge)",
     );

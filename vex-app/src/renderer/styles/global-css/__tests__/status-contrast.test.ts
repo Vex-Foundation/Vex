@@ -158,8 +158,11 @@ describe("the resolver (load-bearing)", () => {
     expect(resolveHex([chronos], "--vex-alias-state-error-mark")).toBe("#c22226");
     expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#010203");
     expect(resolveHex([chronos], "--vex-alias-label-tertiary")).toBe("#808693");
-    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#76cf8a");
-    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7a6e");
+    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#83d494");
+    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff887c");
+    expect(resolveHex([chronos], "--vex-alias-state-error-wash")).toBe("#0c0d0f");
+    expect(resolveHex([chronos], "--vex-alias-sidebar-fill")).toBe("#010101");
+    expect(resolveHex([chronos], "--vex-alias-bg-overlay")).toBe("#030405");
   });
 });
 
@@ -211,7 +214,7 @@ describe("status words are ink", () => {
 
 /**
  * The status squares (section 2.2) and the cells a status row can stand on:
- * the ground, a control at rest, a key cell and raised 2.
+ * the ground, a control at rest, a key cell and the open ground.
  */
 const STATUS_MARKS = [
   ["filled", "--vex-alias-state-success-mark", "--color-h3-status-green"],
@@ -269,14 +272,75 @@ const TEXT_TIERS = [
 
 const TEXT_GROUNDS = [
   "--vex-alias-bg-base",
+  "--vex-alias-bg-page",
   "--vex-alias-bg-deep",
   "--vex-alias-bg-layer-1",
   "--vex-alias-bg-layer-2",
   "--vex-alias-bg-layer-3",
+  "--vex-alias-bg-overlay",
+  "--vex-alias-sidebar-fill",
+  "--vex-alias-card",
   "--vex-alias-interactive-solid",
+  "--vex-alias-interactive-active",
   "--vex-alias-accent-wash",
   "--vex-alias-field",
 ] as const;
+
+/**
+ * VEX Cloud's white alphas (docs/design/H3-DESKTOP.md section 2.1): an
+ * alias spelled `rgba(255, 255, 255, a)`, laid over the ground it stands on.
+ * The composite is what the eye reads, so it is what is measured.
+ */
+function whiteAlpha(token: string): number {
+  const value = declaredValue(chronos, token);
+  const match = /^rgba\(255, 255, 255, (0?\.\d+)\)$/.exec(value ?? "");
+  if (!match) throw new Error(`${token} is "${value ?? ""}", not white at an alpha`);
+  return Number(match[1]);
+}
+
+function over(alpha: number, ground: string): string {
+  return `#${channels(ground)
+    .map((c) => Math.round(255 * alpha + c * (1 - alpha)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+describe("Cloud's white alphas read where they are laid", () => {
+  for (const theme of THEMES) {
+    it(`${theme.name}: the placeholder clears ${AA_BODY}:1 on every field and column it can sit in`, () => {
+      // Cloud raised v99's 40% to 55% to reach AA (its --vx-placeholder).
+      const placeholder = whiteAlpha("--vex-alias-label-placeholder");
+      for (const ground of [
+        "--vex-alias-field",
+        "--vex-alias-bg-layer-3",
+        "--vex-alias-sidebar-fill",
+        "--vex-alias-card",
+      ] as const) {
+        const behind = resolveHex(theme.blocks, ground);
+        expect(
+          Number(contrast(over(placeholder, behind), behind).toFixed(2)),
+          `placeholder on ${ground}`,
+        ).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the words in both bubbles clear ${AA_BODY}:1`, () => {
+      const ground = resolveHex(theme.blocks, "--vex-alias-bg-base");
+      const ink = resolveHex(theme.blocks, "--vex-alias-label-primary");
+      for (const bubble of ["--vex-alias-bubble", "--vex-alias-bubble-vex"] as const) {
+        const fill = over(whiteAlpha(bubble), ground);
+        expect(Number(contrast(ink, fill).toFixed(2)), `ink in ${bubble}`).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the dimmed mark stays decoration, under the text floor and above the ground`, () => {
+      // White at 24% (Cloud's chosen rule): a disabled mark, never a word.
+      const ground = resolveHex(theme.blocks, "--vex-alias-bg-base");
+      const dimmed = Number(contrast(over(whiteAlpha("--vex-alias-label-dimmed"), ground), ground).toFixed(2));
+      expect(dimmed).toBeLessThan(AA_GRAPHIC);
+      expect(dimmed).toBeGreaterThan(1.5);
+    });
+  }
+});
 
 describe("every text tier reads on every surface it sits on", () => {
   for (const theme of THEMES) {

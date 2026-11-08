@@ -35,7 +35,7 @@
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--vex-alias-label-primary);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
   border: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__in {
@@ -425,7 +425,7 @@
   gap: 10px;
   margin: 0;
   padding: 12px var(--vex-appr-inset);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
   border-top: 1px solid var(--vex-alias-rule);
 }
 
@@ -491,7 +491,7 @@
   border-bottom: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__foot[data-docked] > input::placeholder {
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-placeholder);
 }
 .vex-appr__foot[data-docked] > input:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -528,12 +528,29 @@
 }
 .vex-appr__foot[data-docked] > [data-vex-key="approve"] {
   grid-area: approve;
+  position: relative;
+  isolation: isolate;
   padding: 0 32px;
   color: var(--vex-alias-button-accent-ink);
   background: var(--vex-alias-button-accent-fill);
 }
-.vex-appr__foot[data-docked] > [data-vex-key="approve"]:enabled:hover {
+/* Its blue hover rises from the key's foot over 420ms, as SEND's does
+ * (VEX Cloud's --vx-blue-fill-hover): a layer under the word, never a swap
+ * of the key's fill. A look only: when the key acts is the card's own. The
+ * armed key (the ink plate) and a held key take no rising fill. */
+.vex-appr__foot[data-docked] > [data-vex-key="approve"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--vex-alias-button-accent-hover);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
+  pointer-events: none;
+}
+.vex-appr__foot[data-docked] > [data-vex-key="approve"]:enabled:not([data-armed]):hover::before {
+  transform: scaleY(1);
 }
 .vex-appr__foot[data-docked] > button[data-armed],
 .vex-appr__foot[data-docked] > button[data-armed]:enabled:hover {
@@ -626,7 +643,7 @@
 .vex-appr-row-frame {
   margin-bottom: 10px;
   font-family: var(--font-sans);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-card);
   border: 1px solid var(--vex-alias-rule);
 }
 .vex-appr-row {

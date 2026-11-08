@@ -184,12 +184,12 @@ describe("SessionWelcomeHero - the greeting bubble", () => {
     expect(heading.getAttribute("title")).toContain("Self-custodial");
   });
 
-  it("is Vex's bubble: sans 16 in ink on the raised 2 fill, set from the left", () => {
+  it("is Vex's bubble: sans 16 in ink on her bubble (white at 6%), set from the left", () => {
     const rule = cssRule(".vex-welcome__greeting");
     expect(rule).toMatch(/font-size:\s*16px;/);
     expect(rule).toMatch(/font-weight:\s*400;/);
     expect(rule).toMatch(/font-family:\s*var\(--font-sans\);/);
-    expect(rule).toMatch(/background:\s*var\(--vex-alias-bg-overlay\);/);
+    expect(rule).toMatch(/background:\s*var\(--vex-alias-bubble-vex\);/);
     expect(rule).toMatch(/padding:\s*12px 16px;/);
     expect(rule).not.toMatch(/text-align:\s*center/);
     expect(rule).not.toMatch(/border-radius/);
@@ -201,7 +201,7 @@ describe("SessionWelcomeHero - the greeting bubble", () => {
       "utf8",
     );
     expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
-    expect(tokens).toContain("--vex-alias-bg-overlay: var(--color-h3-raised-2);");
+    expect(tokens).toContain("--vex-alias-bubble-vex: rgba(255, 255, 255, 0.06);");
   });
 
   it("stands at the column's top, 24 in and 28 under the header, the composer at the foot", () => {

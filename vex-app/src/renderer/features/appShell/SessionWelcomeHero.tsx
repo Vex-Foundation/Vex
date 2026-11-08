@@ -6,7 +6,7 @@
  * foot, so the whole opening moves as one unit.
  *
  * H3 draws, at 1440: the greeting, "Ready when you are.", in a bubble on the
- * raised 2 fill at 704, 104 (24 in from the column, 28 under the header),
+ * Vex's bubble (white at 6%) at 704, 104 (24 in from the column, 28 under the header),
  * sans 18; then two notes under it, each a small square and a caps line:
  *
  *   VEX CAN TRADE FOR YOU                    same on desktop: Vex swaps,
