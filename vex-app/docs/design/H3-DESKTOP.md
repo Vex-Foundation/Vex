@@ -7,7 +7,7 @@ This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`.
 The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 November 2026. Cloud builds the same design in `Jcaster99/Vex` (`apps/web`). No H3 branch was on that remote on 3 November 2026, so both apps start from the same mockup; wherever this document derives a number the mockup does not print, the number is reconciled with Cloud once Cloud's branch exists.
 
 ## Rules
-- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0, no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the chosen row's fill (a chosen row and the row under the pointer in the chats column).
+- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0 (save the chat bubbles and the avatar circle, section 2.4), no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the chosen row's fill (a chosen row and the row under the pointer in the chats column).
 - Labels are uppercase and tracked; sentences, names and values are in sentence case. Words are written in sentence case in code and uppercased by the label style, so a screen reader reads words, not letters.
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
 - A status is a small square beside a word, and every status has its own drawing (solid, blink, target, cross, frame, dotted frame, hatch), so a colour never stands alone (section 2.2). Gains and losses in trading values take green and red type.
@@ -398,6 +398,7 @@ Settled by the mockup source (2026-11-05): the labels' 8% came from their sizes,
 
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
+- **Radius** is 0 everywhere (base.css's shape law), with VEX Cloud's two exceptions (STYLE 5.5) and no others: the chat bubbles, 18 round with the corner next to the speaker sharp at 4 (Vex's answer and the greeting 4 18 18 18, from the left; the person's message 18 4 18 18, from the right; `--vex-radius-bubble-vex` and `-you`), and the avatar circle, which desktop draws as SVG geometry and so needs no radius. `glass-tokens.test.ts` holds the exceptions to exactly these.
 - A cell's text sits 24 in from its left edge (section 1.3).
 - **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover; on SEND (and STOP, the same cell) and the docked approve key it rises from the key's foot over 420ms (`--vex-duration-key-fill`), Cloud's `--vx-blue-fill-hover` layer, never a swap of the fill. A look only: when a key acts is unchanged. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).

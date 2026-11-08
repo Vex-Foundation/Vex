@@ -105,8 +105,9 @@
  * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
  * right. The bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16 /
  * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
- * column (VEX Cloud's `.t-you p`); square, by the shape law (base.css), where
- * the capture rounds three corners. The avatar is a 36px disc. The clock and
+ * column (VEX Cloud's `.t-you p`); 18 round with the corner by the avatar
+ * sharp at 4 (`--vex-radius-bubble-you`, one of the shape law's two
+ * exceptions in base.css). The avatar is a 36px disc. The clock and
  * the message keys sit at the bubble's left, hover-revealed, so at rest the
  * row is the bubble and the disc alone. */
 .vex-you {
@@ -181,6 +182,7 @@
  * no token beside them (her presence is the Vex key in the header). Her
  * answer stands in her bubble, as VEX Cloud draws it (`.t-vex p`): the sans
  * at 16 / 1.45 at -0.005em in ink, 12 between paragraphs, padded 12 by 16,
+ * on white at 6%, 18 round with her corner sharp at 4 (base.css),
  * as wide as its words and at most 82% of the column, the reading size of
  * the person's message. The bubble is the answer's own wrapper
  * (`.vex-answer`, and `.vex-answer-resolve` while it streams), so the

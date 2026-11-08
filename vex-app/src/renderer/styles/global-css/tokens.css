@@ -274,6 +274,11 @@
   /* The avatar's disc under the person glyph (Cloud's --vx-avatar,
    * oklch(20% 0.004 264)): the plate step. */
   --vex-alias-avatar: var(--color-h3-tooltip);
+  /* The bubbles' corners (Cloud's --vx-size-bubble-radius-vex and -you):
+   * 18 round, the corner next to the speaker sharp at 4. The shape law's
+   * only CSS exceptions (base.css). */
+  --vex-radius-bubble-vex: 4px 18px 18px 18px;
+  --vex-radius-bubble-you: 18px 4px 18px 18px;
   --vex-alias-composer: var(--vex-alias-field);
   /* The chosen row and the row under the pointer (Cloud's
    * --vx-chosen-row-rail): its fill fades from #1A1B1C at the row's left

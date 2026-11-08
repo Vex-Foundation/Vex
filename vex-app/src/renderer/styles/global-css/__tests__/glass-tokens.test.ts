@@ -169,6 +169,37 @@ describe("the shape law", () => {
     }
   });
 
+  it("names exactly its exceptions: the two chat bubbles, and the avatar circle as SVG geometry", () => {
+    // docs/design/H3-DESKTOP.md section 2.4 (VEX Cloud's STYLE 5.5): only
+    // the bubbles round, 18 with the speaker's corner sharp at 4. A radius
+    // can beat the law only with `!important`; every such declaration in
+    // every sheet is one of these, and nothing else.
+    const winners = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, , body]) => /border-radius:[^;]*!important/.test(body ?? ""))
+        .map(([, selector, body]) => [name, (selector ?? "").trim().replace(/\s+/g, " "), body ?? ""] as const)
+        .filter(([, selector]) => !selector.startsWith("*,")),
+    );
+    expect(winners.map(([name, selector]) => `${name}: ${selector}`)).toEqual([
+      "base.css: .vex-you__body",
+      "base.css: .vex-reply :is(.vex-answer, .vex-answer-resolve), .vex-welcome__greeting",
+    ]);
+    expect(winners[0]?.[2]).toContain("border-radius: var(--vex-radius-bubble-you) !important;");
+    expect(winners[1]?.[2]).toContain("border-radius: var(--vex-radius-bubble-vex) !important;");
+    const room = stripComments(tokensCss);
+    expect(declarationValue(room, "--vex-radius-bubble-vex")).toBe("4px 18px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-you")).toBe("18px 4px 18px 18px");
+    // The avatar is a circle drawn as SVG, never a CSS radius: the law
+    // leaves it whole, so it needs no exception.
+    const sources = new Map(rendererSources());
+    for (const [file, disc] of [
+      [path.join("features", "appShell", "TranscriptMessage.tsx"), "vex-you__disc"],
+      [path.join("features", "appShell", "SidebarProfile.tsx"), "vex-prof__disc"],
+    ] as const) {
+      expect(sources.get(file), file).toMatch(new RegExp(`<circle className="${disc}"`));
+    }
+  });
+
   it("resets Tailwind's radius, shadow and blur scales, and zeroes the app's own names", () => {
     const theme = stripComments(tokensCss.slice(tokensCss.indexOf("@theme {")));
     for (const reset of ["--radius-*: initial;", "--shadow-*: initial;", "--blur-*: initial;"]) {

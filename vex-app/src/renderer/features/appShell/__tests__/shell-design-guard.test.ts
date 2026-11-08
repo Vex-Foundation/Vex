@@ -76,7 +76,9 @@
  *
  * The radius, shadow and blur bans stay where they are: the patterns above
  * for the call sites, `styles/global-css/__tests__/glass-tokens.test.ts` for
- * the sheets and the token scales.
+ * the sheets and the token scales. That suite also holds the shape law's
+ * exceptions to exactly the two chat bubbles (base.css), the avatar circle
+ * being SVG geometry that needs none.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
