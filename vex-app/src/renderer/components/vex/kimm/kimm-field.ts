@@ -1,139 +1,104 @@
 /**
- * HER GLYPH FIELD, THE MODEL (docs/design/H3-DESKTOP.md sections 1.5, 3.2 and
- * 3.5; plan row S4-17): the falling V, X and E behind her figure on her blue
- * ground. Pure: columns of glyphs that fall at their own pace, stepped by a
- * fixed clock, from one seeded sequence, so the same step always draws the
- * same field (a still frame is a step, a capture is repeatable). The canvas
- * that draws it, the run gate and the still frame are `KimmField.tsx`.
+ * HER GLYPH FIELD, THE RECIPE AND THE GATE (docs/design/H3-DESKTOP.md
+ * sections 1.5, 3.2 and 3.5; MOTION-POLICY.md "Kimm's glyph field"). The
+ * field behind her figure is VEX Cloud's: the landing's Gradient ASCII
+ * recipe (Cloud's `kimm-field.ts`, its mockup's `stage.js:86-88`), drawn by
+ * the port in `gradient-ascii.ts` and mounted by `KimmField.tsx`. Pure: the
+ * options the port is mounted with, and whether it runs.
  *
- * MEASURED from `h3-merged__welcome-open-1440`: glyphs about 14px high in a
- * mono face on a 15px pitch across and 20px down, light on the ground, the
- * columns falling apart from one another, some empty. Open: the source's own
- * speeds, density and face, settled by the mockup source.
+ * TWO MODES, as Cloud's (its third, `baked`, is her ground's still image,
+ * kimm.css, which stays where WebGL2 is missing):
+ *   - `live`: her section over the Vex column; it runs while she is open and
+ *     on screen, and holds its frame in the strip;
+ *   - `frame`: one still frame, no ticker: her band under 1024 (Cloud's 768
+ *     to 1023 layout).
+ * Reduced motion and Save-Data hold either at one frame.
  */
 
-/** The glyphs she falls in. */
-export const KIMM_FIELD_GLYPHS = ["V", "X", "E"] as const;
+/** The options of the port (`mountGradientAscii(container, options)`), as Cloud types them. */
+export interface GradientAsciiOptions {
+  readonly colors?: readonly string[];
+  readonly shape?: "horizon" | "pinch" | "rise" | "eclipse";
+  readonly characters?: string;
+  readonly cellSize?: number;
+  readonly density?: number;
+  readonly glyphOpacity?: number;
+  readonly glow?: number;
+  readonly depthOfField?: number;
+  readonly flicker?: number;
+  readonly softness?: number;
+  readonly scale?: number;
+  readonly flow?: number;
+  readonly speed?: number;
+  readonly gradientOpacity?: number;
+  readonly grain?: number;
+  readonly variation?: number;
+  readonly mouseInteraction?: boolean;
+  readonly scrambleRadius?: number;
+  readonly clickEffect?: "none" | "wave" | "burst";
+  readonly intro?: boolean;
+  readonly still?: boolean;
+  readonly lightMode?: boolean;
+  readonly fontFamily?: string;
+  readonly dpr?: number;
+}
 
-/** The field's cell: a column's pitch across, a row's pitch down (CSS px). */
-export const KIMM_FIELD_CELL = { width: 15, height: 20 } as const;
+/** How the field is drawn where it stands. */
+export type KimmFieldMode = "live" | "frame";
 
 /**
- * The field's step: 10 a second (MOTION-POLICY.md, "Kimm's glyph field"). One frame never advances it by more than
- * `KIMM_FIELD_CLOCK_CAP_MS`, so a stalled window resumes where it stopped.
+ * The landing's recipe (vex-home `gradient-ascii.js:850`, H3 `stage.js:86-88`,
+ * VEX Cloud's `KIMM_FIELD_RECIPE`): ' VEX' in Roboto Mono on a 20 cell,
+ * density 0.5, glyphs 0.6, gradient 0.8, the blue palette on the horizon
+ * shape, no intro. The palette is the field's own drawing, mixed by the port
+ * in its own colour space, not a token of the sheet.
  */
-export const KIMM_FIELD_STEP_MS = 100;
-export const KIMM_FIELD_CLOCK_CAP_MS = 250;
+export const KIMM_FIELD_RECIPE = {
+  colors: ["#1e3fd8", "#f6f8ff", "#a5d8ff", "#38bdf8"],
+  shape: "horizon",
+  characters: " VEX",
+  cellSize: 20,
+  density: 0.5,
+  glyphOpacity: 0.6,
+  gradientOpacity: 0.8,
+  fontFamily: '"Roboto Mono", ui-monospace, monospace',
+  intro: false,
+} as const satisfies GradientAsciiOptions;
 
-/** The step the still frame paints: the field as it stands after a few seconds. */
-export const KIMM_FIELD_STILL_STEP = 48;
-
-/** One falling run of glyphs in a column. */
-interface Stream {
-  /** The row its head stands on, fractional. */
-  head: number;
-  /** Rows per step. */
-  speed: number;
-  /** How many glyphs trail behind the head. */
-  length: number;
-  /** Steps to wait before it falls again, once it has left the field. */
-  wait: number;
+/** What decides whether the field runs. */
+export interface KimmFieldGate {
+  readonly mode: KimmFieldMode;
+  /** Her section is open, as the last press left it. */
+  readonly open: boolean;
+  /** Reduced motion or Save-Data (`useStillFrame`). */
+  readonly still: boolean;
+  /** The run gate is open: the field is on screen and the window shown (`RunGate`). */
+  readonly onScreen: boolean;
 }
 
-/** A glyph to draw: its cell and how strongly it shows (0 to 1). */
-export interface KimmGlyph {
-  readonly column: number;
-  readonly row: number;
-  readonly glyph: (typeof KIMM_FIELD_GLYPHS)[number];
-  readonly alpha: number;
+/**
+ * Whether the field runs: only live, only while she is open, only on screen
+ * in a shown window, and never under the still frame. Anything else holds
+ * one frame.
+ */
+export function kimmFieldRuns(gate: KimmFieldGate): boolean {
+  return gate.mode === "live" && gate.open && !gate.still && gate.onScreen;
 }
 
-/** mulberry32: a small seeded sequence, so every field is the same field. */
-function sequence(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+/**
+ * The port's options: the recipe, held at one frame unless it runs, the
+ * pointer's trail only where it may run (Cloud's), at most twice the CSS
+ * pixel.
+ */
+export function kimmFieldOptions(
+  mode: KimmFieldMode,
+  running: boolean,
+  devicePixelRatio: number,
+): GradientAsciiOptions {
+  return {
+    ...KIMM_FIELD_RECIPE,
+    still: !running,
+    mouseInteraction: mode === "live",
+    dpr: Math.min(2, devicePixelRatio || 1),
   };
-}
-
-export class KimmFieldModel {
-  readonly columns: number;
-  readonly rows: number;
-  #streams: Stream[];
-  #glyphs: (typeof KIMM_FIELD_GLYPHS)[number][][];
-  #random: () => number;
-  #step = 0;
-
-  constructor(width: number, height: number, seed = 0x5eed) {
-    this.columns = Math.max(1, Math.floor(width / KIMM_FIELD_CELL.width));
-    this.rows = Math.max(1, Math.ceil(height / KIMM_FIELD_CELL.height));
-    this.#random = sequence(seed);
-    this.#glyphs = Array.from({ length: this.columns }, () =>
-      Array.from({ length: this.rows }, () => this.#pick()),
-    );
-    this.#streams = Array.from({ length: this.columns }, () => this.#stream(true));
-  }
-
-  /** The steps taken since the field began. */
-  get step(): number {
-    return this.#step;
-  }
-
-  /** Advance by `steps` fixed steps. */
-  advance(steps: number): void {
-    for (let i = 0; i < steps; i += 1) {
-      this.#step += 1;
-      this.#streams.forEach((stream, column) => {
-        if (stream.wait > 0) {
-          stream.wait -= 1;
-          return;
-        }
-        stream.head += stream.speed;
-        // Now and then a glyph in the run changes, as the field flickers.
-        if (this.#random() < 0.08) {
-          const row = Math.floor(this.#random() * this.rows);
-          const cells = this.#glyphs[column];
-          if (cells !== undefined) cells[row] = this.#pick();
-        }
-        if (stream.head - stream.length > this.rows) this.#streams[column] = this.#stream(false);
-      });
-    }
-  }
-
-  /** The glyphs that show now, tail faintest, head brightest. */
-  glyphs(): KimmGlyph[] {
-    const out: KimmGlyph[] = [];
-    this.#streams.forEach((stream, column) => {
-      if (stream.wait > 0) return;
-      const head = Math.floor(stream.head);
-      for (let k = 0; k < stream.length; k += 1) {
-        const row = head - k;
-        if (row < 0 || row >= this.rows) continue;
-        const glyph = this.#glyphs[column]?.[row];
-        if (glyph === undefined) continue;
-        out.push({ column, row, glyph, alpha: 0.75 * (1 - k / stream.length) + 0.1 });
-      }
-    });
-    return out;
-  }
-
-  #pick(): (typeof KIMM_FIELD_GLYPHS)[number] {
-    return KIMM_FIELD_GLYPHS[Math.floor(this.#random() * KIMM_FIELD_GLYPHS.length)] ?? "V";
-  }
-
-  #stream(first: boolean): Stream {
-    const length = 3 + Math.floor(this.#random() * 8);
-    return {
-      // The first runs start anywhere in the field, later ones above it.
-      head: first ? this.#random() * (this.rows + length) : -1,
-      speed: 0.15 + this.#random() * 0.35,
-      length,
-      // Some columns rest: the field is never a wall of glyphs.
-      wait: Math.floor(this.#random() * (first ? 12 : 25)),
-    };
-  }
 }

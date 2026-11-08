@@ -274,6 +274,13 @@ describe("KimmSection, her ground and her figure's frame (VEX Cloud's stage)", (
     expect(wide).not.toMatch(/gradient/);
   });
 
+  it("gives the baked frame up for the page once the live field has painted", () => {
+    expect(rule(".vex-kimm[data-kimm-field] .vex-kimm__ground")).toMatch(/background:\s*var\(--vex-alias-bg-base\)/);
+    // jsdom has no WebGL2: the field draws nothing, so the baked frame stays.
+    render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    expect(section().hasAttribute("data-kimm-field")).toBe(false);
+  });
+
   it("frames her figure as Cloud frames her still: 48 from her top, 88% wide, centred", () => {
     const figure = rule(".vex-kimm__figure");
     expect(figure).toMatch(/top:\s*48px/);

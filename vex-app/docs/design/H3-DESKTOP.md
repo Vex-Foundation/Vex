@@ -487,8 +487,8 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
   Every saved choice survives the migrations: v22 seeded the two persisted slots only where a payload lacked them, and v24 touched only the chat's.
 - **First launch: open** in chats, closed on pages, closed under 1024. The sheet's drawn answer for computers, and Cloud's PD-12.
 - **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
-- **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint shows the same, since it never fades.
-- **Closed costs little.** Closed, only the chip of her mood loads (about 6 KB; the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
+- **Reduced motion and Save-Data** open and close her at once; the glyph field holds one still frame. The first-close hint shows the same, since it never fades.
+- **Closed costs little.** Closed, only the chip of her mood loads (about 6 KB; the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17): VEX Cloud's Gradient ASCII field (` VEX`, cell 20, density 0.5, glyphs 0.6, gradient 0.8, the palette #1E3FD8 #F6F8FF #A5D8FF #38BDF8 on the horizon shape, no intro), ported as plain canvas code (`gradient-ascii.ts`, MIT + Commons Clause, its licence beside it), reached by a dynamic import; closed it holds its frame, the band draws one frame, and its ground gives up the baked frame for the page once it has painted.
 
 ### 3.6 The money card never moves
 Opening or closing her section never moves, resizes or covers a waiting money card, on any frame. It holds because of three things, and needs all three:

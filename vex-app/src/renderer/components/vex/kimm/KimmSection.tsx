@@ -16,9 +16,10 @@
  *
  * WHAT IS IN IT, back to front: her ground (the glyph field's baked frame
  * under a fall to the page, VEX Cloud's; `KimmArtSet.field`, its URLs set on
- * her box as `--vex-kimm-baked` and `--vex-kimm-baked-wide` for kimm.css),
- * her glyph field (`KimmField`, running only while she is open and on
- * screen), her figure for her mood (framed as Cloud frames her still: 48
+ * her box as `--vex-kimm-baked` and `--vex-kimm-baked-wide` for kimm.css,
+ * until the live field has painted: then `data-kimm-field` and the page),
+ * her glyph field (`KimmField`, VEX Cloud's Gradient ASCII field, running
+ * only while she is open and on screen), her figure for her mood (framed as Cloud frames her still: 48
  * from her top, 88% of her width, centred), and the corner key. The figure
  * is her art for the mood (`KimmArtSet.sections`); a mood whose art is
  * `missing` shows the ground alone, never another mood's figure and never a
@@ -393,6 +394,10 @@ export function KimmSection({
     [reportsPhase],
   );
   const moving = phase === "opening" || phase === "closing";
+  // Her live field: in her section it runs, in the band it holds one frame.
+  // Once it has painted, her ground gives up the baked frame (kimm.css).
+  const fieldMode = band === undefined ? "live" : "frame";
+  const [fieldDrawn, setFieldDrawn] = useState(false);
 
   return (
     <div
@@ -405,6 +410,7 @@ export function KimmSection({
       data-kimm-guard={guard === null ? undefined : ""}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       data-kimm-seat={band === undefined ? undefined : "band"}
+      data-kimm-field={fieldDrawn ? fieldMode : undefined}
       className={band === undefined ? "vex-kimm" : "vex-kimm vex-kimm--band"}
       style={kimmGroundStyle(art.field)}
     >
@@ -414,8 +420,9 @@ export function KimmSection({
       <div aria-hidden="true" inert={moving} className="vex-kimm__body">
         <div className="vex-kimm__ground" />
         {/* The glyph field, behind her figure: it runs while she is open and
-          * holds its frame in the strip (`KimmField.tsx`, S4-17). */}
-        <KimmField running={open} />
+          * holds its frame in the strip; the band draws one frame
+          * (`KimmField.tsx`, S4-17). */}
+        <KimmField open={open} mode={fieldMode} onDrawn={setFieldDrawn} />
         {/* Her drop rides this layer, which stands from the first frame,
           * so her first open drops her too: her figure is only asked for at
           * that press, and a new element has no closed place to drop from. */}

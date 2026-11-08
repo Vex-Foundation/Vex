@@ -106,18 +106,25 @@
     background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
   }
 }
-/* Her glyph field (S4-17): a canvas over her ground and under her figure,
- * the size of her box. Its glyphs are drawn in this ink and this face, read
- * from the canvas's own computed style (`KimmField.tsx`), at the strength the
- * model gives each one. */
+/* The live field has painted (`data-kimm-field`, KimmSection.tsx): the
+ * page under it, as VEX Cloud's stage gives up its baked frame; the field
+ * draws its own fall to the page. */
+.vex-kimm[data-kimm-field] .vex-kimm__ground {
+  background: var(--vex-alias-bg-base);
+}
+/* Her glyph field (S4-17): VEX Cloud's Gradient ASCII field, a canvas the
+ * port adds to this box (`KimmField.tsx`), over her ground and under her
+ * figure, the size of her box. Decorative: it takes no pointer (the port
+ * reads the window's pointer for its trail). */
 .vex-kimm__field {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+.vex-kimm__field canvas {
+  display: block;
   width: 100%;
   height: 100%;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-mono);
-  pointer-events: none;
 }
 /* Her figure for her mood, framed as VEX Cloud frames her still in a
  * desktop section (`.vx-kimm[data-vx-kimm-layout="desktop"] .vx-kimm-still`):
