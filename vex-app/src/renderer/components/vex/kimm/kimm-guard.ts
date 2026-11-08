@@ -22,14 +22,33 @@
  * key's own handler writes the choice, and keeps it for that task alone: the
  * close that the click asks for reads it (`takePointerPress`) as it lays out
  * the same task's commit, and any later close finds nothing.
+ *
+ * A TOUCH OR A PEN LEAVES AT ITS LIFT (VEX Cloud's built guard,
+ * `use-vex-section.ts`): a finger or a pen has no hover, so once lifted it
+ * rests over nothing, and no move will ever come to say it left the key. A
+ * press made with one starts the guard with the pointer already out
+ * (`KimmPress.lifted`), and any later lift of one does the same, so the guard
+ * lifts on its time and its close alone and the next tap is never swallowed.
  */
 
-/** A pointer press on a key: its box, in the window's pixels. */
-export interface KimmPress {
+/** A key's box, in the window's pixels. */
+export interface KimmBox {
   readonly left: number;
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
+}
+
+/** A pointer press on a key: its box, and how it was pressed. */
+export interface KimmPress extends KimmBox {
+  /** Pressed with a touch or a pen: lifted, it rests over nothing. */
+  readonly lifted: boolean;
+}
+
+/** Whether a pointer event came from a touch or a pen, which rest over nothing once lifted. */
+export function liftsAway(event: Event): boolean {
+  const type = (event as { readonly pointerType?: unknown }).pointerType;
+  return type === "touch" || type === "pen";
 }
 
 let pressed: KimmPress | null = null;
@@ -43,7 +62,7 @@ export function notePointerPress(event: MouseEvent): void {
   const target = event.target instanceof Element ? event.target.closest("button, [role='button']") : null;
   if (target === null) return;
   const { left, top, right, bottom } = target.getBoundingClientRect();
-  const press = { left, top, right, bottom };
+  const press = { left, top, right, bottom, lifted: liftsAway(event) };
   pressed = press;
   // This task's alone: a close later than the click's own never reads it.
   window.setTimeout(() => {
@@ -59,7 +78,7 @@ export function takePointerPress(): KimmPress | null {
 }
 
 /** Whether a point lies in a press's box, edges included. */
-export function insidePress(press: KimmPress, x: number, y: number): boolean {
+export function insidePress(press: KimmBox, x: number, y: number): boolean {
   return x >= press.left && x <= press.right && y >= press.top && y <= press.bottom;
 }
 

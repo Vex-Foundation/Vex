@@ -4,8 +4,9 @@
  * corner key or the Vex key, the console's rest takes no pointer until the
  * close has ended, 500ms have passed since the press and the pointer has left
  * the pressed key's box, whichever comes last. A keyboard close stands no
- * guard; an open drops one. And a turned leg lasts max(140, base x distance
- * left / distance) (`kimm-wipe.ts`).
+ * guard; an open drops one; a touch or a pen is out of the key once lifted,
+ * as Cloud's built guard has it. And a turned leg lasts max(140, base x
+ * distance left / distance) (`kimm-wipe.ts`).
  */
 
 import { readFileSync } from "node:fs";
@@ -68,6 +69,24 @@ const guarded = (): boolean => section().hasAttribute("data-kimm-guard");
 function pointerTo(x: number, y: number): void {
   act(() => {
     window.dispatchEvent(new MouseEvent("pointermove", { clientX: x, clientY: y }));
+  });
+}
+
+/** A click made by a pointer of `pointerType` (Chromium's click is a PointerEvent that names it). */
+function clickWith(el: Element, pointerType: string): void {
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  act(() => {
+    el.dispatchEvent(event);
+  });
+}
+
+/** A pointer of `pointerType` lifted (or cancelled) at a point of the window. */
+function liftAt(type: "pointerup" | "pointercancel", pointerType: string, x: number, y: number): void {
+  const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  act(() => {
+    window.dispatchEvent(event);
   });
 }
 
@@ -176,6 +195,35 @@ describe("a Hide Vex press guards what it reveals", () => {
     // Still on the Vex key: it stands; down onto the console's rest, it lifts.
     expect(guarded()).toBe(true);
     pointerTo(400, 500);
+    expect(guarded()).toBe(false);
+  });
+
+  it("lets a touch or a pen go at its lift: no move ever comes, so it lifts on its time and its close alone", () => {
+    for (const pointerType of ["touch", "pen"]) {
+      render(<Column />);
+      placeAt(cornerKey(), 541, 224, 138, 56);
+      clickWith(cornerKey(), pointerType);
+      expect(cornerKey().textContent).toBe("Show Vex");
+      expect(guarded()).toBe(true);
+      wait(DURATION_VEX_GUARD_MS - 1);
+      expect(guarded()).toBe(true);
+      wait(1);
+      expect(guarded(), pointerType).toBe(false);
+      cleanup();
+    }
+  });
+
+  it("keeps a mouse that rests on the key waiting, and lets it go when a later touch lifts", () => {
+    render(<Column />);
+    placeAt(cornerKey(), 541, 224, 138, 56);
+    clickWith(cornerKey(), "mouse");
+    wait(DURATION_VEX_GUARD_MS + 300);
+    expect(guarded()).toBe(true);
+    // A mouse button let go over the key is still over it.
+    liftAt("pointerup", "mouse", 600, 250);
+    expect(guarded()).toBe(true);
+    // A finger lifted, even over the key's box, rests over nothing.
+    liftAt("pointercancel", "touch", 600, 250);
     expect(guarded()).toBe(false);
   });
 

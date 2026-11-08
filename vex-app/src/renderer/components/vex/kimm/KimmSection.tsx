@@ -113,7 +113,8 @@
  * no pointer until the close has ended, 500ms have passed since the press
  * (`DURATION_VEX_GUARD_MS`) and the pointer has left the pressed key's box.
  * The guard stands as `data-kimm-guard` on her box, which the sheet reads; a
- * keyboard close stands none, and an open drops it.
+ * keyboard close stands none, and an open drops it. A touch or a pen is out
+ * of the key once lifted (`liftsAway`), so it never waits for a move.
  *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
@@ -160,6 +161,7 @@ import {
   insidePress,
   KIMM_GUARD_TICK_MS,
   kimmGuardLifts,
+  liftsAway,
   notePointerPress,
   takePointerPress,
   type KimmPress,
@@ -314,8 +316,9 @@ export function KimmSection({
   // pointer has left the pressed key's box, whichever comes last.
   useEffect(() => {
     if (guard === null) return undefined;
-    let x = (guard.left + guard.right) / 2;
-    let y = (guard.top + guard.bottom) / 2;
+    // A touch or a pen press is lifted already: over nothing, so out of the key.
+    let x = guard.lifted ? Number.NaN : (guard.left + guard.right) / 2;
+    let y = guard.lifted ? Number.NaN : (guard.top + guard.bottom) / 2;
     let waited = false;
     let timer: number | undefined;
     const lifts = (): boolean => {
@@ -330,14 +333,24 @@ export function KimmSection({
       y = event.clientY;
       lifts();
     };
+    const lift = (event: PointerEvent): void => {
+      if (!liftsAway(event)) return;
+      x = Number.NaN;
+      y = Number.NaN;
+      lifts();
+    };
     const tick = (): void => {
       waited = true;
       if (!lifts()) timer = window.setTimeout(tick, KIMM_GUARD_TICK_MS);
     };
     window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("pointerup", lift, true);
+    window.addEventListener("pointercancel", lift, true);
     timer = window.setTimeout(tick, DURATION_VEX_GUARD_MS);
     return () => {
       window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", lift, true);
+      window.removeEventListener("pointercancel", lift, true);
       window.clearTimeout(timer);
     };
   }, [guard]);
