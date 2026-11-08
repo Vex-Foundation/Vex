@@ -397,8 +397,9 @@ html[data-still] .vex-swatch {
 }
 
 /* ── Cell meter ────────────────────────────────────────────────────────────
- * A row of cells: filled cells in the blue, empty cells in a rule outline.
- * Over the limit the fill turns ink (never red). */
+ * VEX Cloud's meter (`.vx-cmp-bars`): cells 6 x 12, 2 apart, an unlit cell
+ * white at 8%, a lit one 39%, the last lit one 60%. Over the limit the lit
+ * cells turn ink (never red). No outline: the fill alone draws each cell. */
 .vex-cell-meter {
   display: inline-flex;
   gap: 2px;
@@ -406,16 +407,18 @@ html[data-still] .vex-swatch {
 }
 
 .vex-cell-meter > i {
-  width: var(--vex-cell, 10px);
-  height: var(--vex-cell, 10px);
+  width: 6px;
+  height: 12px;
   flex: none;
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
+  background: var(--vex-alias-meter-off);
 }
 
 .vex-cell-meter > i[data-on] {
-  background: var(--vex-alias-accent-primary);
-  outline: 0;
+  background: var(--vex-alias-meter-on);
+}
+
+.vex-cell-meter > i[data-head] {
+  background: var(--vex-alias-meter-head);
 }
 
 .vex-cell-meter[data-over] > i[data-on] {

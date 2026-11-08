@@ -342,6 +342,34 @@ describe("the alias tier", () => {
     expect(base).toMatch(/::placeholder \{[^}]*color: var\(--vex-alias-label-placeholder\);/);
   });
 
+  it("draws both meters as VEX Cloud's: cells 6 x 12, 2 apart, unlit 8%, lit 39%, the last lit 60%", () => {
+    expect(room.get("--vex-alias-meter-off")).toBe("rgba(255, 255, 255, 0.08)");
+    expect(room.get("--vex-alias-meter-on")).toBe("rgba(255, 255, 255, 0.39)");
+    expect(room.get("--vex-alias-meter-head")).toBe("rgba(255, 255, 255, 0.6)");
+    // The composer's context meter (the shared cell meter) and the Lighter
+    // account's margin meter.
+    for (const [sheet, meter] of [
+      [stripComments(read("ui-primitives/marks.css")), ".vex-cell-meter"],
+      [stripComments(read("lighter-account.css")), ".lit-margin-usage-bar"],
+    ] as const) {
+      const body = (selector: string): string => {
+        const at = sheet.indexOf(`${selector} {`);
+        expect(at, `${selector} not found`).toBeGreaterThanOrEqual(0);
+        return sheet.slice(sheet.indexOf("{", at) + 1, sheet.indexOf("}", at));
+      };
+      expect(body(meter)).toContain("gap: 2px;");
+      const cell = body(`${meter} > i`);
+      expect(cell).toContain("width: 6px;");
+      expect(cell).toContain("height: 12px;");
+      expect(cell).toContain("background: var(--vex-alias-meter-off);");
+      expect(cell).not.toMatch(/border|outline/);
+      expect(body(`${meter} > i[data-on]`)).toContain("background: var(--vex-alias-meter-on);");
+      expect(body(`${meter} > i[data-head]`)).toContain("background: var(--vex-alias-meter-head);");
+      // Each cell is declared once: no later block re-sizes it.
+      expect(sheet.split(`${meter} > i {`)).toHaveLength(2);
+    }
+  });
+
   it("reaches only the primitives through its var() hops", () => {
     const primitives = new Set(Object.keys(PRIMITIVES));
     for (const [, value] of room) {

@@ -534,7 +534,7 @@ Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/
 1. Strategies, everywhere: the console's strategies row and strategy rows, Strategies in the nav, the page strip's strategies cell, allocation by strategy, and the word "strategy" in any line. F11 has not started, and even F11 is paper only.
 2. The network menu, and Paper against Live. There is no testnet and no paper mode; a static MAINNET and REAL FUNDS is true.
 3. PAUSE ALL. Desktop has per-run pause and stop, and Lock Vex, which stops signing, not workers.
-4. DAILY BUDGET. There is no daily budget; the status strip's CONTEXT meter takes its cell.
+4. DAILY BUDGET. There is no daily budget; the status strip's CONTEXT meter takes its cell. It is drawn as Cloud's meter (`.vx-cmp-bars`, its `--vx-meter-off`, `-on` and `-head`): ten cells 6 x 12, 2 apart, an unlit cell white at 8%, a lit one 39%, the last lit one 60%; past the engine's critical band the lit cells turn ink. The Lighter account's margin meter (`lit-margin-usage-bar`) is the same drawing, its lit cells ink past 80%.
 5. The card's limits line ("up to 10,000 USD per order, 50,000 USD a day"). F04 has not started.
 6. "Change in Settings" under AI PERMISSION. A chat's permission is set when it is created and locked.
 7. The composer's image key. Attachments are not supported.

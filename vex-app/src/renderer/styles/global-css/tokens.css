@@ -318,6 +318,12 @@
   --vex-alias-label-caption: var(--color-h3-muted);
   --vex-alias-label-dimmed: rgba(255, 255, 255, 0.24);
   --vex-alias-label-placeholder: rgba(255, 255, 255, 0.55);
+  /* The cell meters (VEX Cloud's --vx-meter-off, -on and -head): an unlit
+   * cell white at 8%, a lit cell 39%, the last lit cell 60%. Over its limit
+   * a meter's lit cells turn ink, never red. */
+  --vex-alias-meter-off: rgba(255, 255, 255, 0.08);
+  --vex-alias-meter-on: rgba(255, 255, 255, 0.39);
+  --vex-alias-meter-head: rgba(255, 255, 255, 0.6);
   /* Faint: a glyph at rest that the pointer lights, never a word (VEX
    * Cloud's --vx-faint, white at 55%: the Send key's dots). */
   --vex-alias-label-faint: rgba(255, 255, 255, 0.55);

@@ -347,7 +347,11 @@ function MarginMeter({ usage, label }: {
       data-level={usage === null ? undefined : usage >= 0.8 ? "high" : usage >= 0.5 ? "mid" : "low"}
     >
       {Array.from({ length: METER_CELLS }, (_, index) => (
-        <i key={index} data-on={index < on ? "" : undefined} />
+        <i
+          key={index}
+          data-on={index < on ? "" : undefined}
+          data-head={index === on - 1 ? "" : undefined}
+        />
       ))}
     </span>
   );

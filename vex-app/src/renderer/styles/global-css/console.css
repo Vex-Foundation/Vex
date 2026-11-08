@@ -456,9 +456,10 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   white-space: nowrap;
 }
 
-/* CONTEXT, the meter and the share: the label in muted caps 11, ten cells 4
- * x 12 two apart (the rule outline, the used share filled), the share a
- * figure in ink 2; the key is the whole cell, its text 24 in. */
+/* CONTEXT, the meter and the share: the label in muted caps 11, the cell
+ * meter (Cloud's ten cells 6 x 12 two apart, 8% unlit, 39% lit, the last lit
+ * 60%; ui-primitives/marks.css), the share a figure in ink 2; the key is the
+ * whole cell, its text 24 in. */
 .vex-composer-context {
   display: inline-flex;
   align-items: center;
@@ -476,10 +477,6 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 }
 .vex-composer-context__share {
   color: var(--vex-alias-label-secondary);
-}
-.vex-context-meter > i {
-  width: 4px;
-  height: 12px;
 }
 @container (max-width: 700px) {
   .vex-composer-context {

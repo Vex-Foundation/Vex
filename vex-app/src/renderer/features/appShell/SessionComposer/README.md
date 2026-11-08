@@ -75,7 +75,7 @@ hero-to-docked move because the parent keeps the mount position stable.
   context label and meter),
   `ComposerMissionStrip` (read-only mission status word + plan review link).
 - Context meter (`ComposerContextMeter`): a 30px key reading "Context N%"
-  beside the shared `CellMeter` (five 4x10 cells) from `useContextWindow`;
+  beside the shared `CellMeter` (VEX Cloud's meter: ten 6x12 cells, 8% unlit, 39% lit, the last lit 60%) from `useContextWindow`;
   past the ENGINE's
   own critical band the cells turn ink. It opens a 264px `role="dialog"`
   panel above and right-aligned, on the 1.5px ink frame. Outside pointer and Escape dismiss it; focus returns to
