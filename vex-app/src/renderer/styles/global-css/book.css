@@ -19,8 +19,17 @@
  * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57
  * high across the page, the tabs at the left (the selected one on raised 2,
  * the contract's selected tab fill) and "Updated {time}" with the page's
- * keys at the right; under its rule the page body, 24 in from each edge and
- * as wide as the column, not R3's centred reading column.
+ * keys at the right; under its rule the page body, 24 in from each edge,
+ * not R3's centred reading column. VEX Cloud's page blocks (`page.css`, the
+ * page kit): they stand at the left, at most 1136 wide, so a wide window
+ * leaves room at the right instead of stretching a table across it.
+ *
+ * THE READING LINE (section 1.11): with her section open, from 1024 (the
+ * Vex column standing, `data-vex-seat="column"`), the page starts where the
+ * chat's title and transcript do, on `--vex-read-x`, and the tabs row's
+ * first cell starts there too. The body zooms (`overlay.css`), so the line,
+ * measured in the window, is divided back by the zoom. With her closed the
+ * page takes the whole width right of the chats and keeps 24.
  *
  * These rules live here, with the pages, rather than in `overlay.css`, which
  * keeps the sheet's box, its layer and its scroller. Every page's sheet
@@ -28,9 +37,28 @@
  * `[data-width]` (always set) so it outranks overlay.css's own
  * `.vex-ov[data-width="wide"]` column, which loads after this sheet. */
 .vex-ov[data-frame="h3"][data-width] {
-  --vex-ov-max: none;
+  --vex-ov-in: 24px;
   --vex-ov-pad: 24px;
+  --vex-ov-max: calc(var(--vex-ov-in) + 1136px + var(--vex-ov-pad));
   --vex-ov-top: 24px;
+}
+.vex-ov[data-frame="h3"][data-width] .vex-ov__body {
+  margin-inline: 0;
+  padding-inline-start: var(--vex-ov-in);
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-ov[data-frame="h3"][data-width] {
+  --vex-ov-in: calc(var(--vex-read-x) / var(--vex-zoom, 1));
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-ov[data-frame="h3"] > .vex-pg-bar {
+  padding-left: var(--vex-read-x);
+}
+/* The Board is desktop's own page (section 4.9, awaiting its plate): its
+ * grid of cards keeps the whole column and its 24 inset. */
+.vex-ov[data-frame="h3"][data-width]:has(> .vex-ov__scroll > .vex-ov__body > .vex-bd),
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"]
+  .vex-ov[data-frame="h3"][data-width]:has(> .vex-ov__scroll > .vex-ov__body > .vex-bd) {
+  --vex-ov-in: 24px;
+  --vex-ov-max: none;
 }
 /* The page's h1 takes the focus on open (the route focus, `ShellScreen`):
  * a heading is not a control, so it draws no ring. */
