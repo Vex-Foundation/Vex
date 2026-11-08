@@ -129,6 +129,9 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   // mockup where they differ: the running square's hud and the refusal ink.
   "--color-h3-hud": [0.94, 0, 0],
   "--color-h3-err-text": [0.74, 0.17, 27],
+  // Cloud's --vx-header-solid: the header's ground without its alpha, Kimm's
+  // corner key (its mockup's css/tokens.css, DG-0).
+  "--color-h3-header-solid": [0.07, 0.01, 264],
 };
 
 /**
@@ -205,6 +208,7 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-h3-status-red": "#c22226",
   "--color-h3-hud": "#ebebeb",
   "--color-h3-err-text": "#ff7a6e",
+  "--color-h3-header-solid": "#010102",
 };
 
 describe("the static tier", () => {

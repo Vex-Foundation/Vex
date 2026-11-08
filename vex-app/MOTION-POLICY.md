@@ -70,6 +70,21 @@ here is a defect:
   Her wipe animates clip-path, transform and opacity only, never a size, so
   the money card beside her never moves (section 3.6); reduced motion and
   Save-Data land her at once.
+  The wipe runs on Web Animations (`components/vex/kimm/kimm-wipe.ts`), as
+  VEX Cloud's mockup runs it, so its clip and its 1px scan head share one
+  clock from one edge. The scan head runs on the open and on the close, at
+  full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
+  linearly out over the leg's last 8%: an opacity keyed to the leg, not a
+  duration of its own. Her 32px drop rides the same leg, driven by the
+  inset (-32 x inset / distance), so she rises as the wipe closes. A press
+  during a leg turns it from the edge where it stands over
+  max(`DURATION_VEX_TURN_MIN_MS`, base x distance left / distance), the
+  floor 140ms (VEX Cloud's `TURN_MIN_MS`), so a turn near a leg's end still
+  moves rather than snaps. After a pointer's Hide Vex, the console's rest
+  takes no pointer for at least `DURATION_VEX_GUARD_MS` (500ms, Cloud's
+  `SECTION_GUARD_MS`), until the close has ended and the pointer has left the
+  pressed key (`kimm-guard.ts`): a timer, not a motion, named here because it
+  is a number of hers.
 - The chats panel (`features/appShell/ChatsPanel.tsx`,
   `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
   (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides
@@ -169,9 +184,9 @@ handoff turn (the stage and the shell crossfade over a fixed 240ms linear).
 6): `data-vex-resizing` stands on `<html>` while the window is dragged and for
 220ms after its last resize event (`RESIZE_SETTLE_MS`, `lib/wide-zoom.ts`),
 `base.css` holds every transition still meanwhile, and the Web Animations
-owners (the chats panel, a page's re-lay) read `isWindowResizing()` and land
-at once, so nothing trails the layout as it follows the window. Keyframe loops
-keep their own time.
+owners (the chats panel, a page's re-lay, Kimm's wipe) read
+`isWindowResizing()` and land at once, so nothing trails the layout as it
+follows the window. Keyframe loops keep their own time.
 
 What reduced motion means across R3 (`docs/design/R3-MINIMAL.md` section 11),
 and where each part is stated:
@@ -189,8 +204,12 @@ and where each part is stated:
   it before first paint and follows the connection's change event
   (`stampSaveData`, `use-still-frame.ts`), and `base.css` carries a twin of
   the reduced-motion catch-all under it, with the same one opt-out. A
-  CSS-only motion, Kimm's clip-path wipe included
-  (`docs/design/H3-DESKTOP.md` section 3.7), lands at once under either;
+  CSS-only motion lands at once under either;
+- Kimm's wipe is Web Animations, which no catch-all reaches, so it takes
+  the instant path in JS: under either, `KimmSection` reads
+  `prefersStillFrame()` at the press, starts no animation and rests her
+  phase at once; the sheet's resting insets are the whole of her
+  (`docs/design/H3-DESKTOP.md` section 3.7);
 - the stage and the shell crossfade over a fixed 240ms linear (the opt-out
   above). Nothing slides.
 
@@ -266,8 +285,11 @@ the bounds above are the whole of their motion.
   once.
 - **Her section opens and closes in its own wipe.** Kimm's section, the
   welcome's column included, opens in a 720ms clip-path wipe and closes in a
-  420ms one (`KimmSection`, kimm.css; `docs/design/H3-DESKTOP.md` section
-  3.1). Under the still frame she simply appears or folds.
+  420ms one, Web Animations started at the press (`KimmSection`,
+  `kimm-wipe.ts`; the resting insets in kimm.css;
+  `docs/design/H3-DESKTOP.md` section 3.1). A press during a leg stops it
+  and starts the next from the edge where it stood. Under the still frame
+  she simply appears or folds.
 - **A hide lands at the press.** When the user hides her (the header's Vex
   key, the desk's token chip, Cmd or Ctrl + Shift + B), the toggle writes the
   store at once and her section's wipe is the close
@@ -297,8 +319,15 @@ Live pairs:
 |---|---|---|
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding the slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
-| `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `closing` phase when no `transitionend` comes) | `.vex-kimm[data-kimm-open="false"]`'s clip-path transition, kimm.css (`--vex-duration-vex-close`) | her figure gives way to the strip mid-wipe, or she reads as closing after the wipe has ended |
-| `DURATION_VEX_OPEN_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `opening` phase when no `transitionend` comes) | `.vex-kimm`'s clip-path transition, kimm.css (`--vex-duration-vex-open`) | the scan head goes before the wipe reaches her foot, or stays after it |
+
+Kimm's wipe is no pair: its clip, its scan head, her 32px drop and the end
+of her phase are one leg of Web Animations (`kimm-wipe.ts`), timed by
+`DURATION_VEX_OPEN_MS` and `DURATION_VEX_CLOSE_MS` alone; the sheet holds
+only where she rests, and no sheet reads `--vex-duration-vex-open` or
+`--vex-duration-vex-close` (they stay declared as the JS constants' mirrors,
+which `motion-tokens.test.ts` holds equal). The lengths the leg moves by are
+read from her box, never repeated: the strip (`--vex-h3-strip-h`, or a
+seat's `--vex-kimm-stub`) and the drop (`--vex-kimm-drop`).
 
 
 CSP for the renderer is strict: `style-src 'self'`: no `'unsafe-inline'`, no
@@ -396,6 +425,10 @@ If a primitive injects runtime `<style>`, two options exist:
 
 - `motion.div`, `motion.span`, etc. with `initial`, `animate`, `exit`,
   `transition` props (React-JSX path).
+- `element.animate()` (Web Animations) for Kimm's wipe (`kimm-wipe.ts`):
+  its keyframes are values handed to the animation engine, not a style
+  string parsed into a `style` attribute or a stylesheet, so `style-src`
+  does not govern it.
 - `useAnimate`, `useScroll`, `useTransform` hooks.
 - `AnimatePresence` for component mount/unmount transitions WITHOUT
   `layout`/`layoutId`.

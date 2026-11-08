@@ -112,7 +112,8 @@ describe("StagePlate", () => {
     act(() => stageVexConcerned(true, 28));
     expect(keyOf(container)?.textContent).toContain("Concerned");
     expect(keyOf(container)?.textContent).toContain("0:28");
-    expect(sectionOf(container)?.getAttribute("data-kimm-mood")).toBe("held");
+    // Concerned beside her section rests, as Cloud's chat seat does.
+    expect(sectionOf(container)?.getAttribute("data-kimm-mood")).toBe("rest");
   });
 
   it("stands a first run screen beside her H3 column: the Vex key, her section and the tagline", () => {

@@ -137,6 +137,10 @@
    *     primitive of its own so no status alias reads a trading colour. */
   --color-h3-hud: #ebebeb;
   --color-h3-err-text: #ff7a6e;
+  /* VEX Cloud's header ground without its alpha, oklch(7% 0.01 264)
+   * (`--vx-header-solid`, its DG-0 / EC-02): an opaque cell over Kimm's
+   * ground, her section's corner key, which wears no blur. */
+  --color-h3-header-solid: #010102;
 
   /* Shape. Tailwind's default radius, shadow and blur scales are killed so a
    * stray `rounded-xl`, `shadow-lg` or `backdrop-blur-md` compiles to nothing.
@@ -393,6 +397,9 @@
    * a failure lays the refusal red at 16% over the card ground. */
   --vex-alias-tooltip-bg: var(--color-h3-tooltip);
   --vex-alias-toast-bg: var(--color-h3-tooltip);
+  /* The header's ground made opaque (Cloud's --vx-header-solid): her corner
+   * key over her blue ground, a solid cell with no blur. */
+  --vex-alias-header-solid: var(--color-h3-header-solid);
   --vex-alias-label-on-plate: var(--color-h3-ink);
   --vex-alias-card: var(--color-h3-card);
   --vex-alias-refusal-tint: color-mix(in srgb, var(--vex-alias-state-error-mark) 16%, transparent);

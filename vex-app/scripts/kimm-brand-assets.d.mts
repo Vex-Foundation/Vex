@@ -1,4 +1,5 @@
-export type KimmMoodName = "hi" | "think" | "offer" | "held" | "refused" | "rest";
+/** A mood drawn from a file of its own (held is offer's, dimmed). */
+export type KimmMoodName = "hi" | "think" | "offer" | "signed" | "refused" | "rest";
 
 export const KIMM_MOODS: readonly KimmMoodName[];
 

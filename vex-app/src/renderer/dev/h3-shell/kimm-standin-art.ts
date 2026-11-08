@@ -12,19 +12,30 @@
  * What maps where:
  *   - portraits: each mood's stand-in is its own 83 x 83 file, so each is a
  *     one-cell "sheet" whose cell is the whole file. Her real art is one
- *     sprite with six cells (`key-moods.webp`); the surface draws either the
- *     same way.
+ *     sprite with a cell per drawn mood (`key-moods.webp`); the surface draws
+ *     either the same way. Held is drawn from offer's crop, as the seam draws
+ *     it from offer's file (`KIMM_ART_MOOD`), and the sheet dims it; the
+ *     plate's own held crop, dimmed already, is not used. Signed has no crop
+ *     on the plate, so it stays `missing`.
  *   - sections: the captures show her open section in three moods (hi, offer,
- *     rest). The other three (think, held, refused) have no capture, so they
- *     stay `missing` here as in the app: her section then shows its ground
- *     and the glyph field with no figure, never another mood's figure.
+ *     rest), and held takes offer's. The others (think, signed, refused) have
+ *     no capture, so they stay `missing` here as in the app: her section then
+ *     shows its ground and the glyph field with no figure, never another
+ *     mood's figure.
  *   - strip: the closed strip's glyph field.
  *
  * The open crops carry the mockup's Hide Vex cell in their top-right corner
  * (`bakedIn`); her section draws its real corner key over that box.
  */
 
-import type { KimmArt, KimmArtSet, KimmImage, KimmMood, KimmPortraitCell } from "../../components/vex/kimm/kimm-assets.js";
+import {
+  KIMM_ART_MOOD,
+  type KimmArt,
+  type KimmArtSet,
+  type KimmImage,
+  type KimmMood,
+  type KimmPortraitCell,
+} from "../../components/vex/kimm/kimm-assets.js";
 import { KIMM_STANDINS, type KimmStandin } from "./standins/manifest.js";
 
 function image(standin: KimmStandin): KimmImage {
@@ -36,7 +47,8 @@ function portrait(standin: KimmStandin): KimmArt<KimmPortraitCell> {
 }
 
 function section(mood: KimmMood): KimmArt {
-  const standin = mood === "hi" || mood === "offer" || mood === "rest" ? KIMM_STANDINS.sections[mood] : null;
+  const drawn = KIMM_ART_MOOD[mood];
+  const standin = drawn === "hi" || drawn === "offer" || drawn === "rest" ? KIMM_STANDINS.sections[drawn] : null;
   if (standin === null) return { state: "missing", file: `the mockup has no ${mood} section to stand in` };
   return { state: "ready", ...image(standin) };
 }
@@ -46,7 +58,8 @@ export const KIMM_STANDIN_ART: KimmArtSet = {
     hi: portrait(KIMM_STANDINS.portraits.hi),
     think: portrait(KIMM_STANDINS.portraits.think),
     offer: portrait(KIMM_STANDINS.portraits.offer),
-    held: portrait(KIMM_STANDINS.portraits.held),
+    held: portrait(KIMM_STANDINS.portraits.offer),
+    signed: { state: "missing", file: "the mood plate has no signed portrait to stand in" },
     refused: portrait(KIMM_STANDINS.portraits.refused),
     rest: portrait(KIMM_STANDINS.portraits.rest),
   },
@@ -55,6 +68,7 @@ export const KIMM_STANDIN_ART: KimmArtSet = {
     think: section("think"),
     offer: section("offer"),
     held: section("held"),
+    signed: section("signed"),
     refused: section("refused"),
     rest: section("rest"),
   },

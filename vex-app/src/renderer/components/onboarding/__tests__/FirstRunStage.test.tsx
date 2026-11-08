@@ -37,8 +37,8 @@ describe("moodFace", () => {
   it.each<[FirstRunMood, string, string, string]>([
     ["working", "working", "Working", "think"],
     ["ready", "ready", "Ready", "hi"],
-    ["concerned", "concerned", "Concerned", "held"],
-    ["error", "error", "Error", "refused"],
+    ["concerned", "concerned", "Concerned", "rest"],
+    ["error", "error", "Error", "rest"],
   ])("says what Vex shows for %s through the shell's mood map", (mood, state, word, herMood) => {
     expect(moodFace(mood, null)).toMatchObject({ state, word, note: null, mood: herMood });
   });
@@ -120,7 +120,7 @@ describe("StageFace", () => {
     expect(stageVexView(getStageVex())).toMatchObject({
       state: "concerned",
       word: "Concerned",
-      mood: "held",
+      mood: "rest",
     });
   });
 

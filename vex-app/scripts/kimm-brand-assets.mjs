@@ -21,7 +21,8 @@
  * not reach the build is a failure, never a skip.
  *
  * THE BUDGETS, chosen on 4 November 2026 before the art exists:
- *   - the key's mood sprite, all six moods in one file: 30 KB (30,720 bytes).
+ *   - the key's mood sprite, every drawn mood in one file: 30 KB (30,720
+ *     bytes).
  *     The mockup's sprite is 28.5 KB (`stills/key-moods.webp` on the mood
  *     plate); closed, it is the only Kimm file that loads (section 3.5);
  *   - her open section, one per mood: 400 KB (409,600 bytes) each. Loaded only
@@ -38,8 +39,13 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-/** Her moods, in the mood plate's order (`landing-r3__plate-key-moods`). */
-export const KIMM_MOODS = Object.freeze(["hi", "think", "offer", "held", "refused", "rest"]);
+/**
+ * Her moods drawn from a file of their own, in the seam's order
+ * (`KIMM_DRAWN_MOODS`): the mood plate's (`landing-r3__plate-key-moods`) and
+ * VEX Cloud's `signed`. Held has no file: it is offer's, dimmed by the sheet
+ * (`kimm-assets.ts`, "HELD IS OFFER, DIMMED").
+ */
+export const KIMM_MOODS = Object.freeze(["hi", "think", "offer", "signed", "refused", "rest"]);
 
 /** Where her files sit, relative to the renderer's public root (and to dist/renderer/). */
 export const KIMM_ART_DIR = "art/kimm";

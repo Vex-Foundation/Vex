@@ -4,8 +4,9 @@
  * closes, the key's name and its keycaps, "Show Vex" and Ctrl, Shift, B (⇧,
  * ⌘, B on a Mac), stand under the Vex key for 2.4 seconds, over Vex's column
  * only. Cloud shows it once per browser; desktop once per profile, behind a
- * saved flag (`kimmHintShown` in the persisted layout store). Under reduced
- * motion and Save-Data it still shows, without its fade.
+ * saved flag (`kimmHintShown` in the persisted layout store). It is drawn as
+ * Cloud's `.vx-vk-tip` (kimm.css): the tooltip plate, 12px words, keycaps 22
+ * high in 11px ink-2, and no fade, so every motion setting shows it the same.
  *
  * This component draws the hint; the mount (`features/vex/VexPortraitPlate.tsx`)
  * decides when: on a close, never on a mount that starts closed, only while

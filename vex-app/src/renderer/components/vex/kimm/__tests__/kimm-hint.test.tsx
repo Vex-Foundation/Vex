@@ -5,8 +5,10 @@
  * the saved flag is set as it shows, so no later close shows it again, here
  * or in a later window; a section that starts closed shows nothing; the flag
  * persists and degrades to "not yet shown"; the hint is a status a screen
- * reader hears, takes no pointer, and still shows without its fade under
- * reduced motion.
+ * reader hears, takes no pointer, and is drawn as VEX Cloud's `.vx-vk-tip`:
+ * the tooltip plate 8px under the key at left 88, padding 8 10, 12px at
+ * 0.02em, keycaps 22 high in 11px ink-2 on the chosen rule, no fixed height
+ * and no fade in any motion setting.
  */
 
 import { readFileSync } from "node:fs";
@@ -25,6 +27,12 @@ const KIMM_CSS = readFileSync(
   path.join(here, "..", "..", "..", "..", "styles", "global-css", "kimm.css"),
   "utf8",
 ).replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** One rule's body in kimm.css, by its exact selector. */
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(KIMM_CSS)?.[1] ?? "";
+}
 
 function hint(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-vex-area='kimm-hint']");
@@ -92,16 +100,61 @@ describe("the first close's hint", () => {
     render(<KimmHint keys={["Ctrl", "Shift", "B"]} />);
     const el = screen.getByRole("status");
     expect(el.textContent).toBe("Show VexCtrlShiftB");
-    const rule = /\.vex-kimm-hint\s*\{([^}]*)\}/.exec(KIMM_CSS)?.[1] ?? "";
-    expect(rule).toMatch(/pointer-events:\s*none/);
-    expect(rule).toMatch(/animation:\s*vex-kimm-hint-in var\(--vex-duration-base\) var\(--vex-ease-out\)/);
+    expect(rule(".vex-kimm-hint")).toMatch(/pointer-events:\s*none/);
   });
 
-  it("still shows under reduced motion and Save-Data, without its fade", () => {
-    expect(KIMM_CSS).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.vex-kimm-hint\s*\{\s*animation:\s*none;/,
-    );
-    expect(KIMM_CSS).toMatch(/html\[data-still\] \.vex-kimm-hint\s*\{\s*animation:\s*none;/);
+  it("spells the chord for its platform: the Mac's glyphs shift first, title case elsewhere", async () => {
+    const userAgent = vi.spyOn(window.navigator, "userAgent", "get");
+    try {
+      for (const [agent, keys] of [
+        ["Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)", ["⇧", "⌘", "B"]],
+        ["Mozilla/5.0 (Windows NT 10.0; Win64; x64)", ["Ctrl", "Shift", "B"]],
+        ["Mozilla/5.0 (X11; Linux x86_64)", ["Ctrl", "Shift", "B"]],
+      ] as const) {
+        userAgent.mockReturnValue(agent);
+        vi.resetModules();
+        const mount = await import("../../../../features/vex/VexPortraitPlate.js");
+        expect(mount.KIMM_HINT_KEYS).toEqual(keys);
+      }
+    } finally {
+      userAgent.mockRestore();
+      vi.resetModules();
+    }
+  });
+
+  it("stands on Cloud's tooltip plate, 8px under the key at left 88, with no fixed height", () => {
+    const plate = rule(".vex-kimm-hint");
+    expect(plate).toMatch(/position:\s*absolute;/);
+    // Cloud's top is calc(100% + 8px) of the key; here the column that holds
+    // the hint starts at the key's foot, so the same spot is 8px.
+    expect(plate).toMatch(/top:\s*8px;/);
+    expect(plate).toMatch(/left:\s*88px;/);
+    expect(plate).toMatch(/padding:\s*8px 10px;/);
+    expect(plate).toMatch(/background:\s*var\(--vex-alias-tooltip-bg\);/);
+    expect(plate).toMatch(/font-size:\s*12px;/);
+    expect(plate).toMatch(/line-height:\s*1;/);
+    expect(plate).toMatch(/letter-spacing:\s*0\.02em;/);
+    expect(plate).toMatch(/white-space:\s*nowrap;/);
+    expect(plate).not.toMatch(/(^|[\s;])height:/);
+    expect(rule(".vex-kimm-hint__name")).toMatch(/margin-right:\s*6px;/);
+    expect(rule(".vex-kimm-hint__caps")).toMatch(/gap:\s*3px;/);
+  });
+
+  it("draws Cloud's tooltip keycaps: 22 high, 11px at 0.04em, ink-2, on the chosen rule", () => {
+    const cap = rule(".vex-kimm-hint__cap");
+    expect(cap).toMatch(/min-width:\s*22px;/);
+    expect(cap).toMatch(/(^|[\s;])height:\s*22px;/);
+    expect(cap).toMatch(/padding:\s*0 6px;/);
+    expect(cap).toMatch(/border:\s*1px solid var\(--vex-alias-rule-chosen\);/);
+    expect(cap).toMatch(/color:\s*var\(--vex-alias-label-secondary\);/);
+    expect(cap).toMatch(/font:\s*400 11px \/ 1 var\(--font-sans\);/);
+    expect(cap).toMatch(/letter-spacing:\s*0\.04em;/);
+  });
+
+  it("has no fade: it simply stands, in every motion setting", () => {
+    expect(rule(".vex-kimm-hint")).not.toMatch(/animation|transition|opacity/);
+    expect(KIMM_CSS).not.toMatch(/vex-kimm-hint-in/);
+    expect(KIMM_CSS).not.toMatch(/\.vex-kimm-hint[^{]*\{[^}]*(animation|transition)/);
   });
 });
 

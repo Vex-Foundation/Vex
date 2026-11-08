@@ -134,7 +134,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Kimm's section | 264, 563 | a fixed box over the rest of the console |
 | the console's rest | under her section | seen while she is closed: strategy rows (62 each, with a MAINNET tag and a switch), AI PERMISSION (a 44 head, then its sentence and "Change in Settings"), RECENT ACTIVITY (a 44 head, rows about 43 high, each with a status square and word), OPEN ACTIVITY with an arrow, ending at 826 |
 
-**Her section, open:** her figure on a blue gradient behind the falling V, X and E glyph field. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured), on a dark translucent fill over her ground.
+**Her section, open:** her figure on a blue gradient behind the falling V, X and E glyph field. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured). Desktop draws it as VEX Cloud's mockup source does (`.kz-cell`, settled 2026-11-05): opaque on the header's ground without its alpha (`--vex-alias-header-solid`, #010102, Cloud's `--vx-header-solid`), no blur, a 1px rule on its left and its foot (the foot clear on the strip), padding 0 18 0 20, a 12 gap, 13px caps, an 18px glyph, the raised fill under a hovering pointer; its width is its words', 137 open and 148 in the strip at 1440.
 
 **Closed:** the section folds to its top 56, the strip, 264 to 320: the glyph field's frame at the left and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
 
@@ -158,18 +158,33 @@ The Vex key is the header cell over the Vex column, in three parts:
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3). It is a disclosure as VEX Cloud's EC-01 draws every control of her section: the name follows the words, `aria-controls` names her section, and there is no `aria-expanded` or `aria-pressed`. Its description is the long state word; the short word and the ticking timer are hidden from assistive tech, as Cloud's are.
 
-Her moods, printed on `landing-r3__plate-key-moods`. Both apps must use the same list:
+Her moods, printed on `landing-r3__plate-key-moods`, with the still VEX Cloud draws after a fill (`signed`, its mockup's `js/data.js`). Both apps must use the same list:
 
 | Mood | Drawn | H3 moment |
 |---|---|---|
 | hi | the V sign | the welcome (READY) |
 | think | the hand at her mouth, with the running square | Vex works (THINKING) |
 | offer | the open palm | waiting in the app (WAITING FOR APPROVAL) |
-| offer, held | the open palm, dimmed | held for sign-in (Cloud only) |
-| refused | the whole anger mark | budget used (Cloud only) |
-| rest | resting | after the answer (DONE) |
+| offer, held | the open palm, dimmed | held for sign-in (Cloud); a locked vault (desktop) |
+| signed | after a fill | DONE after a fill |
+| refused | the whole anger mark | DONE after a refusal |
+| rest | resting | after the answer (DONE), and after a failure |
 
-Desktop has states H3 draws no mood for (Listening, Working, Concerned, Error, Sleeping, Waking up) and has neither Cloud's sign-in hold nor its budget. Open: their moods. S4-02 maps every desktop state to one of these moods; the designer's files may add moods.
+**Held is offer, dimmed.** It has no file of its own: the seam draws it from offer's cell and file (`KIMM_ART_MOOD`, `kimm-assets.ts`) and the sheet dims it to half its light (opacity 0.5, `kimm.css`), as Cloud lays its 50% scrim over her; the mood plate's held cell measures 0.50 of the offer cell's. **Signed** is in the list and the mood-to-file map (`section-signed.webp`, a cell of the sprite) with no file yet; until one arrives her section shows its ground and the key its fallback, as for any missing piece.
+
+**Desktop's states take Cloud's seats** (its `js/data.js`, and `h3-shell-gaps` decision 15, "she is not the failure"), in `features/vex/kimm-mood.ts`:
+
+| State | Mood |
+|---|---|
+| Ready, Listening | hi |
+| Thinking, Working | think |
+| Waiting for approval | offer |
+| Done | rest; signed after a fill; refused after a refusal; rest after a failure |
+| Concerned | rest in a chat; think on a status panel (`seat: "panel"`) |
+| Error | rest |
+| Sleeping, Waking up | rest; held while the vault is locked |
+
+Refused shows only for a refusal: never for an error, a failure or a stop. Open: nothing in desktop's presence reports a settled turn's outcome yet (`useVexPresence` says only that a turn finished), so Done rests until a caller passes `outcome`; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`.
 
 ### 1.7 The chat column
 Header cells as in section 1.3. The transcript and the welcome sit 24 in from both edges (704 to 1416 at 1440).
@@ -379,8 +394,8 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
-- **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
-- **Keycaps:** VEX Cloud's keycaps beside a label (the H3 mockup's `.vk-keys kbd`, the kit's plain variant): 18 high and at least 18 wide, 5 in from each side, a 1px chosen-rule border, caps letters 10 at 0.04em, muted, 3 apart (the captures measured 19 high with letters 11 to 12; Cloud's CSS is the source). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
+- **Her corner key** is an opaque cell on the header's ground without its alpha (#010102), no blur, 56 high (section 1.5).
+- **Keycaps:** VEX Cloud's keycaps beside a label (the H3 mockup's `.vk-keys kbd`, the kit's plain variant): 18 high and at least 18 wide, 5 in from each side, a 1px chosen-rule border, caps letters 10 at 0.04em, muted, 3 apart (the captures measured 19 high with letters 11 to 12; Cloud's CSS is the source). The first-close hint draws them as Cloud's tooltip keycaps: 22 high, 11px at 0.04em in ink-2, 6 in from each side, 3 apart, in title case ("Ctrl", "Shift", "B"; the Mac's glyphs ⇧, ⌘, B).
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
 - **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.
 - **Tick box** (the card's middle cell; not on desktop, section 4.3): 18 x 18, a 1px light border.
@@ -429,14 +444,17 @@ Only clip-path, transform and opacity animate. Her section's box never changes (
 
 The card's box is 680, 249, 760 x 651 and the section's is 248, 264, 432 x 563 on every one of these frames. Desktop's closed inset is the box height less 56 (547 at 1440 x 900, section 1.5).
 
-**Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place. The corner key says HIDE VEX from the press.
+**Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place with the wipe. The corner key says HIDE VEX from the press.
 
-**Closing:** the wipe rises back to the strip's edge in 420ms. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
+**Closing:** the wipe rises back to the strip's edge in 420ms, behind the same scan head, and Kimm rises 32px with it. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
 
-Open, each settled by the mockup source:
-- the drop's duration and curve (default: the push curve over the 720ms);
-- whether her figure also fades in (an opacity change is allowed);
-- the scan head's colour, and whether it also draws while closing (the close plate does not mention it).
+**The scan head** (settled 2026-11-05 from VEX Cloud's mockup source, `h3-merged/js/stage.js` and `css/tokens.css`): a 1px line in Cloud's `--vx-scan-head`, oklch(97% 0.005 264 / 0.85) (desktop's `--vex-alias-scan-head`, the ink at 85%), keyed to the wipe's edge on the open and on the close, on the clip's own curve and duration. Its opacity stays 1 until 92% of the leg, then falls linearly to 0, so it is never left standing at her foot or at the strip.
+
+**The engine.** Desktop runs the wipe as Cloud's mockup does, on Web Animations (`components/vex/kimm/kimm-wipe.ts`): the clip's inset and the scan head's place are one leg on one clock, started at the press. The sheet (`kimm.css`) holds only her resting insets, open and at the strip; a leg's last frame is that resting state, and the leg is stopped when it ends. Every length is in her own pixels, before the wide zoom scales her (section 1.11), as her resting clip is, so the last frame lands on that inset at every width; under 1024 she folds to the band's stub, 0, not the strip. A box that is not laid out starts no wipe, and her phase then ends on the leg's duration.
+
+**Her drop** (settled 2026-11-05 from Cloud's `h3-merged/js/stage.js`): the layer that holds her figure is driven by the wipe's inset on both legs, translateY = -32 x inset / distance, on the clip's own curve and duration. Open she stands in place; folded she waits 32px up; so she drops into place as the wipe opens and rises as it closes, and a turned leg turns her with it from where she stands. The 32 is the sheet's `--vex-kimm-drop`, which the wipe reads from her box.
+
+Open, settled by the mockup source: whether her figure also fades in (an opacity change is allowed; Cloud's 900ms crossfade is between her still and her live model, which desktop does not have).
 
 ### 3.3 The controls
 One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the same place. Three controls carry it:
@@ -452,13 +470,14 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 
 ### 3.4 While she moves
 - Her section's body is inert while it moves: nothing in it takes a click or focus. The console's rest under her is inert while she is open and until a close has ended. The two keys stay live.
-- **A press during the motion turns it around from where it is, without a jump.** Printed at 1440: Hide Vex, then Show Vex 80ms later, read over 13 frames. The control's name at the first press was Show Vex; the wipe's edge was at 408.1px at the second press and still at 408.1px on the next frame; it went no deeper after the press, ended open, and the card moved 0. Open: the reversed leg's duration. Default: the push curve from the current inset over the part of 720ms that is left.
+- **A press during the motion turns it around from where it is, without a jump.** Printed at 1440: Hide Vex, then Show Vex 80ms later, read over 13 frames. The control's name at the first press was Show Vex; the wipe's edge was at 408.1px at the second press and still at 408.1px on the next frame; it went no deeper after the press, ended open, and the card moved 0. **The turned leg** (settled 2026-11-05 from Cloud's `h3-merged/js/stage.js` and its motion contract, `TURN_MIN_MS`): the push curve from the current inset, lasting max(140, base x distance left / distance), base being the new direction's 720 or 420; the scan head and her drop turn with it on the same duration (`kimmLegMs`, `DURATION_VEX_TURN_MIN_MS`).
+- **A Hide Vex press guards what it reveals** (Cloud's `stage.js` guard, `SECTION_GUARD_MS`). After a close pressed with a pointer (her corner key, the Vex key, or any key that writes her choice), nothing in the console's rest takes a pointer until all three hold: the close has ended, 500ms have passed since the press (`DURATION_VEX_GUARD_MS`), and the pointer has left the pressed key's box. So a second click, or a pointer resting where Hide Vex was, never lands on what the close uncovered. The guard is `data-kimm-guard` on her section, read by the sheet (`kimm.css`); the pressed key's box is noted by a capturing click listener for that task only (`kimm-guard.ts`). A close from the keyboard sets no guard; an open drops one. A touch or a pen has no hover, so once lifted it is out of the key, as Cloud's built guard has it (`use-vex-section.ts`): a press made with one waits only for its 500ms and the close, and any later lift of one counts as leaving, so the next tap is never swallowed. Desktop guards under reduced motion too, where the rest appears under the pointer at once (Cloud's mockup sets it only on its motion path; its built guard runs on every pointer close).
 - **Focus.** A press on a key keeps focus on that key; both keys stay where they are through the motion. Focus inside a part that becomes covered or folded moves to the Vex key in the header. (Desktop today moves it to the token chip, `VexSidebar.tsx`; the Vex key replaces the chip in S3-03.)
 
 ### 3.5 The rules
 - **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
 - **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Esc in Lighter Zen closed the Vex overlay until S2-13 removed it (`AppShell.tsx`).
-- **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
+- **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B; ⇧, ⌘, B on a Mac) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15). It is drawn as Cloud's `.vx-vk-tip` (`.vex-kimm-hint` in kimm.css): the tooltip plate (`--vex-alias-tooltip-bg`) at Cloud's top calc(100% + 8px) of the key, which is 8px into the column here since the column starts at the key's foot, and left 88 (the 76 portrait cell plus 12); padding 8 10, the words 12px at 0.02em, line height 1, on one line, 12 between the words and the keycaps; the keycaps 22 high, 11px ink-2 on a 1px chosen rule (section 2.4). It has no fixed height and no fade: it simply stands and leaves with its timer. Desktop keeps it a status (`role="status"`) so a screen reader hears the way back; Cloud's is `aria-hidden`.
 - **The choice is remembered, split three ways** (VEX Cloud's PD-12 and its README's "What it remembers"). Cloud keeps it per browser (`vexChat`, `vexPages`; the mockup's `h3.section.chat`, `h3.section.pages` and, under 1024, the session's `h3.section.narrow`); desktop keeps it per profile in the layout store:
   - **in chats** (and on approvals and in Studio), `vexOpenChat`, persisted, **open** by default; v24 folded R3's "Show avatar" into it, so someone who had hidden her avatar finds her closed;
   - **on pages** (Portfolio and its subpages, Board, Watchlist, Settings), `vexOpenPages`, persisted, **closed** by default; hiding her on a page never closes her in a chat, nor the other way round;
@@ -466,7 +485,7 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
   Every saved choice survives the migrations: v22 seeded the two persisted slots only where a payload lacked them, and v24 touched only the chat's.
 - **First launch: open** in chats, closed on pages, closed under 1024. The sheet's drawn answer for computers, and Cloud's PD-12.
 - **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
-- **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint still shows, without a fade.
+- **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint shows the same, since it never fades.
 - **Closed costs little.** Closed, only the key's mood sprite loads (the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
 
 ### 3.6 The money card never moves
@@ -492,7 +511,9 @@ What desktop stops doing, because R3 does it and H3 forbids it:
 - 720ms and 420ms, as her section's open and close, named in the policy's exception list;
 - the push curve, cubic-bezier(0.22, 1, 0.36, 1), as a fourth curve, for her section;
 - the glyph field's loop as a named exception beside K2's portrait, bound by the run gate and the still frame (S4-17);
-- Save-Data on `html` as an attribute (S1-13), so the wipe collapses in CSS as well as in JS.
+- Save-Data on `html` as an attribute (S1-13), so what the sheet moves collapses in CSS as well as in JS.
+
+The wipe itself is Web Animations (section 3.2, "The engine"), which no stylesheet collapses: under reduced motion and Save-Data `KimmSection` starts none and rests her phase at the press.
 
 Any JS timer paired with these durations follows the policy's cross-file pair rule.
 
