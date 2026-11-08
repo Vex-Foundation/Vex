@@ -29,7 +29,7 @@
 import type { JSX, ReactNode, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
 import { useInitialFocusRef } from "../../../components/ui/dialog.js";
-import { Swatch } from "../../../components/ui/swatch.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 
 export interface ApprovalDecisionActionsProps {
   readonly isHighRisk: boolean;
@@ -329,9 +329,10 @@ export function ApprovalDecisionActions({
         {/* THE WORKING KEY. A desk order signs, submits and then waits on the
             sequencer: fifteen-odd seconds in an app that is otherwise instant.
             While its own dispatch runs this button is the only live thing on
-            screen, so it keeps its full blue fill and leads its label with the
-            ONGOING SWATCH in its own ink (status by fill, the page's one state
-            motion), as Cloud's pending key keeps its blue, while the Reject
+            screen, so it keeps its full blue fill and leads its label with
+            Cloud's busy mark, the blinking 8 square in its own ink, 14 from
+            the word (the page's one state motion), as Cloud's pending key
+            keeps its blue, while the Reject
             beside it is held (the cell ground and the muted word): the action
             you took stays alive, the one you did not recedes.
             `aria-busy` and the swapped label carry the same fact without the
@@ -350,32 +351,29 @@ export function ApprovalDecisionActions({
           data-vex-approve-working={approvePending ? "" : undefined}
           data-vex-key="approve"
           data-armed={approveArmed ? "" : undefined}
-          className={`${KEY_BASE} gap-2 ${
+          className={`${KEY_BASE} gap-[14px] ${
             approveArmed
               ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
               : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
           }`}
         >
           {approvePending ? (
-            <span aria-hidden className="inline-flex shrink-0">
-              <Swatch state="ongoing" size={9} />
-            </span>
+            // Cloud's busy mark (`.vx-busy-mark`): an 8 square in the key's
+            // own ink, blinking, 14 from the word (approval.css).
+            <StateSquare state="ongoing" size={8} className="vex-appr__busy" />
           ) : null}
-          {/* ONE WIDTH, TWO LABELS. Both sit in the same grid cell, so the key
-              is always sized to the longer of them and the swap crossfades in
-              place instead of snapping the footer narrower under the pointer
-              that just pressed it. The resting width is unchanged: the idle
-              label is the longer one. The button's `aria-label` is what names
-              it, so the faded copy is never announced twice. */}
+          {/* ONE WIDTH, TWO LABELS (Cloud's `.vx-key-stack`). Both sit in the
+              same grid cell, so the key is always sized to the longer of them
+              and never narrows under the pointer that just pressed it; the
+              words swap at once, the other kept hidden. The resting width is
+              unchanged: the idle label is the longer one. The button's
+              `aria-label` is what names it, so the hidden copy is never
+              announced. */}
           <span className="grid grid-cols-1 grid-rows-1 place-items-center">
-            <span
-              className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-100" : "opacity-0"}`}
-            >
+            <span className={`col-start-1 row-start-1 ${approvePending ? "visible" : "invisible"}`}>
               {pendingApproveLabel}
             </span>
-            <span
-              className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-0" : "opacity-100"}`}
-            >
+            <span className={`col-start-1 row-start-1 ${approvePending ? "invisible" : "visible"}`}>
               {approveIdleText}
             </span>
           </span>

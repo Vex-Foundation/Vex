@@ -810,6 +810,12 @@
 .vex-appr__foot > button[data-vex-approve-working] {
   cursor: progress;
 }
+/* Cloud's busy mark (`keys.css` `.vx-busy-mark`): the blinking 8 square in
+ * the working key's own ink, not the running hud, so it reads on the blue.
+ * Reduced motion holds it still as half a square (marks.css). */
+.vex-appr__foot .vex-appr__busy {
+  color: inherit;
+}
 /* The middle cell: the gate line in ink 2, sans 14, 24 in. No control. */
 .vex-appr__gate {
   grid-area: gate;

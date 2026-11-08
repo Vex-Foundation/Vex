@@ -714,10 +714,17 @@ describe("ApprovalCard", () => {
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
     expect(approve.getAttribute("aria-busy")).toBe("true");
-    // The working key keeps its blue fill and leads with the ongoing swatch
-    // (status by fill); the retired travelling lane is gone.
+    // The working key keeps its blue fill and leads with Cloud's busy mark,
+    // the blinking 8 square, 14 from the word; the retired travelling lane is gone.
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(true);
-    expect(approve.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    const mark = approve.querySelector('.vex-sq[data-state="ongoing"]') as HTMLElement | null;
+    expect(mark).not.toBeNull();
+    expect(mark?.style.width).toBe("8px");
+    expect(approve.className).toContain("gap-[14px]");
+    // The words swap at once, never a crossfade: the idle label is kept hidden for the width.
+    expect(approve.innerHTML).not.toContain("transition-opacity");
+    const labels = Array.from(approve.querySelectorAll(".col-start-1"));
+    expect(labels.map((label) => label.classList.contains("invisible"))).toEqual([false, true]);
     expect(approve.className).not.toContain("disabled:border-dotted");
     expect(approve.className).not.toContain("vex-ring-working");
   });
@@ -733,7 +740,7 @@ describe("ApprovalCard", () => {
     const approve = screen.getByRole("button", { name: /^approve transfer$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
-    expect(approve.querySelector(".vex-swatch")).toBeNull();
+    expect(approve.querySelector(".vex-swatch, .vex-sq")).toBeNull();
     // An inert primary is HELD (Cloud's kit): the sheet draws the cell
     // ground and the muted word from `disabled`, never a dotted blue outline.
     expect(approve.className).not.toMatch(/disabled:(border-dotted|border-accent|text-accent|bg-transparent)/);
