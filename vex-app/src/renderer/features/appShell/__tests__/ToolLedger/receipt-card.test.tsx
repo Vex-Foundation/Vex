@@ -105,10 +105,35 @@ describe("receiptEntry", () => {
     expect(receiptEntry([swapEntry({ txHash: "0xother" })], HASH)).toBeNull();
   });
 
-  it("draws a receipt only for a confirmed swap", () => {
+  it("draws a receipt only for a confirmed swap, transfer or bridge", () => {
     expect(receiptEntry([swapEntry({ status: "pending" })], HASH)).toBeNull();
     expect(receiptEntry([swapEntry({ status: "failed" })], HASH)).toBeNull();
-    expect(receiptEntry([swapEntry({ activityKind: "bridge" })], HASH)).toBeNull();
+    expect(receiptEntry([swapEntry({ activityKind: "lend" })], HASH)).toBeNull();
+    expect(receiptEntry([swapEntry({ activityKind: "transaction" })], HASH)).toBeNull();
+    expect(receiptEntry([swapEntry({ activityKind: "transfer" })], HASH)?.id).toBe("1");
+    expect(receiptEntry([swapEntry({ activityKind: "bridge" })], HASH)?.id).toBe("1");
+    expect(receiptEntry([swapEntry({ activityKind: "bridge", status: "pending" })], HASH)).toBeNull();
+  });
+
+  it("joins a bridge on its source leg, since its own row is the destination fill", () => {
+    const bridge = swapEntry({
+      activityKind: "bridge",
+      txHash: "0xfill",
+      legs: [
+        {
+          role: "bridge_deposit",
+          chainId: 8453,
+          chainFamily: "eip155",
+          chainSlug: "base",
+          txHash: HASH,
+          status: "confirmed",
+          failureCode: null,
+          explorerUrl: null,
+        },
+      ],
+    });
+    expect(receiptEntry([bridge], HASH)?.id).toBe("1");
+    expect(receiptEntry([bridge], "0xother")).toBeNull();
   });
 });
 
@@ -175,6 +200,53 @@ describe("ReceiptCard", () => {
     expect(container.querySelector('[data-vex-receipt-row="Value (USD)"]')).toBeNull();
     expect(container.querySelector('[data-vex-receipt-row="Vex fee"]')).toBeNull();
     expect(container.querySelector('[data-vex-receipt-row="Sell"]')).not.toBeNull();
+  });
+});
+
+describe("ReceiptCard for a transfer and a bridge (Cloud's TransferCard and BridgeCard)", () => {
+  const value = (container: HTMLElement, label: string): string | null | undefined =>
+    container.querySelector(`[data-vex-receipt-row="${label}"] dd`)?.textContent;
+
+  it("titles a transfer by its amount, with only the rows the entry holds", () => {
+    const { container } = render(
+      createElement(ReceiptCard, {
+        entry: swapEntry({
+          activityKind: "transfer",
+          input: leg("ETH", "0.5", "1500.00"),
+          output: leg("", null, null),
+          vexFee: null,
+        }),
+      }),
+    );
+    expect(container.querySelector(".vex-receipt__kind")?.textContent).toBe("Transfer · Base");
+    expect(container.querySelector(".vex-receipt__title")?.textContent).toBe("0.5 ETH · Base");
+    expect(value(container, "Value (USD)")).toBe("about $1500.00");
+    // No recipient, no received leg, no fee the entry does not record.
+    expect(container.querySelectorAll("[data-vex-receipt-row]").length).toBe(1);
+    expect(container.textContent).not.toMatch(/recipient|not available/i);
+    expect(container.querySelector("section")?.getAttribute("aria-label")).toBe("Transfer receipt on Base");
+  });
+
+  it("titles a bridge by its route from the slugs, with Received, Value (USD) and the Vex fee", () => {
+    const { container } = render(
+      createElement(ReceiptCard, {
+        entry: swapEntry({
+          activityKind: "bridge",
+          chainSlug: "arbitrum",
+          chainId: 42161,
+          fromChain: { chainId: 8453, slug: "base" },
+          toChain: { chainId: 42161, slug: "arbitrum" },
+          input: leg("USDC", "200", "200.00"),
+          output: leg("USDC", "199.5", "199.50"),
+        }),
+      }),
+    );
+    expect(container.querySelector(".vex-receipt__kind")?.textContent).toBe("Bridge");
+    expect(container.querySelector(".vex-receipt__pair")?.textContent).toBe("200 USDC · Base to USDC · Arbitrum");
+    expect(value(container, "Received")).toBe("199.5 USDC");
+    expect(value(container, "Value (USD)")).toBe("about $200.00");
+    expect(value(container, "Vex fee")).toBe("0.5 USDC");
+    expect(container.textContent).not.toMatch(/trading wallet/i);
   });
 });
 
