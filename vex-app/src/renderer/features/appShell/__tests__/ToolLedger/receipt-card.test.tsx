@@ -5,6 +5,8 @@
  * filled only from that ledger entry.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
@@ -126,6 +128,9 @@ describe("ReceiptCard", () => {
     expect(container.querySelector("[data-vex-receipt-time]")?.textContent).toMatch(/^\d{2}:\d{2}$/);
     const stamp = container.querySelector("[data-vex-receipt-stamp]");
     expect(stamp?.textContent).toBe("Confirmed");
+    // PD-03: a fill, a square and a word; the square leads.
+    expect(stamp?.firstElementChild?.classList.contains("vex-sq")).toBe(true);
+    expect(stamp?.firstElementChild?.getAttribute("data-state")).toBe("done");
     expect(stamp?.className).toContain("bg-stamp-filled");
     expect(stamp?.className).toContain("text-ink-on-stamp-filled");
     expect(container.textContent).toContain("USDC → ETH");
@@ -156,6 +161,42 @@ describe("ReceiptCard", () => {
     expect(container.querySelector('[data-vex-receipt-row="Value (USD)"]')).toBeNull();
     expect(container.querySelector('[data-vex-receipt-row="Vex fee"]')).toBeNull();
     expect(container.querySelector('[data-vex-receipt-row="Sell"]')).not.toBeNull();
+  });
+});
+
+describe("the receipt's sheet (Cloud's result card, 6f067702)", () => {
+  const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const body = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+  };
+
+  it("sits on the card ground with a 44 head row, the title 18 / 1.3 and the place word 15", () => {
+    expect(body(".vex-receipt")).toContain("background: var(--vex-alias-card)");
+    expect(body(".vex-receipt__eyebrow")).toContain("min-height: 44px");
+    expect(body(".vex-receipt__head")).toContain("padding: 0 16px 16px");
+    expect(body(".vex-receipt__title")).toContain("font-size: 18px");
+    expect(body(".vex-receipt__title")).toContain("letter-spacing: -0.01em");
+    expect(body(".vex-receipt__where")).toContain("font-size: 15px");
+  });
+
+  it("draws the tag at Cloud's measures: 24 high, padding 0 7, 6 between, caps 11", () => {
+    const tag = body(".vex-receipt__stamp");
+    expect(tag).toContain("height: 24px");
+    expect(tag).toContain("padding: 0 7px");
+    expect(tag).toContain("gap: 6px");
+    expect(tag).toContain("font-size: 11px");
+    expect(body(".vex-receipt__stamp > .vex-sq")).toContain("color: inherit");
+  });
+
+  it("sets the rows' names mono 12 at 0.06em and the values mono 12 at 0.01em", () => {
+    expect(body(".vex-receipt__label")).toContain("font-size: 12px");
+    expect(body(".vex-receipt__label")).toContain("letter-spacing: 0.06em");
+    expect(body(".vex-receipt__value")).toContain("font-size: 12px");
+    expect(body(".vex-receipt__value")).toContain("letter-spacing: 0.01em");
   });
 });
 

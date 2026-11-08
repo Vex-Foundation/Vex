@@ -39,9 +39,10 @@
  * Anything short of that draws no card, and the act row says what it knows.
  *
  * THE STAMP. H3's FILLED stamp is a status green fill with white caps
- * (`bg-stamp-filled`). Desktop knows a transaction CONFIRMED, not an order
- * filled, so the stamp says desktop's outcome word for the entry, "Confirmed"
- * (Appendix A.3, `agent-scan-outcome.ts`).
+ * (`bg-stamp-filled`), and Cloud's tag leads its word with the state square
+ * (PD-03: a fill, a square and a word). Desktop knows a transaction
+ * CONFIRMED, not an order filled, so the stamp says desktop's outcome word
+ * for the entry, "Confirmed" (Appendix A.3, `agent-scan-outcome.ts`).
  *
  * LEFT OUT. H3's APPROVAL row ("Approved by you"): approvals are not joined
  * to activity, and the transcript holds no resolved approval for the act, so
@@ -52,6 +53,7 @@
 import { useMemo, type JSX } from "react";
 import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { MainnetMark } from "../../../components/ui/stamp.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import {
@@ -166,6 +168,7 @@ export function ReceiptCard({
             data-vex-receipt-stamp=""
             className="vex-receipt__stamp bg-stamp-filled text-ink-on-stamp-filled"
           >
+            <StateSquare state="done" />
             {outcome.word}
           </span>
         </div>
