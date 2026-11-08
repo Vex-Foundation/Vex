@@ -937,11 +937,12 @@
   display: inline-flex;
   color: var(--vex-alias-label-primary);
 }
+/* The decision, 15 / 1.3 at 400 (Cloud's kit has no 500 weight). */
 .vex-appr-row__title {
   margin: 0;
-  font-size: 15.5px;
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.3;
   color: var(--vex-alias-label-primary);
 }
 .vex-appr-row__go {
@@ -973,9 +974,11 @@
   font-size: 12.5px;
   color: var(--vex-alias-label-tertiary);
 }
+/* The stamp at Cloud's tag measure, 24 high with caps 11. */
 .vex-appr-row__stamp.vex-stamp {
-  height: 18px;
-  font-size: 10px;
+  box-sizing: border-box;
+  height: 24px;
+  font-size: 11px;
 }
 /* In the folded row the failure line is the row's foot, bled to its frame. */
 .vex-appr-row__fail:not(:empty) {

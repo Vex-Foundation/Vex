@@ -1007,6 +1007,21 @@ describe("ApprovalCard folded to its row (the Needs you page)", () => {
     expect(screen.queryByRole("button", { name: /^approve/i })).toBeNull();
   });
 
+  it("draws its keys as the kit's 13 caps keys, never blue, and its type at Cloud's kit measures", () => {
+    renderRow(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    expect(screen.getByRole("button", { name: "Reject" }).getAttribute("data-vex-button")).toBe("ink");
+    expect(screen.getByRole("button", { name: "Review transfer" }).getAttribute("data-vex-button")).toBe("ghost");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr-row__title")).toContain("font-weight: 400");
+    expect(body(".vex-appr-row__stamp.vex-stamp")).toContain("height: 24px");
+    expect(body(".vex-appr-row__stamp.vex-stamp")).toContain("font-size: 11px");
+  });
+
   it("Review opens the card and decides nothing", () => {
     const onReview = vi.fn();
     renderRow(makeSummary(), onReview);
