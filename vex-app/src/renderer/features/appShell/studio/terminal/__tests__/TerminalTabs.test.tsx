@@ -829,7 +829,7 @@ describe("the close control sits inside its tab", () => {
 /**
  * THE R3 CHROME (docs/design/R3-MINIMAL.md section 9.5), as the DOM states it.
  *
- * The numbers (40 high strip, 1.5px underline, 50 high head) are pinned as CSS
+ * The numbers (40 high strip, 1px underline, 50 high head) are pinned as CSS
  * text in `terminal-surface-css.test.ts`; what only the markup can say is
  * which element wears which class, that the calm line icons replaced the px
  * sprite, and that the workspace draws no box.

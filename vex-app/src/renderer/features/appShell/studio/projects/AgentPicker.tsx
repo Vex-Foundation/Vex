@@ -5,7 +5,7 @@
  * the stored value is a SET (`studioAgentsSchema`), so the control has to be
  * one the user can leave empty and one they can fill. The visual grammar is
  * `SessionCreator/RadioCard`'s card, adapted rather than forked: the cards are
- * wider, they carry a brand mark, and the selected one is a 1.5px blue frame
+ * wider, they carry a brand mark, and the selected one is a 1px blue frame
  * with a solid swatch, because a project's agent list and a session's mode grid
  * should read as the same product.
  *
@@ -166,7 +166,7 @@ function AgentCard({
     <label
       data-vex-agent={agent.id}
       className={cn(
-        "relative flex cursor-pointer flex-col gap-1.5 border-[1.5px] px-3.5 py-3 transition-colors",
+        "relative flex cursor-pointer flex-col gap-1.5 border px-3.5 py-3 transition-colors",
         // Keyboard focus on the sr-only checkbox lights the card with the
         // kit focus outline (2px, 3px clear), never a ring or a glow.
         "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
@@ -188,7 +188,7 @@ function AgentCard({
         }}
         className="sr-only"
       />
-      {/* The selection marker is the 1.5px blue frame (docs/design/
+      {/* The selection marker is the 1px blue frame (docs/design/
         * R3-MINIMAL.md section 9.4, the selected tile) plus the swatch: a
         * solid fill when the agent is on, an outline when it is off, so the
         * state is never colour alone (section 1.6). */}

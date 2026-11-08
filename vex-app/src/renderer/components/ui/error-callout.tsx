@@ -1,6 +1,6 @@
 /**
  * ErrorCallout: the ink callout for a failure (docs/design/R3-MINIMAL.md
- * sections 6 and 12). Never red: a 1.5px ink frame with an 8px hatch band on
+ * sections 6 and 12). Never red: a 1px ink frame with an 8px hatch band on
  * its left edge, the error swatch beside the title ("This turn failed"), then
  * the cause line, the hint, any keys, and a muted code trailer. Dismiss sits
  * at the right of the title row when the owner offers it.

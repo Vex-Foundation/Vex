@@ -24,7 +24,7 @@
  *   - a mission that needs Recover, its contract or its form opens its
  *     session, where those controls live.
  *
- * Chrome: an anchored panel, no portal, no veil, a 1.5px ink frame; outside
+ * Chrome: an anchored panel, no portal, no veil, a 1px ink frame; outside
  * press and Escape close it, focus moves into it on open and back to the
  * control on close.
  */

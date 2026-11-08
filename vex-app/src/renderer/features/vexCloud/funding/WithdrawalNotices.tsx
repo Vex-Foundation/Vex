@@ -49,7 +49,7 @@ function NoticeRow({ notice }: { readonly notice: VexCloudWithdrawalNotice }): J
     });
   };
   return (
-    <li className="flex flex-col gap-2 border-[1.5px] border-rule-ink p-3" data-testid="withdrawal-notice" data-withdrawal-id={notice.withdrawalId}>
+    <li className="flex flex-col gap-2 border border-rule-ink p-3" data-testid="withdrawal-notice" data-withdrawal-id={notice.withdrawalId}>
       <StateWord state="concerned" word={NOTICE_WORD} />
       <p className="m-0 text-[14px] leading-[1.5] text-ink-primary">{noticeSentence(notice, Date.now())}</p>
       {notice.cancellable ? null : <p className="m-0 text-[13px] text-ink-secondary">{NOT_CANCELLABLE_NOTE}</p>}

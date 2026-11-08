@@ -4,7 +4,7 @@
  * Studio host pill, Notices and "Needs you · N", 8 apart, each control 32
  * high; the Vex key has its own cell (the token chip ends the Lighter
  * desk's title row). Popovers are flat paper panels
- * with a 1.5px ink frame and never a shadow. Paper, ink, one blue, radius 0,
+ * with a 1px ink frame and never a shadow. Paper, ink, one blue, radius 0,
  * tokens only.
  *
  * The header's last cell reserves the Windows and Linux caption buttons
@@ -245,7 +245,7 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
 }
 .vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="error"] > span:first-child {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background:
     linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
     linear-gradient(-45deg, transparent 44%, currentColor 44% 56%, transparent 56%);
@@ -448,11 +448,11 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   color: var(--vex-alias-label-secondary);
 }
 
-/* ── Popovers: paper, a 1.5px ink frame, no shadow ───────────────────────── */
+/* ── Popovers: paper, a 1px ink frame, no shadow ───────────────────────── */
 .vex-tb-pop {
   position: absolute;
   z-index: 40;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-bg-overlay);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
@@ -690,7 +690,7 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-bg-overlay);
   text-align: left;
 }

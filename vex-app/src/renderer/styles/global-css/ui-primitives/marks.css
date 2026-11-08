@@ -182,13 +182,13 @@ html[data-still] .vex-sq[data-state="ongoing"] {
 
 /* Empty outline. */
 .vex-swatch[data-s="idle"] {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
 }
 
 /* Ink cross: two diagonals 12% wide, ink on both paper and night, never a
  * hue. */
 .vex-swatch[data-s="error"] {
-  border: 1.5px solid var(--vex-alias-label-primary);
+  border: 1px solid var(--vex-alias-label-primary);
   color: var(--vex-alias-label-primary);
   background:
     linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
@@ -222,7 +222,7 @@ html[data-still] .vex-sq[data-state="ongoing"] {
 
 /* Sleeping and paused: the dotted outline. */
 .vex-swatch[data-s="sleeping"] {
-  border: 1.5px dotted currentColor;
+  border: 1px dotted currentColor;
 }
 
 @keyframes vex-swatch-step {

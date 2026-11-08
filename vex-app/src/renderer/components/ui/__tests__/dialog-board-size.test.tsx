@@ -2,7 +2,7 @@
  * THE DIALOG'S SIZES AND BACKDROPS.
  *
  * The board size gives the wide surface its own bounded scroll region; every
- * 380px consumer renders one exact class string (the R3 chrome: a 1.5px ink
+ * 380px consumer renders one exact class string (the R3 chrome: a 1px ink
  * frame on the paper); the sheet size drops the centring and the caps; the
  * backdrop is the flat scrim unless a dialog asks for none.
  */

@@ -13,7 +13,7 @@ hero-to-docked move because the parent keeps the mount position stable.
   padding 14 14 10 18 on both stages. It follows the page column (720 on the
   welcome, 540 beside Vex under 1180; composer.css). NO focus treatment of
   any kind; the blue caret and the send key carry focus. While an approval
-  waits it draws the 1.5px ink frame.
+  waits it draws the 1px ink frame.
 - Field: 16/24 sans, a 48px two-line floor, the text 6px off the right edge
   (the placeholder overlay mirrors it), height cap 336px (14 lines) then
   scroll. The placeholder is muted.
@@ -78,7 +78,7 @@ hero-to-docked move because the parent keeps the mount position stable.
   beside the shared `CellMeter` (VEX Cloud's meter: ten 6x12 cells, 8% unlit, 39% lit, the last lit 60%) from `useContextWindow`;
   past the ENGINE's
   own critical band the cells turn ink. It opens a 264px `role="dialog"`
-  panel above and right-aligned, on the 1.5px ink frame. Outside pointer and Escape dismiss it; focus returns to
+  panel above and right-aligned, on the 1px ink frame. Outside pointer and Escape dismiss it; focus returns to
   the trigger; the tooltip serves the closed state only. The panel draws a
   TOTAL-ONLY bar (the same meter at twenty cells) - `ContextWindowDto` carries no System/Tools/Messages
   split, so the reference's legend is deliberately absent rather than

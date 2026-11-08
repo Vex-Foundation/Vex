@@ -3,7 +3,7 @@
  * A 1px rule frame on the field, the update icon and the state's own sentence
  * (14 / 500), a muted line (12.5), the quiet download bar, and the action row
  * (small keys, the Release notes link at the right). A critical update and a
- * failure take the 1.5px ink frame. Radius 0, no shadow, tokens only.
+ * failure take the 1px ink frame. Radius 0, no shadow, tokens only.
  *
  *   .vex-upd-slot            the sidebar's empty mount point (zero height
  *                            until a card portals into it)
@@ -29,11 +29,10 @@
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
 }
-/* The heavier frame is 0.5px wider each side: the padding gives it back so
- * the card does not jump when a state turns critical. */
+/* The heavier frame is the ink at the same 1px (1px rules only, H3 2.4),
+ * so the card does not jump when a state turns critical. */
 .vex-upd[data-heavy] {
-  padding: 11.5px 13.5px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
 }
 .vex-upd[data-floating] {
   position: fixed;

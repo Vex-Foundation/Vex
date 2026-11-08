@@ -3,7 +3,7 @@
  * and for the Studio project dialogs that reuse it
  * (docs/design/R3-MINIMAL.md section 12, the option card of the inline panel).
  *
- * Square, 1px rule on the field fill. The selected card takes a 1.5px blue
+ * Square, 1px rule on the field fill. The selected card takes a 1px blue
  * frame (padding compensated so nothing jumps) and a solid swatch before its
  * title; an unselected card shows the empty outline swatch. The state is the
  * fill and the frame, never a wash. A short tag may sit at the right of the
@@ -59,7 +59,7 @@ export function RadioCard({
         // focus outline, 3px clear of the frame.
         "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
         checked
-          ? "border-[1.5px] border-accent-primary px-[15.5px] pb-[14.5px] pt-[13.5px]"
+          ? "border border-accent-primary px-4 pb-[15px] pt-3.5"
           : "border border-rule px-4 pb-[15px] pt-3.5 hover:bg-interactive-hover",
       )}
     >

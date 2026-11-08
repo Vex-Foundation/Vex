@@ -77,7 +77,7 @@
  * holding its trigger, its Keep action and its close - VS Code's own shape
  * (`multiEditorTabsControl.ts:916` builds `.tab-actions` INSIDE the tab
  * container) and the shape of 16.png. The wrapper is the tab's chrome (clear
- * at rest, a 1.5px blue underline when active: `terminal.css` owns the paint,
+ * at rest, a 1px blue underline when active: `terminal.css` owns the paint,
  * docs/design/R3-MINIMAL.md section 9.5); the trigger inside it is
  * transparent and borderless, and a hover anywhere on the shell lights the
  * whole tab because there is only one element to light.

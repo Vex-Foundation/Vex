@@ -161,7 +161,7 @@ describe("UpdateCard", () => {
     expect(handlers.onDismissError).toHaveBeenCalledTimes(1);
   });
 
-  it("takes the 1.5px ink frame for a critical update and a failure only", () => {
+  it("takes the ink frame for a critical update and a failure only", () => {
     const frame = (): string | null =>
       document.querySelector('[data-vex-area="update-card"]')?.getAttribute("data-heavy") ?? null;
     renderCard(AVAILABLE);

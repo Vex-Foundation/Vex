@@ -743,7 +743,7 @@ html[data-os="mac"] .lit-desk[data-zen-controls="closed"] .lit-drawing-rail { to
   align-items: center;
   gap: 6px;
   border: 0;
-  border-bottom: 1.5px solid transparent;
+  border-bottom: 1px solid transparent;
   margin-bottom: -1px;
   background: transparent;
   padding: 0;

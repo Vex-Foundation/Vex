@@ -140,13 +140,13 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* While an approval waits the composer takes the 1.5px ink frame, drawn
+/* While an approval waits the composer takes the 1px ink frame, drawn
  * inside its box so nothing moves, and the tag on the field's top edge says
  * "Waiting for approval". Status is shown by the frame and the word, never
  * by a colour. */
 .vex-composer-card[data-vex-composer-state="approval"] {
-  outline: 1.5px solid var(--vex-alias-rule-ink);
-  outline-offset: -1.5px;
+  outline: 1px solid var(--vex-alias-rule-ink);
+  outline-offset: -1px;
 }
 
 /* THE COMPOSER ROW: at 1440,

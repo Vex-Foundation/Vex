@@ -752,7 +752,7 @@ function AcceptancePendingNotice({
       role="status"
       data-vex-state="acceptance-pending"
       data-vex-readiness={readiness.kind}
-      className="mb-3 flex w-full basis-full items-start gap-3 border-l-[1.5px] border-accent-primary py-0.5 pl-3 text-[12.5px] leading-[1.45]"
+      className="mb-3 flex w-full basis-full items-start gap-3 border-l border-accent-primary py-0.5 pl-3 text-[12.5px] leading-[1.45]"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="flex items-start gap-2 text-[13px] text-ink-primary">

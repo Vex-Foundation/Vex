@@ -95,9 +95,9 @@ export function StudioHostStatusPreview(): JSX.Element {
       // assertion caught it because a clipped element still has a layout box.
       // Sixteen rows fit the capture viewport unscrolled; a panel that needed
       // to scroll would have to move the card to a portal first.
-      // A popover (docs/design/R3-MINIMAL.md section 12): paper, a 1.5px ink
+      // A popover (docs/design/R3-MINIMAL.md section 12): paper, a 1px ink
       // frame, square.
-      className="fixed top-12 left-1/2 z-50 flex w-[380px] -translate-x-1/2 flex-col gap-1 border-[1.5px] border-rule-ink bg-surface-base p-3"
+      className="fixed top-12 left-1/2 z-50 flex w-[380px] -translate-x-1/2 flex-col gap-1 border border-rule-ink bg-surface-base p-3"
     >
       {cases.map((entry) => (
         <div

@@ -298,9 +298,10 @@ describe("composer capsule - chrome", () => {
     expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
     // Its words truncate before they push a neighbour out.
     expect(words.className).toContain("truncate");
-    // The ink frame is drawn inside the composer's box, so nothing moves.
+    // The ink frame is drawn inside the composer's box, so nothing moves;
+    // 1px, as every rule is (H3-DESKTOP.md section 2.4).
     expect(CONSOLE_CSS).toMatch(
-      /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1\.5px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1\.5px;/,
+      /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1px;/,
     );
   });
 });

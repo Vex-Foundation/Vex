@@ -510,7 +510,7 @@
   color: var(--lit-ink);
 }
 
-/* A flat popover: paper and a 1.5px ink frame, never a shadow
+/* A flat popover: paper and a 1px ink frame, never a shadow
  * (docs/design/R3-MINIMAL.md section 12). */
 .lit-close-card {
   /* FIXED HERE, NOT IN THE COMPONENT, and it is not only about where the card
@@ -531,7 +531,7 @@
   min-width: 220px;
   flex-direction: column;
   gap: 10px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--lit-panel);
   padding: 12px;
   font-family: var(--font-sans);
@@ -596,7 +596,7 @@
 .lit-close-card-keys button:hover { background: var(--lit-hover); }
 
 /* Market close is the destructive key: the ink frame, the ink fill on hover. */
-.lit-close-card-keys button[data-danger] { border: 1.5px solid var(--vex-alias-rule-ink); }
+.lit-close-card-keys button[data-danger] { border: 1px solid var(--vex-alias-rule-ink); }
 
 .lit-close-card-keys button[data-danger]:hover {
   background: var(--lit-ink-fill);

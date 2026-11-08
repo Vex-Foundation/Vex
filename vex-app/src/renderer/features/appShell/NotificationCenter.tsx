@@ -2,7 +2,7 @@
  * THE NOTIFICATION CENTER - the title bar's "what did I miss?", the
  * "Notices · N" pill and its panel (docs/design/R3-MINIMAL.md sections 3 and
  * 12). The pill exists only while notices exist; the panel is a flat paper
- * popover with a 1.5px ink frame, 420 wide, 12 from the column's right edge
+ * popover with a 1px ink frame, 420 wide, 12 from the column's right edge
  * and 6 under the title bar. A row's state is its fill (the ink cross for a
  * failure, the ink hatch for a warning), never a colour.
  *

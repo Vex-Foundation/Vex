@@ -150,7 +150,7 @@
 }
 
 /* An inline confirmation in place of the actions (section 10.2, the unlock's "Set up a new
- * vault?"): a 1.5px ink frame, padding 22 24 20, max 470; a destructive choice arms here. */
+ * vault?"): a 1px ink frame, padding 22 24 20, max 470; a destructive choice arms here. */
 .vex-fr-panel {
   display: flex;
   flex-direction: column;
@@ -158,7 +158,7 @@
   width: 100%;
   max-width: 470px;
   padding: 22px 24px 20px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-bg-base);
 }
 

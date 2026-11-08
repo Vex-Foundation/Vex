@@ -227,6 +227,29 @@ describe("the shape law", () => {
   });
 });
 
+describe("1px rules only (docs/design/H3-DESKTOP.md section 2.4)", () => {
+  it("draws no frame, rule or outline at 1.5px in any sheet", () => {
+    // VEX Cloud's SK STYLE 2.3: lines and fills are 1px only. R3's heavier
+    // 1.5px ink and blue frames retired; a heavier frame is the ink at 1px.
+    const offenders = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/g)].map(
+        (match) => `${name}: ${match[0]}`,
+      ),
+    );
+    expect(offenders).toEqual([]);
+    expect("border: 1.5px solid x;").toMatch(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/);
+  });
+
+  it("draws no 1.5px frame through a utility in any renderer source", () => {
+    const pattern = /\b(?:border|outline)(?:-[trblxy])?-\[1\.5px\]/;
+    expect("x border-b-[1.5px] y").toMatch(pattern);
+    const offenders = rendererSources()
+      .filter(([, source]) => pattern.test(source))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("the retired prints (shell.css, vex-sidebar.css)", () => {
   it("lays no print, grain or veil anywhere: the wall, its veil and the plate's print window are gone", () => {
     const shell = stripComments(shellCss);

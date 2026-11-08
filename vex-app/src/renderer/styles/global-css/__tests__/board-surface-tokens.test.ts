@@ -116,10 +116,11 @@ describe("board surface tokens", () => {
     expect(ruleBody(boardCss, ".vex-bd")).toContain(
       "background-color: var(--vex-alias-board-surface)",
     );
-    // The selected tile: a 1.5px blue outline drawn inside the tile.
+    // The selected tile: a 1px outline drawn inside the tile (1px rules
+    // only, H3-DESKTOP.md section 2.4).
     const frame = ruleBody(boardCss, '.vex-board-card[data-selected="true"]');
-    expect(frame).toContain("1.5px solid var(--vex-alias-accent-primary)");
-    expect(frame).toContain("outline-offset: -1.5px");
+    expect(frame).toContain("1px solid var(--vex-alias-accent-primary)");
+    expect(frame).toContain("outline-offset: -1px");
     expect(stripComments(boardCss)).not.toMatch(/border-radius/);
   });
 

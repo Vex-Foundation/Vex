@@ -396,7 +396,7 @@
   transform: translate(-50%, -50%);
 }
 .vex-pf-chart__mark[data-vex-mark="partial"] {
-  border: 1.5px solid var(--vex-alias-label-secondary);
+  border: 1px solid var(--vex-alias-label-secondary);
   background: var(--vex-alias-bg-base);
 }
 .vex-pf-chart__x {
@@ -435,7 +435,7 @@
   height: 7px;
   flex: none;
   box-sizing: border-box;
-  border: 1.5px solid var(--vex-alias-label-secondary);
+  border: 1px solid var(--vex-alias-label-secondary);
 }
 
 .vex-pf-top__empty {

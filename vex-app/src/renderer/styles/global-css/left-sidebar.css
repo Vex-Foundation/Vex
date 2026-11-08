@@ -337,7 +337,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* All, Agent, Mission: gap 16, 13, the active one in ink with a 1.5px
+/* All, Agent, Mission: gap 16, 13, the active one in ink with a 1px
  * underline; counts in mono 11 muted, at the figures' 0.04em. The row's words start 24 in, under the
  * field's icon. */
 .vex-ls-tabs {
@@ -353,7 +353,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   margin-bottom: -1px;
   padding: 0 0 7px;
   border: 0;
-  border-bottom: 1.5px solid transparent;
+  border-bottom: 1px solid transparent;
   background: transparent;
   font-size: 13px;
   line-height: 1.3;
