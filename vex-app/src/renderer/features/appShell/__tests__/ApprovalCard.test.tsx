@@ -1493,7 +1493,9 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       renderCard(SWAP, false);
       const key = signed().querySelector("summary");
       expect(key?.className).toBe("vex-appr__more-key");
-      expect(key?.firstElementChild?.className).toBe("vex-appr__chev");
+      expect(key?.firstElementChild?.className).toBe("vex-appr__chev vex-appr__chev--swap");
+      // Cloud's chevron swaps its glyph with the state; both are drawn, the sheet shows one.
+      expect(key?.querySelectorAll(".vex-appr__chev-closed, .vex-appr__chev-open")).toHaveLength(2);
       expect(key?.querySelector(".vex-appr__more-sum")?.textContent).toBe(
         "kyberswap:swap.execute, wallet broadcast, raw arguments",
       );
@@ -1526,22 +1528,25 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(details.textContent).toContain("kyberswap:swap.execute");
     });
 
-    it("sets the key in caps and tracked sans 13, ruled like a row, its note in sentence case", () => {
+    it("sets the key as Cloud's toggle: 36 high, tracked sans 12 caps in ink 2, ruled like a row, its note in sentence case", () => {
       const key = ruleBody(".vex-appr__more-key");
-      expect(key).toContain("font-size: 13px");
+      expect(key).toContain("font-size: 12px");
       expect(key).toContain("text-transform: uppercase");
       expect(key).toContain("letter-spacing: var(--tracking-label)");
       expect(key).toContain("border-top: 1px solid var(--vex-alias-rule)");
       expect(key).toContain("padding: 0 var(--vex-appr-inset)");
-      expect(key).toContain("min-height: 34px");
-      // Ink, not the old blue link: blue is for the primary key only.
-      expect(key).toContain("color: var(--vex-alias-label-primary)");
+      expect(key).toContain("min-height: 36px");
+      // Ink 2, not the old blue link: blue is for the primary key only.
+      expect(key).toContain("color: var(--vex-alias-label-secondary)");
       expect(key).not.toContain("accent");
       const note = ruleBody(".vex-appr__more-sum");
       expect(note).toContain("text-transform: none");
       expect(note).toContain("letter-spacing: normal");
       // H3's focus: the 2px ring inside the cell.
       expect(ruleBody(".vex-appr__more-key:focus-visible")).toContain("outline-offset: -2px");
+      // The chevron is muted and never turns; it swaps its glyph.
+      expect(ruleBody(".vex-appr__chev--swap")).toContain("color: var(--vex-alias-label-tertiary)");
+      expect(ruleBody(".vex-appr__more[open] .vex-appr__chev:not(.vex-appr__chev--swap)")).toContain("rotate(90deg)");
     });
 
     it("rules every open field edge to edge, its key in mono and never in caps", () => {
@@ -1551,7 +1556,12 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(key).toContain("font-family: var(--font-mono)");
       expect(key).toContain("padding-left: var(--vex-appr-inset)");
       expect(key).not.toContain("text-transform");
+      expect(key).toContain("font-size: 12px");
       expect(ruleBody(".vex-appr__well dd")).toContain("padding-right: var(--vex-appr-inset)");
+      // Cloud's signed fields: values mono 13 in ink, no fill, the names in a column up to 200.
+      expect(ruleBody(".vex-appr__well dd")).toContain("font-size: 13px");
+      expect(ruleBody(".vex-appr__well")).toContain("grid-template-columns: minmax(0, 200px) minmax(0, 1fr)");
+      expect(ruleBody(".vex-appr__well")).not.toContain("background");
     });
   });
 });

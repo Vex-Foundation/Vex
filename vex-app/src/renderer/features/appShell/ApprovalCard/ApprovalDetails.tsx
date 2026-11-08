@@ -45,7 +45,7 @@ import {
   riskTagIsInk,
   riskTagWord,
 } from "./approval-sentence.js";
-import { LineChevronRight } from "../../../components/icons/line/index.js";
+import { LineChevronDown, LineChevronRight } from "../../../components/icons/line/index.js";
 import { StateSquare } from "../../../components/ui/state-square.js";
 import { Stamp, Tag } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
@@ -535,8 +535,11 @@ export function ApprovalDetails({
           this is the record the person is checking, not a label to read. */}
       <details className="vex-appr__more" open={facts === null}>
         <summary className="vex-appr__more-key">
-          <span aria-hidden className="vex-appr__chev">
-            <LineChevronRight size={14} />
+          {/* Cloud's toggle (`SignedFields`): the muted chevron swaps its
+              glyph with the state, it never turns. */}
+          <span aria-hidden className="vex-appr__chev vex-appr__chev--swap">
+            <LineChevronRight size={14} className="vex-appr__chev-closed" />
+            <LineChevronDown size={14} className="vex-appr__chev-open" />
           </span>
           All signed fields
           <span className="vex-appr__more-sum">{signedSummary}</span>

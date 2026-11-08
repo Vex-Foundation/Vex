@@ -827,7 +827,7 @@ An error, a concern, sleep and the rest keep the rest line. The band's foot row 
 | NETWORK FEE, "Not available" | same, on a swap and a bridge; no second row on a transfer | one unknown said once (DG5-06); the word is DRAFT in Cloud |
 | TOTAL DEBIT, "Not available" | shown only when every part is known | desktop never shows a total it cannot add up |
 | "up to 10,000 USD per order, 50,000 USD a day", "Change in Settings" | left out | no spend limits (F04 has not started) |
-| ALL SIGNED FIELDS | same | |
+| ALL SIGNED FIELDS | same, drawn as Cloud's toggle (`SignedFields`): 36 high, 12 caps in ink 2, a muted 14 chevron that swaps its glyph and never turns; open, the fields have no fill, the names mono 12 muted in a column up to 200 and the values mono 13 in ink, ruled edge to edge. It still opens on mount when the card has no readable facts above it | desktop's open-by-default rule stays (Cloud closes it on every mount) |
 | "Tell Vex what to do instead" | same, for the reason field, drawn as Cloud's instruction field (`CustomRow`): sans 16 / 1.45, wrapping and growing to 144 then scrolling, a row of at least 56 (40 on a short window) with 16 around the words, the ring on the whole row, and "{count} / 500" from 450 characters. It stays one line of text, as the old one-line field was: Enter and a pasted break add nothing, so the reason that travels with Reject is unchanged | the reason reaches Vex; desktop's cap is 500, not Cloud's 1,000 |
 | REJECT | same; "Click again to confirm reject" when armed | |
 | the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |

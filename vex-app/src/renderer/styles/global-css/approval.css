@@ -301,12 +301,14 @@
   border-top: 1px solid var(--vex-alias-rule);
 }
 
-/* 4. "ALL SIGNED FIELDS": H3's disclosure (section 1.7), one ruled cell on
- * the table's 34px pitch: the chevron 24 in, then the words in sans 13 caps,
- * tracked, in ink, as H3 sets every key word. Desktop's note of what it folds
- * ("kyberswap:swap.execute, wallet broadcast, expiry, raw arguments") sits at
- * the right in muted sentence case and gives way first. The chevron turns
- * when the fields are open. Focus is H3's 2px ring inside the cell. */
+/* 4. "ALL SIGNED FIELDS": Cloud's disclosure (`SignedFields`,
+ * `styles/takeover.css` `.vx-tk-signed-k`), one ruled cell 36 high: the
+ * chevron 24 in, muted, 14, swapping its glyph with the state (it never
+ * turns), then the words in sans 12 caps, tracked, in ink 2. Desktop's note
+ * of what it folds ("kyberswap:swap.execute, wallet broadcast, expiry, raw
+ * arguments") sits at the right in muted sentence case and gives way first.
+ * Focus is H3's 2px ring inside the cell. A card with no readable facts
+ * above opens it on mount, as before. */
 .vex-appr__more {
   margin: 0;
 }
@@ -314,14 +316,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 var(--vex-appr-inset);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
   border-top: 1px solid var(--vex-alias-rule);
   cursor: pointer;
   list-style: none;
@@ -342,8 +344,17 @@
   flex: none;
   transition: transform var(--vex-duration-base) var(--vex-ease-standard);
 }
-.vex-appr__more[open] .vex-appr__chev {
+/* The funding card's chevron still turns; the approval card's swaps. */
+.vex-appr__more[open] .vex-appr__chev:not(.vex-appr__chev--swap) {
   transform: rotate(90deg);
+}
+.vex-appr__chev--swap {
+  color: var(--vex-alias-label-tertiary);
+  transition: none;
+}
+.vex-appr__more[open] .vex-appr__chev-closed,
+.vex-appr__more:not([open]) .vex-appr__chev-open {
+  display: none;
 }
 .vex-appr__more-sum {
   min-width: 0;
@@ -357,24 +368,24 @@
   white-space: nowrap;
 }
 
-/* The fields, open: the record as bound, one ruled row per field on the cell
- * fill, edge to edge like the table above it. Key and value are both mono 12:
- * the key exactly as bound, never in caps (a person checking `amountIn` must
- * see `amountIn`), muted, 24 in; the value in ink, at the left of its column
- * so a long address or quote line reads from its start, wrapping inside its
- * cell. */
+/* The fields, open: the record as bound, one ruled row per field, edge to
+ * edge like the table above it, with no fill (Cloud's `.vx-tk-sg`). The key
+ * in mono 12, exactly as bound, never in caps (a person checking `amountIn`
+ * must see `amountIn`), muted, 24 in, in a column up to 200; the value in
+ * mono 13 in ink, at the left of its column so a long address or quote line
+ * reads from its start, wrapping inside its cell. */
 .vex-appr__well {
   display: grid;
-  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
   margin: 0;
   font-size: 12px;
-  background: var(--vex-alias-bg-layer-3);
 }
 .vex-appr__well dt,
 .vex-appr__well dd {
   margin: 0;
   padding: 7px 0;
   line-height: 16px;
+  overflow-wrap: anywhere;
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__well dt {
@@ -382,15 +393,16 @@
   padding-left: var(--vex-appr-inset);
   font-family: var(--font-mono);
   font-size: 12px;
-  overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__well dd {
   padding-right: var(--vex-appr-inset);
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--vex-alias-label-primary);
 }
 .vex-appr__well .vex-appr__num {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* THE FAILURE LINE (Cloud's DG5-28, `.vx-tk-fail`): when a decision does not
