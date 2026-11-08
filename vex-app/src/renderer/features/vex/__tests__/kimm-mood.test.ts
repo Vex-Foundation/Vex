@@ -2,10 +2,12 @@
  * The presence state to Kimm's mood map (`kimm-mood.ts`): every state of the
  * `VexState` union has exactly one of her moods, walked from the union as
  * `vex-state.ts` declares it, so a state added there without a mood turns this
- * red; H3's four moments keep H3's moods; Cloud's seats hold (a failure and an
- * error rest, Concerned rests in a chat and thinks on a status panel, refused
- * only for a refusal, signed after a fill); every mood is shown by some
- * reading; and a locked vault holds her, as it changes the word.
+ * red; H3's four moments keep H3's moods; VEX Cloud's built code holds (an
+ * error with no money call rests in a chat; on a status panel Concerned
+ * thinks and Error is refused; the approved money call running shows offer,
+ * Cloud's sign; its end shows signed after a fill and refused after a
+ * refusal or an error, for 2.8 s and 3.4 s, then rest); every mood is shown
+ * by some reading; and a locked vault holds her, as it changes the word.
  */
 
 import { readFileSync } from "node:fs";
@@ -13,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { KIMM_MOODS } from "../../../components/vex/kimm/kimm-assets.js";
-import { KIMM_MOOD_BY_STATE, kimmMoodOf } from "../kimm-mood.js";
+import { KIMM_MOOD_BY_STATE, KIMM_MOOD_HOLD_MS, kimmMoodOf, kimmOutcomeOf } from "../kimm-mood.js";
 import { VEX_STATES, type VexState } from "../vex-state.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -80,43 +82,65 @@ describe("kimmMoodOf", () => {
     expect(kimmMoodOf("done")).toBe("rest");
   });
 
-  it("rests on an error: she is not the failure", () => {
+  it("rests on an error with no money call: she is not the failure", () => {
     expect(kimmMoodOf("error")).toBe("rest");
-    expect(kimmMoodOf("error", { outcome: "failed" })).toBe("rest");
+    expect(kimmMoodOf("error", { outcome: null })).toBe("rest");
   });
 
-  it("rests when Concerned in a chat, and thinks on a status panel", () => {
+  it("rests when Concerned in a chat; on a status panel Concerned thinks and Error is refused (Cloud's StatusPanel)", () => {
     expect(kimmMoodOf("concerned")).toBe("rest");
     expect(kimmMoodOf("concerned", { seat: "chat" })).toBe("rest");
     expect(kimmMoodOf("concerned", { seat: "panel" })).toBe("think");
-    // The seat is Concerned's alone.
+    expect(kimmMoodOf("error", { seat: "chat" })).toBe("rest");
+    expect(kimmMoodOf("error", { seat: "panel" })).toBe("refused");
+    // The panel seat is Concerned's and Error's alone.
     for (const state of VEX_STATES) {
-      if (state === "concerned") continue;
+      if (state === "concerned" || state === "error") continue;
       expect(kimmMoodOf(state, { seat: "panel" }), state).toBe(kimmMoodOf(state));
     }
   });
 
-  it("follows a settled turn's outcome: signed after a fill, refused for a refusal, rest after a failure", () => {
+  it("shows offer while the approved money call runs, Cloud's sign mood and its still", () => {
+    expect(kimmMoodOf("working", { approved: true })).toBe("offer");
+    expect(kimmMoodOf("thinking", { approved: true })).toBe("offer");
+    // Only a call in flight reads it.
+    for (const state of VEX_STATES) {
+      if (state === "working" || state === "thinking") continue;
+      expect(kimmMoodOf(state, { approved: true }), state).toBe(kimmMoodOf(state));
+    }
+  });
+
+  it("follows the money call's end: signed after a fill, refused after a refusal or an error", () => {
     expect(kimmMoodOf("done", { outcome: "filled" })).toBe("signed");
     expect(kimmMoodOf("done", { outcome: "refused" })).toBe("refused");
-    expect(kimmMoodOf("done", { outcome: "failed" })).toBe("rest");
+    expect(kimmMoodOf("done", { outcome: "failed" })).toBe("refused");
+    expect(kimmMoodOf("error", { outcome: "failed" })).toBe("refused");
+    expect(kimmMoodOf("error", { outcome: "refused" })).toBe("refused");
+    // A fill never ends in an error, and a panel's Error is refused anyway.
+    expect(kimmMoodOf("error", { outcome: "filled" })).toBe("rest");
+    expect(kimmOutcomeOf("error", { outcome: "failed", seat: "panel" })).toBeNull();
     expect(kimmMoodOf("done", { outcome: null })).toBe("rest");
-    // The outcome is Done's alone: no other state signs or refuses.
+    // The end is Done's and Error's alone.
     for (const state of VEX_STATES) {
-      if (state === "done") continue;
+      if (state === "done" || state === "error") continue;
       for (const outcome of ["filled", "refused", "failed"] as const) {
         expect(kimmMoodOf(state, { outcome }), `${state} ${outcome}`).toBe(kimmMoodOf(state));
+        expect(kimmOutcomeOf(state, { outcome }), `${state} ${outcome}`).toBeNull();
       }
     }
   });
 
-  it("shows refused only for a refusal", () => {
+  it("holds the end as Cloud does: signed 2.8 s, refused 3.4 s", () => {
+    expect(KIMM_MOOD_HOLD_MS).toEqual({ filled: 2800, refused: 3400, failed: 3400 });
+  });
+
+  it("shows refused only for a money call's refusal or error, or an Error on a status panel", () => {
     const readings = VEX_STATES.flatMap((state) => [
       kimmMoodOf(state),
       kimmMoodOf(state, { locked: true }),
-      kimmMoodOf(state, { seat: "panel" }),
+      kimmMoodOf(state, { approved: true }),
+      ...(state === "error" ? [] : [kimmMoodOf(state, { seat: "panel" })]),
       kimmMoodOf(state, { outcome: "filled" }),
-      kimmMoodOf(state, { outcome: "failed" }),
     ]);
     expect(readings).not.toContain("refused");
   });

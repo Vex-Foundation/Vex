@@ -166,27 +166,27 @@ Her moods, printed on `landing-r3__plate-key-moods`, with the still VEX Cloud dr
 | think | the hand at her mouth, with the running square | Vex works (THINKING) |
 | offer | the open palm | waiting in the app (WAITING FOR APPROVAL) |
 | offer, held | the open palm, dimmed | held for sign-in (Cloud); a locked vault (desktop) |
-| signed | after a fill | DONE after a fill |
-| refused | the whole anger mark | DONE after a refusal |
-| rest | resting | after the answer (DONE), and after a failure |
+| signed | after a fill | DONE after a fill, for 2.8 s |
+| refused | the whole anger mark | the money call refused or ended in an error, for 3.4 s; ERROR on a status panel |
+| rest | resting | after the answer (DONE), and after a failure with no money call |
 
 **Held is offer, dimmed.** It has no file of its own: the seam draws it from offer's chip and still (`KIMM_ART_MOOD`, `kimm-assets.ts`) and the sheet dims it to half its light (opacity 0.5, `kimm.css`), as Cloud lays its 50% scrim over her; the mood plate's held cell measures 0.50 of the offer cell's.
 
 **Her files** (S4-18, settled 2026-11-08) are VEX Cloud's ready-made renders, byte copies of its `apps/web/public/kimm/v1/stills/` in `src/renderer/public/art/kimm/` (`NOTICE.md` there; 561,760 bytes in all): a chip (150 x 150) and a section still (720 wide, 1032 to 1104 tall by pose) per drawn mood, signed included, and the glyph field's two baked frames (`field-still.webp` 780 x 652, `field-still-wide.webp` 1536 x 1972). Each is registered in the build check's `BRAND_ASSETS` (`scripts/kimm-brand-assets.mjs`) with its size and byte budget. Cloud's phone stills are not taken: the window floor is 1000, and the band (1000 to 1023) frames the section still. A file that leaves the folder turns its piece `missing`, drawn as no art at all. The Live2D model and Cubism Core are not in the desktop app.
 
-**Desktop's states take Cloud's seats** (its `js/data.js`, and `h3-shell-gaps` decision 15, "she is not the failure"), in `features/vex/kimm-mood.ts`:
+**Desktop's states take Cloud's seats** (its `js/data.js`, `h3-shell-gaps` decision 15, "she is not the failure", and Cloud's built mood clock and status panel, verified 2026-11-08: `use-kimm-events.ts`, `kimm-moods.ts`, `kimm-provider.tsx`, `StatusPanel.tsx`), in `features/vex/kimm-mood.ts`:
 
 | State | Mood |
 |---|---|
 | Ready, Listening | hi |
-| Thinking, Working | think |
+| Thinking, Working | think; offer while the approved money call runs (`approved`: Cloud's `sign` mood, drawn with the offer still) |
 | Waiting for approval | offer |
-| Done | rest; signed after a fill; refused after a refusal; rest after a failure |
+| Done | rest; after the money call (`outcome`): signed after a fill for 2.8 s, refused after a refusal or an error for 3.4 s, then rest |
 | Concerned | rest in a chat; think on a status panel (`seat: "panel"`) |
-| Error | rest |
+| Error | rest in a chat; refused for 3.4 s when the money call ended in it (`outcome`), then rest; refused on a status panel |
 | Sleeping, Waking up | rest; held while the vault is locked |
 
-Refused shows only for a refusal: never for an error, a failure or a stop. Open: nothing in desktop's presence reports a settled turn's outcome yet (`useVexPresence` says only that a turn finished), so Done rests until a caller passes `outcome`; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`.
+The holds are Cloud's (`KIMM_EVENT_MOOD`: `done` 2800, `refused` 3400; its clock then returns to rest), kept by `useKimmMood`. Refused shows only for the money call's own end and for an Error status panel: never for a failure with no money call, nor for a stop. Open: nothing in desktop's presence reports that the running call is an approved money call or how it ended (`useVexPresence` says only that a turn is live or finished; the decision is the approvals region's), so no caller passes `approved` or `outcome` yet, and she thinks, then rests, as before; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`. Cloud also holds the welcome's hi for 1.8 s and then rests (its `hi` event); desktop keeps hi while Ready, as the H3 plates draw it.
 
 ### 1.7 The chat column
 Header cells as in section 1.3. The transcript and the welcome sit 24 in from both edges (704 to 1416 at 1440).

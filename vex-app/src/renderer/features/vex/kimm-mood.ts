@@ -2,7 +2,8 @@
  * VEX STATE TO KIMM'S MOOD: which of her moods the Vex key and her section
  * show for each presence state (docs/design/H3-DESKTOP.md section 1.6;
  * plan row S4-02), as VEX Cloud maps them (its mockup's `js/data.js`, the
- * seat per state, and `h3-shell-gaps` decision 15).
+ * seat per state, `h3-shell-gaps` decision 15, and its built mood clock and
+ * status panel).
  *
  * Pure, one lookup, total over `VexState`: a state added to the union without
  * a mood here is a type error, and the test walks the union itself, so it
@@ -26,20 +27,31 @@
  *   concerned  rest     offline, the provider rate-limited, balances stale:
  *                       in a chat she rests, as Cloud's Concerned seat does
  *                       (its spent budget); on a status panel she thinks
- *                       (`seat: "panel"`, decision 15's 404 still)
+ *                       (`seat: "panel"`, Cloud's `StatusPanel` 404 plate)
  *   error      rest     the turn failed or the mission failed or paused on
- *                       an error: she rests, because no still reads as an
- *                       error and she is not the failure (decision 15)
+ *                       an error: she rests in a chat, she is not the
+ *                       failure; on a status panel she is refused (Cloud's
+ *                       `StatusPanel` error plate)
  *   sleeping   rest     paused by the person or parked on a wake: resting
  *   waking     rest     the local services are starting: she has not risen yet
  *
- * A settled turn is Done whatever its outcome, and her act follows the
- * outcome when the caller knows it (`outcome`), as Cloud's settled seats do:
+ * THE MONEY CALL, as VEX Cloud's built event clock draws it
+ * (`apps/web/src/components/kimm/use-kimm-events.ts` and `kimm-moods.ts`,
+ * verified 2026-11-08). A caller that knows the person approved the money
+ * call now running passes `approved`, and once it has ended, `outcome`:
  *
- *   filled     signed   done after a fill: the still Cloud draws for it
- *   refused    refused  done after a refusal, the only place the whole anger
- *                       mark shows: never for a failure, never for a stop
- *   failed     rest     done after a failure: she is not the failure
+ *   approved  offer    Thinking or Working while the approved money call
+ *                      runs: Cloud's `approve` event and its `sign` mood,
+ *                      which Cloud draws with the offer still
+ *   filled    signed   the money call ended in a fill (Done): Cloud's `done`
+ *                      event, held 2.8 s, then rest
+ *   failed    refused  the money call ended in an error (Error or Done):
+ *                      Cloud's `refused` event, held 3.4 s, then rest
+ *   refused   refused  the money call was refused (Error or Done): the same
+ *
+ * The holds (`KIMM_MOOD_HOLD_MS`) are kept by `useKimmMood`, which returns
+ * rest once a held mood's time is up, as Cloud's clock does. A failure with
+ * no money call rests: the whole anger mark is the money call's alone.
  *
  * One refinement, as `vexWordOf` makes for the word ("Sleeping · Locked"): a
  * locked vault is a wait only the person can end by unlocking, desktop's
@@ -69,30 +81,60 @@ export const KIMM_MOOD_BY_STATE: Readonly<Record<VexState, KimmMood>> = {
  */
 export type KimmSeat = "chat" | "panel";
 
-/** How a settled turn ended, when its caller knows: a fill, a refusal, a failure. */
+/** How the approved money call ended, when its caller knows: a fill, a refusal, an error. */
 export type KimmOutcome = "filled" | "refused" | "failed";
 
-/** What a done turn's outcome shows; a failure rests like any other done. */
+/** What a money call's end shows: signed after a fill, refused for a refusal or an error. */
 const KIMM_MOOD_BY_OUTCOME: Readonly<Record<KimmOutcome, KimmMood>> = {
   filled: "signed",
   refused: "refused",
-  failed: "rest",
+  failed: "refused",
+};
+
+/**
+ * How long a money call's end shows before she rests (Cloud's
+ * `KIMM_EVENT_MOOD`: `done` 2800, `refused` 3400). Only a mood read from an
+ * `outcome` is held; a status panel's refused stands as long as the panel.
+ */
+export const KIMM_MOOD_HOLD_MS: Readonly<Record<KimmOutcome, number>> = {
+  filled: 2800,
+  refused: 3400,
+  failed: 3400,
 };
 
 export interface KimmMoodOptions {
   /** The vault is locked: `vexWordOf`'s own reading of Sleeping. */
   readonly locked?: boolean;
-  /** Her seat: a chat by default. Only Concerned reads it. */
+  /** Her seat: a chat by default. Concerned and Error read it. */
   readonly seat?: KimmSeat;
-  /** A settled turn's outcome. Only Done reads it. */
+  /** The money call the person approved is running. Thinking and Working read it. */
+  readonly approved?: boolean;
+  /** How the approved money call ended. Done and Error read it. */
   readonly outcome?: KimmOutcome | null;
 }
 
-/** Her mood for a presence state, its seat and, once settled, its outcome. */
+/**
+ * The money call's end a reading shows, if any: the mood `useKimmMood`
+ * holds, then rests. Done shows any end; Error shows a refusal or an error
+ * (a fill never ends in one), never on a status panel.
+ */
+export function kimmOutcomeOf(state: VexState, options: KimmMoodOptions = {}): KimmOutcome | null {
+  const outcome = options.outcome ?? null;
+  if (outcome === null) return null;
+  if (state === "done") return outcome;
+  if (state === "error" && options.seat !== "panel" && outcome !== "filled") return outcome;
+  return null;
+}
+
+/** Her mood for a presence state, its seat and the money call it follows. */
 export function kimmMoodOf(state: VexState, options: KimmMoodOptions = {}): KimmMood {
   if (state === "sleeping" && options.locked === true) return "held";
-  if (state === "concerned" && options.seat === "panel") return "think";
-  const outcome = options.outcome ?? null;
-  if (state === "done" && outcome !== null) return KIMM_MOOD_BY_OUTCOME[outcome];
+  if (options.seat === "panel") {
+    if (state === "concerned") return "think";
+    if (state === "error") return "refused";
+  }
+  if ((state === "thinking" || state === "working") && options.approved === true) return "offer";
+  const outcome = kimmOutcomeOf(state, options);
+  if (outcome !== null) return KIMM_MOOD_BY_OUTCOME[outcome];
   return KIMM_MOOD_BY_STATE[state];
 }
