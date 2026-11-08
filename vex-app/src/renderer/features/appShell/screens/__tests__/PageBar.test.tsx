@@ -61,6 +61,13 @@ describe("UpdatedStamp", () => {
     );
   });
 
+  it("marks the instant up: dateTime for machines, the full local date and time as its tooltip", () => {
+    render(<UpdatedStamp at={AT} />);
+    const time = document.querySelector('[data-vex-area="page-updated"] time');
+    expect(time?.getAttribute("datetime")).toBe(new Date(AT).toISOString());
+    expect(time?.getAttribute("title")).toBe("3 Nov 2026, 14:30:05");
+  });
+
   it.each([0, null, undefined, Number.NaN])("draws nothing for a read that has not answered (%s)", (at) => {
     render(<UpdatedStamp at={at} />);
     expect(document.querySelector('[data-vex-area="page-updated"]')).toBeNull();

@@ -87,17 +87,38 @@ export function PageTabs({
 /**
  * "Updated 14:30": the local clock of a read's own fetch time. Null when the
  * read has not answered (TanStack Query reports 0 until it has data), so no
- * stamp stands in for a time nobody measured.
+ * stamp stands in for a time nobody measured. The `<time>` carries the
+ * machine-readable instant and, as its tooltip, the full local date and time
+ * (VEX Cloud's `.vx-pgfresh`), so "14:30" is never a guess about which day.
  */
 export function UpdatedStamp({ at }: { readonly at: number | null | undefined }): JSX.Element | null {
   const clock = clockFromMs(at);
-  if (clock === null) return null;
+  if (clock === null || at === null || at === undefined) return null;
+  const instant = new Date(at);
   return (
     <p className="vex-pg-stamp" data-vex-area="page-updated">
-      Updated <time className="vex-num">{clock}</time>
+      Updated{" "}
+      <time
+        className="vex-num"
+        dateTime={instant.toISOString()}
+        title={STAMP_TITLE.format(instant)}
+      >
+        {clock}
+      </time>
     </p>
   );
 }
+
+/** The stamp's tooltip: the whole local date and time, "3 Nov 2026, 14:30:05". */
+const STAMP_TITLE = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
 
 /** Whether a page has anything for its tabs row; with nothing, no row. */
 export function hasPageBar({
