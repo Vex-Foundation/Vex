@@ -5,6 +5,9 @@
  * resting under a covering panel) is `AppShell/shell-sidebar.test.tsx`'s.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -142,5 +145,32 @@ describe("the panel's focus", () => {
       view.rerender(<ChatsPanel open focus="list" covers={false} onClose={() => {}} />);
     });
     expect(document.activeElement?.textContent).toContain("Portfolio Check");
+  });
+});
+
+describe("the panel's ground and scrim (VEX Cloud's left.css)", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const sheet = (name: string): string =>
+    readFileSync(path.join(here, "..", "..", "..", "styles", "global-css", name), "utf8");
+  const css = sheet("left-sidebar.css");
+  const block = (selector: string): string => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} has a rule`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  it("stands on the history panel's ground, a step above the rail", () => {
+    // --vx-history-panel, oklch(8% 0.006 264), is the ground's #010203 in
+    // sRGB; the column's own rail is #010101.
+    expect(block(".vex-shell-frame > .vex-chats-panel")).toMatch(
+      /background: var\(--vex-alias-bg-base\);/,
+    );
+    expect(sheet("tokens.css")).toMatch(/--color-h3-ground: #010203;/);
+  });
+
+  it("dims the rest of her column at half black, not the dialog's 60%", () => {
+    const scrim = block(".vex-shell-frame > .vex-chats-scrim");
+    expect(scrim).toMatch(/background: color-mix\(in srgb, var\(--color-black\) 50%, transparent\);/);
+    expect(scrim).not.toMatch(/bg-mask-1/);
   });
 });
