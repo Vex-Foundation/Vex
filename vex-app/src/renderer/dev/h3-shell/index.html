@@ -24,6 +24,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- THE LOAD STAMP. Served by the dev server, one load of the harness is
+      about a thousand module requests, and a single one the browser drops
+      fails the whole module graph for good: a blank page, no page error and
+      nothing in the server's log. The module script then fires `error`, and
+      this marks the root with the script that failed, so a spec fails at
+      once with the cause (`e2e/h3-harness-load.ts`) instead of waiting out
+      its timeout for a ready stamp that cannot come. -->
+    <script>
+      window.addEventListener(
+        "error",
+        function (event) {
+          var el = event.target;
+          if (el instanceof HTMLScriptElement && el.type === "module") {
+            document.documentElement.setAttribute("data-vex-h3-load-failed", el.src || "an inline module");
+          }
+        },
+        true,
+      );
+    </script>
     <script type="module" src="./harness.tsx"></script>
   </body>
 </html>
