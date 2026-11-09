@@ -544,6 +544,27 @@ describe("composer capsule - slash commands (combobox)", () => {
     expect(document.activeElement).toBe(field);
   });
 
+  it("draws Cloud's / menu: the column's width on the composer's top, the Commands head, the 148 grid", () => {
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    typeDraft("/");
+    const menu = container.querySelector("[data-vex-composer-command-menu]");
+    expect(menu?.className).toBe("vex-slash");
+    expect(menu?.querySelector(".vex-slash__head")?.textContent).toBe("Commands");
+    expect(menu?.querySelector(".vex-slash__head")?.getAttribute("aria-hidden")).toBe("true");
+    const option = screen.getAllByRole("option")[0];
+    expect(option?.className).toBe("vex-slash__row");
+    expect(option?.querySelector(".vex-slash__name")?.textContent).toBe(COMPOSER_COMMANDS[0]?.label);
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-slash \{[^}]*right: 0;[^}]*bottom: 100%;[^}]*left: 0;[^}]*border-top: 1px solid var\(--vex-alias-rule-chosen\);[^}]*background: var\(--vex-alias-card\);/);
+    expect(css).toMatch(/\.vex-slash__head \{[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-slash__row \{[^}]*grid-template-columns: 148px minmax\(0, 1fr\);/);
+  });
+
   it("ArrowDown moves the highlight via aria-activedescendant - the options never take focus", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,

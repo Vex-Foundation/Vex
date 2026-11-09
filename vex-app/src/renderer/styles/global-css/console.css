@@ -509,8 +509,5 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100%25" height="100%25" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4 4"/></svg>');
 }
 
-/* Keyboard highlight for the slash-command combobox rows (focus stays in
- * the textarea, so :hover/:focus cannot paint it). */
-[data-vex-composer-command-menu] .vex-menu-item[data-active="true"] {
-  background: var(--vex-alias-interactive-hover);
-}
+/* The slash menu's rows, its keyboard highlight included, are composer.css's
+ * (`.vex-slash`). */

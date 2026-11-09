@@ -248,6 +248,8 @@ Open, for the owner:
 
 **The status strip** sits above the composer in the chat column, 31 high (797 to 827, measured): the model and its effort ("DeepSeek V4.1 Flash 1017 HIGH", 680 to 928), FUNDS REQUIRE APPROVAL (928 to 1139), an empty cell, and DAILY BUDGET with a ten-cell meter and a percentage (1186 to 1440). Desktop's strip is in section 4.1. Each cell's words stand 24 in and 16 from its right rule, the context key, the strip's last cell, 16 in and 24 from the edge, and a key cell reaches 12 up into the transcript's foot, a 44 target on the 32 strip (VEX Cloud's `.vx-cmp-cell`).
 
+**The / menu** (VEX Cloud's `SlashMenu`, `.vx-cmp-slash`): typed "/" opens the commands over the composer, the chat column's width with its foot flush on the composer's top, on the card ground under the chosen rule (24%), no shadow, at most 480 or half the window: a 32 head "Commands" in caps 11 muted, then each row at least 40 high, 24 in, on a 148 grid: the command in the mono 13 ink, what it does in 14 ink 2; the highlighted row is the wash. Focus stays in the field.
+
 **While a card waits in the chat,** the composer and its strip give way to the card: the reason field takes the strip's place, the tagline says "CHECK THE CARD, THEN DECIDE.", and the bottom row's chat cells are the card's decision row:
 
 | Cell | x, width | H3 draws |
