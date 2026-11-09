@@ -37,6 +37,7 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+import { openHarness } from "./h3-harness-load.js";
 
 const SIZES = [
   { width: 1280, height: 800 },
@@ -103,8 +104,7 @@ async function open(page: Page, size: Size, vex: "open" | "closed"): Promise<voi
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(size);
-  await page.goto(`/?state=swap-waiting&vex=${vex}`);
-  await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+  await openHarness(page, `/?state=swap-waiting&vex=${vex}`, 30_000);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
@@ -271,8 +271,7 @@ async function openDesk(page: Page, size: (typeof DESK_SIZES)[number], vex: "ope
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(size);
-  await page.goto(`/?state=lighter-desk-review&vex=${vex}`);
-  await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+  await openHarness(page, `/?state=lighter-desk-review&vex=${vex}`, 30_000);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
@@ -544,8 +543,7 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
   test(`her band rests while the card waits, and nothing moves it at ${sizeName(BAND_SIZE)}`, async ({ page }) => {
     // Asked open: the band still rests, because a card waits.
     await open(page, BAND_SIZE, "closed");
-    await page.goto("/?state=swap-waiting&vex=open");
-    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    await openHarness(page, "/?state=swap-waiting&vex=open", 30_000);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
@@ -591,8 +589,7 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize(BAND_SIZE);
-    await page.goto("/?state=new-chat");
-    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    await openHarness(page, "/?state=new-chat", 30_000);
     // It starts closed on every visit: no band at all.
     await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
     await page.evaluate(() => {
@@ -832,8 +829,7 @@ test.describe("H3 card proof: a toast never lies over a waiting card", () => {
         const errors: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         await page.setViewportSize(size);
-        await page.goto(`/?state=${state}`);
-        await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+        await openHarness(page, `/?state=${state}`, 30_000);
         await page.evaluate(async () => {
           await document.fonts.ready;
         });

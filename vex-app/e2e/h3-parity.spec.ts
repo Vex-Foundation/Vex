@@ -43,6 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { openHarness } from "./h3-harness-load.js";
 
 const OUT_DIR = process.env.VEX_H3_DIR ?? "";
 
@@ -121,8 +122,7 @@ async function open(page: Page, size: Size, query: string): Promise<void> {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(size);
-  await page.goto(`/?${query}${OS === null ? "" : `&os=${OS}`}`);
-  await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 20_000 });
+  await openHarness(page, `/?${query}${OS === null ? "" : `&os=${OS}`}`, 20_000);
   await page.evaluate(async () => {
     await document.fonts.ready;
     await new Promise((resolve) => {

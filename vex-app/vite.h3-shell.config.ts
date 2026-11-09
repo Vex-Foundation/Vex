@@ -26,7 +26,7 @@
  * does not have. The one thing this root adds is the renderer's
  * `optimizeDeps` pre-bundle, because the shell pulls `marked` in through the
  * transcript and a cold optimizer pass mid-load reloads the page under a
- * running spec.
+ * running spec, and the server keeps an idle connection open (below).
  *
  * Port 5274, beside the board layout harness on 5273, so both can be served
  * at once and Playwright can start each on demand.
@@ -36,10 +36,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const harnessRoot = path.resolve(dirname, "src/renderer/dev/h3-shell");
+
+/**
+ * IDLE CONNECTIONS STAY OPEN. The harness specs fetch every request of the
+ * page from Node and fulfil it into the browser (`e2e/h3-harness-load.ts`:
+ * a request waiting in Chromium's socket pool is failed whenever the
+ * machine's network configuration changes). Node's client keeps its sockets
+ * alive and reuses them, and Node's server closes a socket idle for 5
+ * seconds: a reuse that meets that close is a `read ECONNRESET` on a module
+ * request, and a module graph that fails for good. With no idle timeout the
+ * server never closes under the client; the client closes its own sockets.
+ */
+function keepIdleConnections(): Plugin {
+  return {
+    name: "vex-h3-keep-idle-connections",
+    configureServer(server) {
+      const http = server.httpServer;
+      if (http !== null && "keepAliveTimeout" in http) http.keepAliveTimeout = 0;
+    },
+  };
+}
 
 export default defineConfig({
   root: harnessRoot,
@@ -59,7 +79,7 @@ export default defineConfig({
     include: ["marked"],
   },
 
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), keepIdleConnections()],
 
   resolve: {
     alias: {
