@@ -337,7 +337,7 @@ export function AgentScanScreen({
       // (the four filter menus narrow the feed, they do not switch pages),
       // and "Updated" at the fetch time of the rows on screen (after a failed
       // refresh, the time of the rows kept, never the failure's).
-      bar={<PageBar updatedAt={kept.at} />}
+      bar={<PageBar updatedAt={kept.at} reading={query.isFetching && !query.isLoading} />}
     >
       <div className="flex min-h-0 w-full flex-1 flex-col">
         <p className="vex-scan-lead">{screenSubtitle(scope)}</p>

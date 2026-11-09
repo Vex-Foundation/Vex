@@ -75,7 +75,12 @@ export function VexCloudFundingScreen({
       origin={origin}
       onClose={onClose}
       chapter={null}
-      bar={<PageBar updatedAt={accountQuery.dataUpdatedAt} />}
+      bar={
+        <PageBar
+          updatedAt={accountQuery.dataUpdatedAt}
+          reading={accountQuery.isFetching && !accountQuery.isLoading}
+        />
+      }
     >
       <VexCloudFundingPage />
     </ShellScreen>

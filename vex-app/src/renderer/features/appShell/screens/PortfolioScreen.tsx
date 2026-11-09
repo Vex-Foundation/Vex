@@ -103,6 +103,7 @@ export function PortfolioScreen({
             ) : null
           }
           updatedAt={read.at}
+          reading={read.fetching && !read.loading}
           keys={<PortfolioRefreshButton />}
         />
       }

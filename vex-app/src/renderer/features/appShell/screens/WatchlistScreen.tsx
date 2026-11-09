@@ -86,7 +86,12 @@ export function WatchlistScreen({
       onClose={onClose}
       chapter={null}
       busy={query.isLoading}
-      bar={<PageBar updatedAt={Number.isFinite(pricedAt) ? pricedAt : query.dataUpdatedAt} />}
+      bar={
+        <PageBar
+          updatedAt={Number.isFinite(pricedAt) ? pricedAt : query.dataUpdatedAt}
+          reading={query.isFetching && !query.isLoading}
+        />
+      }
     >
       <WatchlistPage />
     </ShellScreen>

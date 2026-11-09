@@ -154,8 +154,12 @@
 /* "Updated 14:30": 12, muted, sentence case (VEX Cloud's page stamp); the
  * clock is a figure at the same size. */
 .vex-pg-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }

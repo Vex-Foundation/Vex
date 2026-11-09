@@ -10,6 +10,10 @@
  *     Portfolio's scope, a chart's range); a page with nothing to pick draws
  *     none. H3's OVERVIEW and WALLET are Cloud's page names and are never
  *     copied as words;
+ *   - while the page's first read runs, its words ("Loading your
+ *     portfolio…") stand in the stamp's slot after the stepping hatch, and
+ *     while a later read runs the hatch stands before "Updated" (VEX Cloud's
+ *     `.vx-pgfresh`; H3-DESKTOP section 5.6);
  *   - "Updated {time}" is the page's REAL refresh time: the fetch time of the
  *     read behind its figures (TanStack Query's `dataUpdatedAt`), never the
  *     clock at render and never a time the read does not carry. A page whose
@@ -32,6 +36,7 @@
  */
 
 import type { JSX, ReactNode } from "react";
+import { LoadingHatch } from "../../../components/ui/cover.js";
 import { clockFromMs } from "../book/portfolio/portfolio-format.js";
 
 /** One tab cell: its word, an optional muted second word, a tooltip. */
@@ -88,12 +93,20 @@ export function PageTabs({
  * machine-readable instant and, as its tooltip, the full local date and time
  * (VEX Cloud's `.vx-pgfresh`), so "14:30" is never a guess about which day.
  */
-export function UpdatedStamp({ at }: { readonly at: number | null | undefined }): JSX.Element | null {
+export function UpdatedStamp({
+  at,
+  reading = false,
+}: {
+  readonly at: number | null | undefined;
+  /** A read is running now: the stepping hatch stands before the stamp. */
+  readonly reading?: boolean;
+}): JSX.Element | null {
   const clock = clockFromMs(at);
   if (clock === null || at === null || at === undefined) return null;
   const instant = new Date(at);
   return (
-    <p className="vex-pg-stamp" data-vex-area="page-updated">
+    <p className="vex-pg-stamp" data-vex-area="page-updated" data-reading={reading ? "" : undefined}>
+      {reading ? <LoadingHatch /> : null}
       Updated{" "}
       <time
         className="vex-num"
@@ -117,19 +130,40 @@ const STAMP_TITLE = new Intl.DateTimeFormat("en-GB", {
   hour12: false,
 });
 
+/**
+ * The first read's words in the stamp slot ("Loading your portfolio…"), the
+ * stepping hatch before them (VEX Cloud's `Fresh` while loading). They repeat
+ * the body's one loading status, so the slot is hidden from assistive tech.
+ */
+function LoadingStamp({ words }: { readonly words: string }): JSX.Element {
+  return (
+    <p className="vex-pg-stamp" data-vex-area="page-loading" aria-hidden="true">
+      <LoadingHatch />
+      {words}
+    </p>
+  );
+}
+
 /** Whether a page has anything for its tabs row; with nothing, no row. */
 export function hasPageBar({
   tabs,
   updatedAt,
   keys,
+  loading,
 }: {
   readonly tabs?: ReactNode;
   readonly updatedAt?: number | null;
   readonly keys?: ReactNode;
+  readonly loading?: string | null;
 }): boolean {
   const filled = (node: ReactNode): boolean =>
     node !== undefined && node !== null && node !== false;
-  return filled(tabs) || clockFromMs(updatedAt) !== null || filled(keys);
+  return (
+    filled(tabs) ||
+    clockFromMs(updatedAt) !== null ||
+    filled(keys) ||
+    (loading !== undefined && loading !== null)
+  );
 }
 
 /**
@@ -140,6 +174,8 @@ export function PageBar({
   tabs,
   updatedAt,
   keys,
+  reading = false,
+  loading = null,
 }: {
   /** The page's tab cells (`PageTabs`), or none. */
   readonly tabs?: ReactNode;
@@ -147,13 +183,17 @@ export function PageBar({
   readonly updatedAt?: number | null;
   /** The page's keys (refresh), at the right after the stamp. */
   readonly keys?: ReactNode;
+  /** A read of figures already shown is running: the hatch before "Updated". */
+  readonly reading?: boolean;
+  /** The first read is running: these words, with the hatch, take the stamp's slot. */
+  readonly loading?: string | null;
 }): JSX.Element | null {
-  if (!hasPageBar({ tabs, updatedAt, keys })) return null;
+  if (!hasPageBar({ tabs, updatedAt, keys, loading })) return null;
   return (
     <div className="vex-pg-bar" data-vex-area="page-tabs-row">
       {tabs ?? null}
       <div className="vex-pg-bar__end">
-        <UpdatedStamp at={updatedAt} />
+        {loading !== null ? <LoadingStamp words={loading} /> : <UpdatedStamp at={updatedAt} reading={reading} />}
         {keys ?? null}
       </div>
     </div>
