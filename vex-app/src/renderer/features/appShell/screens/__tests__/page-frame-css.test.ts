@@ -160,3 +160,18 @@ describe("section head rhythm (C3-E-13, VEX Cloud's `.vx-psec-h`)", () => {
     );
   });
 });
+
+describe("Memory takes Cloud's built page as its plate (owner decision 2026-11-09)", () => {
+  it("goes to two columns from a 760 page, the side 300 wide", () => {
+    expect(rule(memory, ".vex-mem-page")).toContain("container: vex-mem-page / inline-size;");
+    expect(memory).toMatch(
+      /@container vex-mem-page \(width >= 760px\) \{\s*\.vex-mem-g \{\s*grid-template-columns: minmax\(0, 1fr\) 300px;/,
+    );
+  });
+  it("stands the guarantee box and the register lists on the card ground, rows 16 in, heads at 12", () => {
+    expect(rule(memory, ".vex-mem-card")).toMatch(/padding: 12px 16px;[\s\S]*background: var\(--vex-alias-card\);/);
+    expect(rule(memory, ".vex-mem-list")).toContain("background: var(--vex-alias-card);");
+    expect(rule(memory, ".vex-mem-row")).toContain("padding: 12px 16px;");
+    expect(rule(memory, ".vex-mem-sec__title")).toContain("font-size: 12px;");
+  });
+});
