@@ -4,8 +4,9 @@
  * and as the R3 conversation (docs/design/R3-MINIMAL.md section 6) elsewhere.
  *
  * Switches on the pure `TranscriptEntry.variant`. USER rows are H3's bubble
- * at the right of the column beside the person's round avatar cell, their
- * clock and keys hover-revealed at the bubble's left; VEX's turn runs on the
+ * at the right of the column beside the person's round avatar cell, under a
+ * meta line of their keys and "You · 12:40" (VEX Cloud's `UserMessage`);
+ * VEX's turn runs on the
  * column's own left edge with no token beside it (her presence is the Vex key
  * in the header), her answer in the sans at 16 / 1.6, her clock and message
  * keys in a tail row BELOW the body. Tool calls read as step rows; several
@@ -83,6 +84,18 @@ function TapeClock({
   return clock === null ? null : <span className={className}>{clock}</span>;
 }
 
+/** " · 12:40" after "You" on the meta line: the separator drawn, the clock a `<time>`. */
+function UserClock({ createdAt }: { readonly createdAt: string }): JSX.Element | null {
+  const clock = formatClock(createdAt);
+  if (clock === null) return null;
+  return (
+    <>
+      <span aria-hidden="true"> · </span>
+      <time dateTime={createdAt}>{clock}</time>
+    </>
+  );
+}
+
 /**
  * Vex's turn on the column's own edge (docs/design/H3-DESKTOP.md section 1.7).
  * H3 draws no token beside her rows: her presence is the Vex key in the
@@ -115,7 +128,8 @@ function turnSeams(turnHead: boolean, working: boolean): TurnSeams {
 
 /**
  * The person's avatar cell beside their bubble (docs/design/H3-DESKTOP.md
- * section 1.7): a 36px disc on a 1px chosen rule with the person glyph in ink,
+ * section 1.7): a 34px disc (VEX Cloud's `Avatar size={34}`) on a 1px chosen
+ * rule with the person glyph in ink,
  * as H3 draws it at the right of the message and in the account cell.
  *
  * Drawn as ONE SVG, as `VxToken` draws its disc, so the disc is a circle while
@@ -128,7 +142,7 @@ function turnSeams(turnHead: boolean, working: boolean): TurnSeams {
 function YouAvatar(): JSX.Element {
   return (
     <span aria-hidden data-vex-you-avatar="" className="vex-you__avatar">
-      <svg width={36} height={36} viewBox="0 0 36 36" focusable="false">
+      <svg width={34} height={34} viewBox="0 0 36 36" focusable="false">
         <circle className="vex-you__disc" cx="18" cy="18" r="17.5" strokeWidth="1" />
         <g className="vex-you__glyph">
           <circle cx="18" cy="14.5" r="3.5" />
@@ -340,38 +354,44 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // that is the part they get back. The row still holds what was sent.
       const written = deskMessageForDisplay(row.content);
       return (
-        <div
+        <article
+          aria-label="You"
           data-vex-message-role="user"
           data-time-hover-root=""
+          data-vex-latest={latest ? "" : undefined}
           className="vex-you"
         >
-          {/* THE PERSON'S MESSAGE (docs/design/H3-DESKTOP.md section 1.7): a
-              bubble at the right of the column, beside the round avatar
-              cell. The bubble is the one fill H3 measured for it (`bubble`,
-              section 2.1), its words sans 17 in ink, plain text and never
-              markdown. H3 draws no caption: the avatar says whose words these
-              are, so "You" is told to assistive technology alone, and the
-              clock and the message keys wait at the bubble's left until the
-              row is hovered or focused (opacity, so nothing shifts). */}
-          <span className="vex-micro vex-you__cap tabular-nums">
-            {feedbackContext !== undefined ? (
-              <FeedbackMessageAction context={feedbackContext} />
-            ) : null}
-            {onEditInNewBranch !== undefined ? (
-              <BranchMessageAction
-                label="Edit in a new branch"
-                onBranch={() => onEditInNewBranch(row.id, written)}
-              />
-            ) : null}
-            {onEditMessage !== undefined ? (
-              <EditMessageAction
-                onEdit={() => onEditMessage(row.id, written)}
-              />
-            ) : null}
-            <CopyMessageAction text={written} />
-            <span className="sr-only">You</span>
-            <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
-          </span>
+          {/* THE PERSON'S MESSAGE (VEX Cloud's `UserMessage`, H3's `.t-you`):
+              the meta line over the bubble, the round avatar beside it. The
+              meta line is 28 high on the bubble's right edge: the message
+              keys (the latest row's Copy always shown, the rest on hover or
+              focus), then "You · 12:40" in caps 11 muted, the clock a
+              <time>. The article is named "You", so the visible word is not
+              read twice. The words are sans 16 in ink on the bubble's fill,
+              plain text and never markdown. */}
+          <div data-vex-user-meta="" className="vex-you__meta tabular-nums">
+            <div role="group" aria-label="Message actions" className="vex-you__keys">
+              {feedbackContext !== undefined ? (
+                <FeedbackMessageAction context={feedbackContext} />
+              ) : null}
+              {onEditInNewBranch !== undefined ? (
+                <BranchMessageAction
+                  label="Edit in a new branch"
+                  onBranch={() => onEditInNewBranch(row.id, written)}
+                />
+              ) : null}
+              {onEditMessage !== undefined ? (
+                <EditMessageAction
+                  onEdit={() => onEditMessage(row.id, written)}
+                />
+              ) : null}
+              <CopyMessageAction text={written} />
+            </div>
+            <span className="vex-you__who">
+              <span aria-hidden="true">You</span>
+              <UserClock createdAt={row.createdAt} />
+            </span>
+          </div>
           <div className="vex-you__stack">
             <p className="vex-you__body">{written}</p>
             {/* A33 - an operator instruction says WHEN it reaches the model,
@@ -394,7 +414,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             ) : null}
           </div>
           <YouAvatar />
-        </div>
+        </article>
       );
     }
     case "assistant":

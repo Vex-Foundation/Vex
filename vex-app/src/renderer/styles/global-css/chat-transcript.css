@@ -217,35 +217,57 @@ html[data-still] .vex-latest {
 }
 
 /* ── The person's message ────────────────────────────────────────────────
- * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
- * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
- * right. The bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16 /
- * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
+ * VEX Cloud's `UserMessage` (`.vx-tx-you`, H3's `.t-you`): a grid of the
+ * column and the 34 avatar, 12 apart. Over the bubble, the meta line, 28 high
+ * on the bubble's right edge and 4 above it: the message keys (28 with 14
+ * glyphs; the latest row's Copy always shown, the rest on hover or focus),
+ * then "You · 12:40" in caps 11 tracked, muted, the figures tabular. The
+ * bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16
+ * / 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
  * column (VEX Cloud's `.t-you p`); 18 round with the corner by the avatar
  * sharp at 4 (`--vex-radius-bubble-you`, one of the shape law's two
- * exceptions in base.css). The avatar is a 36px disc. The clock and
- * the message keys sit at the bubble's left, hover-revealed, so at rest the
- * row is the bubble and the disc alone. */
+ * exceptions in base.css). */
 .vex-you {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 12px;
+  display: grid;
+  grid-template-areas:
+    "meta ."
+    "bub av";
+  grid-template-columns: minmax(0, 1fr) 34px;
+  column-gap: 12px;
+  justify-items: end;
+  min-width: 0;
 }
-.vex-you__cap {
+.vex-you__meta {
   display: flex;
-  flex: none;
+  grid-area: meta;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  height: 20px;
-  /* Centred on the bubble's first line: 12 + 23.2 / 2 - 20 / 2. */
-  margin-top: 14px;
+  min-width: 0;
+  height: 28px;
+  margin-bottom: 4px;
   color: var(--vex-alias-label-tertiary);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-you__keys {
+  display: flex;
+  align-items: center;
+}
+.vex-you__who {
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .vex-you[data-vex-latest] [data-vex-copy-message] {
+    opacity: 1;
+  }
 }
 .vex-you__stack {
   display: flex;
+  grid-area: bub;
   min-width: 0;
-  max-width: 74%;
+  max-width: calc((100% + 46px) * 0.74);
   flex-direction: column;
   align-items: flex-end;
 }
@@ -274,11 +296,10 @@ html[data-still] .vex-latest {
  * disc is Cloud's avatar ground (--vx-avatar, #151618), the plate step. */
 .vex-you__avatar {
   display: flex;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  /* The disc's top sits 2 above the bubble's, as the capture draws it. */
-  margin-top: -2px;
+  grid-area: av;
+  align-self: start;
+  width: 34px;
+  height: 34px;
 }
 .vex-you__avatar > svg {
   display: block;
