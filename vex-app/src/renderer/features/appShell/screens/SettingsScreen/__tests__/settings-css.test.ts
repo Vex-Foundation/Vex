@@ -35,8 +35,8 @@ describe("settings.css", () => {
     expect(imports[overlayAt + 1]).toBe('@import "./global-css/settings.css";');
   });
 
-  it("is a nav of 264 (210 under 1180) beside the section", () => {
-    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 264px minmax(0, 1fr)");
+  it("is a nav of 248, Cloud's (210 under 1180), beside the section", () => {
+    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 248px minmax(0, 1fr)");
     const narrow = /@media \(max-width: 1179px\) \{([\s\S]*?)\n\}/.exec(settings)?.[1] ?? "";
     expect(narrow).toContain("grid-template-columns: 210px minmax(0, 1fr)");
     expect(narrow).toContain("padding: 22px 28px 56px");
@@ -46,11 +46,19 @@ describe("settings.css", () => {
   });
 
   it("sizes the rows and heads as H3 fixes them", () => {
-    // The nav on H3's 40 pitch, its labels and group heads in caps.
+    // The nav is Cloud's built nav (owner decision 2026-11-09): 36 rows, the
+    // name in sentence case 14, the group words 11 caps at 12 24 6.
     const item = rule(settings, ".vex-set__item");
-    expect(item).toContain("height: 40px");
-    expect(item).toMatch(/font-size: 13px;[\s\S]*text-transform: uppercase/);
-    expect(rule(settings, ".vex-set__group")).toMatch(/font-size: 12px;[\s\S]*text-transform: uppercase/);
+    expect(item).toContain("height: 36px");
+    expect(item).toContain("padding: 0 20px 0 24px");
+    expect(item).toContain("font-size: 14px");
+    expect(item).not.toContain("text-transform: uppercase");
+    const group = rule(settings, ".vex-set__group");
+    expect(group).toMatch(/padding: 12px 24px 6px;\s*font-size: 11px;[\s\S]*text-transform: uppercase/);
+    expect(rule(settings, ".vex-set__icon")).toContain("color: var(--vex-alias-label-tertiary)");
+    const hover = rule(settings, ".vex-set__item:hover");
+    expect(hover).toContain("background: var(--set-sel)");
+    expect(hover).toContain("color: var(--vex-alias-label-primary)");
     // A section's name is H3's card sentence; its blocks the 13 caps head.
     expect(rule(settings, ".vex-set__title")).toMatch(/font-size: 20px;[\s\S]*font-weight: 400/);
     expect(rule(settings, ".vex-set__sh-title")).toMatch(

@@ -20,6 +20,15 @@
  *     square at the right when on (section 2.4); never the blue, which is
  *     only for primary keys.
  *
+ * THE PLATE IS VEX CLOUD'S BUILT SETTINGS (owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9, look only; Cloud's `settings.css` and the page kit,
+ * W5 9b6ec94c and e1083f44). The nav (Cloud's `.vx-setnav`): 248 wide,
+ * group words 11 caps muted at padding 12 24 6; rows 36 high, the name in
+ * sentence case 14, ink 2, the 18 icon muted; hover and the chosen row take
+ * the chosen row's fill and ink. The nav stays in the page (moving it into the
+ * left column is the owner's call); the sections, their words and their
+ * controls stay desktop's.
+ *
  * The sheet's own column gives way to the full width here: the nav sits
  * flush against the left sidebar's rule. The frame's padding rule in
  * book.css names `[data-frame="h3"]`, so this one names it too and, loading
@@ -39,16 +48,17 @@
   --set-sel: var(--vex-alias-row-selected);
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
 
-/* THE NAV: group heads 12 caps muted, rows 40 high (H3's nav pitch) with a 16
- * line icon, the name in caps 13 and the status word at the right (12 caps,
- * muted). Selected = H3's selected-row fill and ink. */
+/* THE NAV (Cloud's `.vx-setnav`): group words 11 caps muted, rows 36 high
+ * with an 18 line icon, the name in sentence case 14 and desktop's status word
+ * at the right (12, muted). Hover and the chosen row = the chosen row's fill and
+ * ink. */
 .vex-set__nav {
   min-height: 0;
   overflow-y: auto;
@@ -56,10 +66,10 @@
   border-right: 1px solid var(--vex-alias-rule);
 }
 .vex-set__group {
-  padding: 18px 24px 6px;
-  font-size: 12px;
+  padding: 12px 24px 6px;
+  font-size: 11px;
   font-weight: 400;
-  line-height: 18px;
+  line-height: 1;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -73,17 +83,20 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px 0 24px;
+  height: 36px;
+  padding: 0 20px 0 24px;
   text-align: left;
-  font-size: 13px;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  font-size: 14px;
+  line-height: 1.3;
   white-space: nowrap;
   color: var(--vex-alias-label-secondary);
 }
 .vex-set__item:hover {
-  background: var(--vex-alias-interactive-hover);
+  background: var(--set-sel);
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__item:hover .vex-set__icon {
+  color: var(--vex-alias-label-primary);
 }
 .vex-set__item:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -91,15 +104,14 @@
 }
 .vex-set__icon {
   flex: none;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-set__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The status word stays a short sentence beside the caps name, so the name
- * keeps its room: in caps both would not fit the nav. */
+/* The status word, a short muted sentence after the name. */
 .vex-set__word {
   display: inline-flex;
   flex: none;

@@ -63,7 +63,7 @@ export function SettingsRegister({
                   data-vex-settings-row={item.id}
                   className="vex-set__item"
                 >
-                  <LineIcon name={item.icon} size={16} className="vex-set__icon" />
+                  <LineIcon name={item.icon} size={18} className="vex-set__icon" />
                   <span className="vex-set__name">{item.name}</span>
                   {status === null ? null : (
                     <span className="vex-set__word">
