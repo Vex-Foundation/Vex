@@ -9,15 +9,19 @@ Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
   /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (code)
   /fonts/jetbrains-mono-latin-ext-wght.woff2
 
-Shipped (static WOFF2, latin + latin-ext subsets, 400 + 600 upright):
+Shipped (static WOFF2, latin + latin-ext + vietnamese subsets, 400 + 600 upright):
   /fonts/be-vietnam-pro-latin-400-normal.woff2        - "Be Vietnam Pro" (H3 text)
   /fonts/be-vietnam-pro-latin-ext-400-normal.woff2
+  /fonts/be-vietnam-pro-vietnamese-400-normal.woff2
   /fonts/be-vietnam-pro-latin-600-normal.woff2
   /fonts/be-vietnam-pro-latin-ext-600-normal.woff2
+  /fonts/be-vietnam-pro-vietnamese-600-normal.woff2
 
-Shipped (static WOFF2, latin + latin-ext subsets, 400 + 700 upright):
+Shipped (static WOFF2, 400 in latin + latin-ext + vietnamese, 700 in latin +
+latin-ext, upright):
   /fonts/roboto-mono-latin-400-normal.woff2           - "Roboto Mono" (H3 figures)
   /fonts/roboto-mono-latin-ext-400-normal.woff2
+  /fonts/roboto-mono-vietnamese-400-normal.woff2
   /fonts/roboto-mono-latin-700-normal.woff2           - "Roboto Mono" (terminal bold)
   /fonts/roboto-mono-latin-ext-700-normal.woff2
 
@@ -35,3 +39,10 @@ H3 text face (2026-11-03). Roboto Mono is the Fontsource-packaged build
 The Roboto Mono Project Authors), license RobotoMono-OFL.txt, static 400
 and 700. It is the H3 figures face (2026-11-03); the 700 weight joined for
 the Studio terminal's bold text (2026-11-04).
+
+The vietnamese subsets (be-vietnam-pro-vietnamese-400/600, roboto-mono-
+vietnamese-400) joined on 2026-11-09: byte copies of VEX Cloud's files, the
+same Fontsource 5.3.0 builds (@fontsource/be-vietnam-pro and
+@fontsource/roboto-mono, package license OFL-1.1), copied byte for byte and
+not re-subset, so the OFL Reserved Font Name rules do not apply. Their
+licences are the two OFL texts above.

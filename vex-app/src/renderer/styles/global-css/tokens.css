@@ -187,16 +187,18 @@
    *     are retired. The name stays only so the `font-serif` utility's call
    *     sites keep compiling, as the radius names stay at zero; the display
    *     rules in the sheets read --font-display.
-   * The sans stack names its metric-matched `Fallback` twin right after the
-   * web face, so the block period lays out at the final metrics. Be Vietnam
-   * Pro carries latin-ext itself, so no coverage face follows it. */
+   * The sans and the mono stacks name their metric-matched `Fallback` twins
+   * right after the web face (VEX Cloud's numbers, fonts.css), so the block
+   * period lays out at the final metrics. Be Vietnam Pro carries latin-ext
+   * and vietnamese itself, so no coverage face follows it. */
   --font-sans:
     "Be Vietnam Pro", "Be Vietnam Pro Fallback", -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
-    "Roboto Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    "Roboto Mono", "Roboto Mono Fallback", "SF Mono", Consolas,
+    "Liberation Mono", monospace;
   --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-serif: var(--font-display);
