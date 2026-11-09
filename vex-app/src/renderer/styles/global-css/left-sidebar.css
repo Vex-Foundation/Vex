@@ -459,9 +459,57 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 .vex-ls-row[data-selected] .vex-ls-row__t {
   color: var(--vex-alias-label-primary);
 }
-/* The loading, error and empty lines sit where a row's title would. */
-.vex-ls-sessions > :not(.vex-ls-groups, .vex-ls-hint) {
-  padding-inline: 24px 20px;
+/* THE LIST'S STATES (section 1.4; VEX Cloud's `.vx-lc-msg` and
+ * `.vx-lc-error`): one sentence at 14 / 1.4 in the muted ink, set 24 in where
+ * a row's title starts, padding 6 24 10, its mark 10 before it. Loading
+ * leads with the stepping hatch, a failure with the cross over its Retry key
+ * (40 high, 4 24 round it); the empty and no-match lines stand alone. */
+.vex-ls-msg,
+.vex-ls-fail__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 24px 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-fail__line {
+  align-items: flex-start;
+}
+.vex-ls-fail__line > .vex-sq {
+  margin-top: 0.4em;
+}
+.vex-ls-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.vex-ls-fail__retry {
+  margin: 4px 24px;
+}
+/* The stepping hatch (Cloud's `.vx-stripes`): a 14 square of ink 2 strokes
+ * that steps on and off on two steps, one cycle in two blinks; still under
+ * reduced motion and Save-Data. */
+.vex-ls-msg__hatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-alias-label-secondary) 0 1px,
+    transparent 1px 4px
+  );
+  animation: vex-sq-blink calc(var(--vex-duration-blink) * 2) steps(2, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-ls-msg__hatch {
+    animation: none;
+  }
+}
+html[data-still] .vex-ls-msg__hatch {
+  animation: none;
 }
 .vex-ls-row__t mark {
   background: var(--ls-mark);

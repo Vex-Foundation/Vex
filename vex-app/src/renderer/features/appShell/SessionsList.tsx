@@ -66,9 +66,9 @@ import { SidebarProfile } from "./SidebarProfile.js";
 import { setUpdateCardSlot } from "../updates/update-card-slot.js";
 import { useSessionRowActions } from "./useSessionRowActions.js";
 import {
-  SessionsEmptyPlaceholder,
-  SessionsErrorPlaceholder,
-  SessionsLoadingPlaceholder,
+  ChatsEmptyLine,
+  ChatsFailedLine,
+  ChatsLoadingLine,
   chatsFailedWords,
   SidebarSessionGroups,
 } from "./SessionRows.js";
@@ -260,22 +260,33 @@ export function SessionsList({
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   useScrollbarVisibility(listScrollRef);
 
+  // A failed read offers Retry, which reads the list again (Cloud's
+  // `ErrorState` with its Retry key, H3-DESKTOP.md section 1.4).
+  const refetchList = query.refetch;
+  const retry = useCallback((): void => {
+    void refetchList();
+  }, [refetchList]);
+
   const listBody = query.isLoading ? (
-    <SessionsLoadingPlaceholder sidebarOpen />
+    <ChatsLoadingLine />
   ) : query.data && query.data.ok === false ? (
     // Cloud's words first, then main's own reason for the failed read (for
     // example "Vault is locked."): the person learns what to do about it.
-    <SessionsErrorPlaceholder sidebarOpen message={chatsFailedWords(query.data.error.message)} />
+    <ChatsFailedLine
+      message={chatsFailedWords(query.data.error.message)}
+      onRetry={retry}
+      retrying={query.isFetching}
+    />
   ) : query.isError ? (
     // A TRANSPORT rejection never produces a Result, so without this branch
     // it fell through to `null` and the column went blank: a lie by omission
     // (rule 08: failure is a distinct state, not emptiness).
-    <SessionsErrorPlaceholder sidebarOpen />
+    <ChatsFailedLine onRetry={retry} retrying={query.isFetching} />
   ) : query.data && query.data.ok ? (
     visibleRows.length === 0 ? (
       // "No chats yet." only when there are none; a search or a tab that
       // narrowed a list with chats says none match it.
-      <SessionsEmptyPlaceholder sidebarOpen searching={(agentRows?.length ?? 0) > 0} />
+      <ChatsEmptyLine searching={(agentRows?.length ?? 0) > 0} />
     ) : (
       <SidebarSessionGroups
         groups={groups}

@@ -54,9 +54,10 @@ import { isWindowResizing } from "../../lib/wide-zoom.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import {
-  SessionsEmptyPlaceholder,
-  SessionsErrorPlaceholder,
-  SessionsLoadingPlaceholder,
+  ChatsEmptyLine,
+  ChatsFailedLine,
+  ChatsLoadingLine,
+  chatsFailedWords,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import { SessionSearchField } from "./SessionRows/SessionSearch.js";
@@ -113,10 +114,15 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
   } = useSessionRowActions();
   const [searchText, setSearchText] = useState("");
 
-  const rows = useMemo(() => {
-    if (!query.data?.ok) return [];
-    return filterSessionsByTitle(filterSessionsByWorkspace(query.data.data, null), searchText);
-  }, [query.data, searchText]);
+  const allRows = useMemo(
+    () => (query.data?.ok ? filterSessionsByWorkspace(query.data.data, null) : []),
+    [query.data],
+  );
+  const rows = useMemo(() => filterSessionsByTitle(allRows, searchText), [allRows, searchText]);
+  const refetchList = query.refetch;
+  const retry = useCallback((): void => {
+    void refetchList();
+  }, [refetchList]);
   const groups = useMemo(() => groupSessions(rows), [rows]);
 
   const handleSelect = useCallback(
@@ -243,15 +249,20 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
   }, [open, onClose]);
 
   const drawn = open || closing;
+  // The list's states in the column's own lines and words (section 1.4).
   const listBody = query.isLoading ? (
-    <SessionsLoadingPlaceholder sidebarOpen />
+    <ChatsLoadingLine />
   ) : query.data && query.data.ok === false ? (
-    <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
+    <ChatsFailedLine
+      message={chatsFailedWords(query.data.error.message)}
+      onRetry={retry}
+      retrying={query.isFetching}
+    />
   ) : query.isError ? (
-    <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
+    <ChatsFailedLine onRetry={retry} retrying={query.isFetching} />
   ) : query.data && query.data.ok ? (
     rows.length === 0 ? (
-      <SessionsEmptyPlaceholder sidebarOpen />
+      <ChatsEmptyLine searching={allRows.length > 0} />
     ) : (
       <SidebarSessionGroups
         groups={groups}

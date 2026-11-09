@@ -3,7 +3,10 @@
  * (`SidebarSessionGroups`, docs/design/R3-MINIMAL.md section 4), the Sessions
  * library's grouped register (`SessionGroups`, on the generic RailGroup and
  * RailRow primitives), the loading, error and empty placeholders, and the
- * small `SidebarIconButton`. Both lists render the shared `SessionRow`, in
+ * small `SidebarIconButton`. The chats column and the chats panel speak their
+ * list's states in H3's own lines (`ChatsLoadingLine`, `ChatsFailedLine`,
+ * `ChatsEmptyLine`); the Lighter desk's drawer keeps the placeholders until
+ * its own restyle. Both lists render the shared `SessionRow`, in
  * its `sidebar` and `register` settings. The presentational internals (the
  * row, its pin and remove keys, the hover-card body, the search mode, the
  * nav and the shared placeholder strip) live as co-located subcomponents
@@ -12,6 +15,8 @@
 
 import type { JSX } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { Button } from "../../components/ui/button.js";
+import { StateSquare } from "../../components/ui/state-square.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { RailGroup } from "../../components/ui/rail-list.js";
 import { type SessionGroup } from "./sessionListModel.js";
@@ -156,6 +161,73 @@ export const CHATS_NO_MATCH_COPY = "No chats match your search.";
 export function chatsFailedWords(reason: string | null | undefined): string {
   const cause = reason?.trim() ?? "";
   return cause.length === 0 ? CHATS_FAILED_COPY : `${CHATS_FAILED_COPY} ${cause}`;
+}
+
+/**
+ * THE CHATS LIST'S STATES (docs/design/H3-DESKTOP.md section 1.4; VEX
+ * Cloud's `shell/sidebar/chat-list.tsx` and `styles/left.css`, `.vx-lc-msg`
+ * and `.vx-lc-error`): one sentence at 14 / 1.4 in the muted ink, set 24 in
+ * where a row's title starts, padding 6 24 10.
+ *
+ * - Loading: the stepping hatch (14 square, aria-hidden) and "Loading chats",
+ *   a status, never a pulse.
+ * - Failed: the cross and the sentence (an alert), then an outline Retry key
+ *   40 high, 24 in from both edges, reading "Retrying…" while the refetch
+ *   runs.
+ * - Empty or no match: the sentence alone.
+ */
+export function ChatsLoadingLine(): JSX.Element {
+  return (
+    <p role="status" className="vex-ls-msg">
+      <span aria-hidden className="vex-ls-msg__hatch" />
+      {CHATS_LOADING_COPY}
+    </p>
+  );
+}
+
+export function ChatsFailedLine({
+  message = CHATS_FAILED_COPY,
+  onRetry,
+  retrying,
+}: {
+  /** The words; Cloud's sentence, then main's own reason when it gave one. */
+  readonly message?: string;
+  /** Reads the chats list again (the list query's refetch). */
+  readonly onRetry: () => void;
+  /**
+   * The refetch is running: the key says so and takes no second press. It
+   * stays focusable (`aria-disabled`, never `disabled`), so a keyboard press
+   * keeps its place while the read runs.
+   */
+  readonly retrying: boolean;
+}): JSX.Element {
+  return (
+    <div className="vex-ls-fail">
+      <p role="alert" className="vex-ls-fail__line">
+        <StateSquare state="error" />
+        {message}
+      </p>
+      <Button
+        variant="quiet"
+        onClick={() => {
+          if (!retrying) onRetry();
+        }}
+        aria-disabled={retrying || undefined}
+        className="vex-ls-fail__retry"
+      >
+        {retrying ? "Retrying…" : "Retry"}
+      </Button>
+    </div>
+  );
+}
+
+export function ChatsEmptyLine({
+  searching = false,
+}: {
+  /** A search or a tab narrowed a list that has chats: none match it. */
+  readonly searching?: boolean;
+}): JSX.Element {
+  return <p className="vex-ls-msg">{searching ? CHATS_NO_MATCH_COPY : CHATS_EMPTY_COPY}</p>;
 }
 
 export function SessionsLoadingPlaceholder({

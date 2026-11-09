@@ -121,6 +121,8 @@ The three Vex key cells span the Vex column, so they narrow with it: at 1024 the
 
 Under 1024 the column is the 76px rail (section 1.10). The nav's entries on desktop are in section 4.6.
 
+The list's states, VEX Cloud's (`shell/sidebar/chat-list.tsx`, `.vx-lc-msg` and `.vx-lc-error`), in the column and in the chats panel alike: one sentence at 14/1.4 in the muted ink, padding 6 24 10, its mark 10 before it. Loading is the stepping hatch (14 square, still under reduced motion and Save-Data) and "Loading chats", a status. A failed read is the cross and "Chats could not load." (an alert, main's own reason after it when it gave one), over an outline Retry key 40 high, 4 24 round it, which reads the list again and says "Retrying…" while the read runs, staying focusable. The empty and no-match lines stand alone. The Lighter desk's drawer keeps its placeholders until its own restyle.
+
 ### 1.5 The Vex column
 Measured in the approval and welcome captures at 1440, top to bottom:
 
@@ -784,6 +786,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | a time, or RUNNING or WAITING | a time, or Running, Paused, Waiting or Sleeping | desktop's chat rows have four states |
 | You, Account and settings | same | |
 | "Loading chats", "Chats could not load.", "No chats yet.", "No chats match your search." | same | Cloud's REAL list words (`shell/sidebar/chat-list.tsx`); they replace "Loading sessions", the read's raw cause or "Vex could not read your sessions.", and "No sessions". The search's or a tab's empty list says none match; "No chats yet." only when there are none |
+| RETRY, RETRYING… under "Chats could not load." | same | Cloud's inline `ErrorState` key; it reads the list again |
 | "Untitled chat" | same, for a chat with no title and no first message, and where the Needs you rows and the inbox name an untitled chat | replaces "Agent session" and "Untitled session"; a mission with no title stays "Mission setup" |
 | Collapse sidebar, Expand sidebar | same, as the sidebar key's and the rail's names | Cloud's REAL `page-key.tsx`; "chat", never "session", in every word a person reads; the column is named "Chats" |
 
