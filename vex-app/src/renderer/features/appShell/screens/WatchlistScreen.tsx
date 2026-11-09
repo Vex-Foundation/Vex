@@ -58,6 +58,7 @@ import { StatusMark } from "./agent-scan/StatusMark.js";
 import { useKeptRead } from "./kept-read.js";
 import { PageBar } from "./PageBar.js";
 import { RefreshFailedNotice } from "./RefreshNotice.js";
+import { CoverRows, PageLoading } from "./PageLoading.js";
 import { ShellScreen } from "./ShellScreen.js";
 
 /** The page's lead, in the footnote's own terms. */
@@ -107,7 +108,15 @@ export function WatchlistPage(): JSX.Element {
     query.dataUpdatedAt,
     (result !== undefined && !result.ok) || query.isError,
   );
-  if (query.isLoading) return <EmptyBlock scope="Watchlist" title="Reading your watchlist" loading />;
+  if (query.isLoading) {
+    // The first read in the page's shape (H3-DESKTOP section 1.9): the word
+    // over three cover rows where the followed tokens will stand.
+    return (
+      <PageLoading label="Reading your watchlist…">
+        <CoverRows rows={3} />
+      </PageLoading>
+    );
+  }
   if (kept.value !== null) {
     return (
       <>
