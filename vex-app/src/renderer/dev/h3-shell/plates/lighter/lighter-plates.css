@@ -161,7 +161,7 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-/* A segmented control: cells side by side, the chosen one on raised 2. */
+/* A segmented control: cells side by side, the chosen one on the open ground. */
 .lp-seg {
   display: flex;
   align-items: stretch;
@@ -856,7 +856,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-avatar);
   color: var(--lp-ink-2);
 }
 .lp-chat__vex {

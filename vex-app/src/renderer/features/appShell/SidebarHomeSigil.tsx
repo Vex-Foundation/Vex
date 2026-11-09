@@ -5,8 +5,8 @@
  *
  * Three sizes, by where the mark stands:
  *   - the header's LOGO CELL (docs/design/H3-DESKTOP.md section 1.3), over
- *     the chats column and over its rail alike: 28 high, so 35 wide, the mark
- *     as measured in `h3-merged__welcome-closed-1440` (about 34 x 28).
+ *     the chats column and over its rail alike: 27 high, so 34 wide, VEX
+ *     Cloud's header mark (`.hd-home svg`, 34 x 27, the H3 mockup's app.css);
  *     Desktop draws the mark alone where H3 writes "CLOUD" beside it
  *     (Appendix A.1);
  *   - R3's open head row, where a sidebar still draws its own (Studio's
@@ -26,7 +26,7 @@ import { VexMark } from "../../components/common/VexMark.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 /** The mark's height in the header's logo cell, open or over the rail. */
-export const LOGO_CELL_MARK_SIZE = 28;
+export const LOGO_CELL_MARK_SIZE = 27;
 
 export function SidebarHomeSigil({
   sidebarOpen,
@@ -43,7 +43,7 @@ export function SidebarHomeSigil({
   const onWelcome = activeSessionId === null;
 
   // Height-driven size; width flows from the mark's native aspect (5:4):
-  // 35 x 28 in the logo cell, 30 x 24 in R3's open head, 20 high on its rail.
+  // 34 x 27 in the logo cell, 30 x 24 in R3's open head, 20 high on its rail.
   const size = cell ? LOGO_CELL_MARK_SIZE : sidebarOpen ? 24 : 20;
   const mark = (
     <span data-vex-home-mark className="select-none text-accent-primary">

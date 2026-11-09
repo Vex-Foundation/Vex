@@ -211,7 +211,7 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
         onKeyDown={handleKeyDown}
-        // Sentence case at 13.5, a 38px row, a 1.5px underline that sits on
+        // Sentence case at 13.5, a 38px row, a 1px underline that sits on
         // the list's quiet rule when active; focus is the outline, never a
         // shadow ring.
         className={cn(
@@ -223,7 +223,7 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
                   : "text-ink-secondary hover:text-ink-primary",
               )
             : cn(
-                "-mb-px inline-flex h-[38px] items-center gap-1.5 whitespace-nowrap border-b-[1.5px] text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+                "-mb-px inline-flex h-[38px] items-center gap-1.5 whitespace-nowrap border-b text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
                 isActive
                   ? "border-accent-primary font-medium text-accent-primary"
                   : "border-transparent text-ink-secondary hover:text-ink-primary",

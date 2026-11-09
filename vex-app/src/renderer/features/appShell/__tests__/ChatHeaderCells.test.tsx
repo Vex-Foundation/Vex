@@ -87,9 +87,9 @@ describe("the chat's header cells", () => {
     expect(glyph).toMatch(/width:\s*12px;/);
   });
 
-  it("sets MAINNET at 14 and REAL FUNDS at 12, text 24 in, a rule before the cell", () => {
-    expect(rule(".vex-chat-funds__net")).toMatch(/font-size:\s*14px;/);
-    expect(rule(".vex-chat-funds__mark")).toMatch(/font-size:\s*12px;/);
+  it("sets MAINNET at 13 and REAL FUNDS at 11, text 24 in, a rule before the cell", () => {
+    expect(rule(".vex-chat-funds__net")).toMatch(/font-size:\s*13px;/);
+    expect(rule(".vex-chat-funds__mark")).toMatch(/font-size:\s*11px;/);
     const cell = rule(".vex-shell-head > .vex-chat-funds");
     expect(cell).toMatch(/padding-inline:\s*24px;/);
     expect(cell).toMatch(/border-left:\s*1px solid var\(--vex-alias-rule\);/);
@@ -113,12 +113,12 @@ describe("the chat's title cell, in H3 type", () => {
     expect(rule(`${TITLE} span.vex-tb-title`)).toMatch(/flex-direction:\s*column;/);
   });
 
-  it("draws the title in sans 15 and its kind in tracked caps 12", () => {
+  it("draws the title in sans 14 and its kind in tracked caps 11", () => {
     const name = rule(`${TITLE} span.vex-tb-title > .vex-tb-title__name`);
-    expect(name).toMatch(/font-size:\s*15px;/);
+    expect(name).toMatch(/font-size:\s*14px;/);
     expect(name).toMatch(/font-weight:\s*400;/);
     const sub = rule(`${TITLE} span.vex-tb-title > .vex-tb-title__sub`);
-    expect(sub).toMatch(/font-size:\s*12px;/);
+    expect(sub).toMatch(/font-size:\s*11px;/);
     expect(sub).toMatch(/text-transform:\s*uppercase;/);
     expect(sub).toMatch(/letter-spacing:\s*var\(--tracking-label\);/);
   });

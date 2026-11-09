@@ -236,7 +236,7 @@ button.lit-market-select .lit-chevron { width: 14px; height: 14px; flex: 0 0 aut
 .lit-live-dot[data-status="unavailable"] { color: var(--lit-ink); }
 
 /* Core | RHC: the Lighter deployment the desk is on, in the market bar and
- * in the market picker. Key cells side by side; the chosen one on raised 2
+ * in the market picker. Key cells side by side; the chosen one on the open ground
  * in ink, the other in muted caps. */
 .lit-environment-switch {
   display: inline-flex;

@@ -55,7 +55,17 @@ export function MarkdownContent({
   }, [text, variant]);
 
   if (rendered === null) {
-    return <p className="whitespace-pre-wrap break-words">{text}</p>;
+    // The plain text keeps the reading register's container, so a chat
+    // answer still stands in Vex's bubble (chat-transcript.css).
+    return (
+      <div
+        className={`flex flex-col gap-2 break-words${
+          variant === "chat" ? " vex-chat-prose" : ""
+        }`}
+      >
+        <p className="whitespace-pre-wrap break-words">{text}</p>
+      </div>
+    );
   }
   return (
     // THE READING REGISTER: chat body copy runs through `.vex-chat-prose`,

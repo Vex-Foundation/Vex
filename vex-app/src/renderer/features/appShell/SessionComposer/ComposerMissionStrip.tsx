@@ -3,7 +3,7 @@
  * 7): 44 high, a 1px rule on three sides (the composer's own top edge closes
  * it), the state as a fill and a word ("Mission · Running"), then only real
  * facts after a quiet divider, and at the right end only the controls that
- * apply. A mission paused on an error takes the 1.5px ink frame.
+ * apply. A mission paused on an error takes the 1px ink frame.
  *
  * The KEYS are not drawn here. `MissionControls` owns every mission control
  * (one set of mutation hooks, so a control in flight disables the others and
@@ -171,7 +171,7 @@ export function ComposerMissionStrip({
         className={cn(
           "flex h-11 min-w-0 items-center gap-3.5 bg-surface-base pl-3.5 pr-2 text-[13.5px] leading-none text-ink-primary",
           inkFrame
-            ? "border-[1.5px] border-b-0 border-rule-ink"
+            ? "border border-b-0 border-rule-ink"
             : "border border-b-0 border-rule",
         )}
       >

@@ -317,11 +317,11 @@
 /* The selected tile and the live tick                                 */
 /* ------------------------------------------------------------------ */
 
-/* THE SELECTED TILE wears a 1.5px blue outline drawn inside, so the tile's
+/* THE SELECTED TILE wears a 1px blue outline drawn inside, so the tile's
  * box and every figure in it stay where they were. */
 .vex-board-card[data-selected="true"] {
-  outline: 1.5px solid var(--vex-alias-accent-primary);
-  outline-offset: -1.5px;
+  outline: 1px solid var(--vex-alias-accent-primary);
+  outline-offset: -1px;
 }
 
 /* THE LIVE TICK. A tile's price row is stamped `data-tick` (a fresh value
@@ -440,7 +440,7 @@
   resize: vertical;
 }
 .vex-bd-ask__field::placeholder {
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-placeholder);
 }
 .vex-bd-ask__send {
   display: inline-flex;

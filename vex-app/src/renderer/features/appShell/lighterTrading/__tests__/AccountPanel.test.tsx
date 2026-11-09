@@ -122,6 +122,10 @@ describe("TradingBottomPanel", () => {
     // The kit's ten cell meter: Math.round(0.33 * 10) = 3 cells are on.
     expect(meter.querySelectorAll("i")).toHaveLength(10);
     expect(meter.querySelectorAll("i[data-on]")).toHaveLength(3);
+    // VEX Cloud's meter: the last lit cell is its head (60%), and only it.
+    const head = meter.querySelectorAll("i[data-head]");
+    expect(head).toHaveLength(1);
+    expect(head[0]).toBe(meter.querySelectorAll("i")[2]);
     // The Unrealized PnL (with its ROE) is the one figure that takes the trading pair, by sign.
     expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("positive");
     expect(screen.getByText("Equity").nextElementSibling?.hasAttribute("data-tone")).toBe(false);
@@ -143,6 +147,7 @@ describe("TradingBottomPanel", () => {
     expect(meter.getAttribute("aria-valuenow")).toBe("92");
     expect(meter.querySelectorAll("i")).toHaveLength(10);
     expect(meter.querySelectorAll("i[data-on]")).toHaveLength(9);
+    expect(meter.querySelectorAll("i[data-head]")).toHaveLength(1);
     // A losing account reads down in the trading pair, by the same tone attribute.
     expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("negative");
   });

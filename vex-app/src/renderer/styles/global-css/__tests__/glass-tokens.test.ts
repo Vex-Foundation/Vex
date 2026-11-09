@@ -169,6 +169,48 @@ describe("the shape law", () => {
     }
   });
 
+  it("names exactly its exceptions: the chat bubbles (her answer in runs), and the avatar circle as SVG geometry", () => {
+    // docs/design/H3-DESKTOP.md section 2.4 (VEX Cloud's STYLE 5.5): only
+    // the bubbles round, 18 with the speaker's corner sharp at 4. A radius
+    // can beat the law only with `!important`; every such declaration in
+    // every sheet is one of these, and nothing else.
+    const winners = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, , body]) => /border(?:-[a-z]+)*-radius:[^;]*!important/.test(body ?? ""))
+        .map(([, selector, body]) => [name, (selector ?? "").trim().replace(/\s+/g, " "), body ?? ""] as const)
+        .filter(([, selector]) => !selector.startsWith("*,")),
+    );
+    const run = ".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose >";
+    expect(winners.map(([name, selector]) => `${name}: ${selector}`)).toEqual([
+      "base.css: .vex-you__body",
+      "base.css: .vex-welcome__greeting",
+      `base.css: ${run} :is(:first-child, :is(.vex-code-block, .vex-md-table) + *):not(.vex-code-block, .vex-md-table)`,
+      `base.css: ${run} :is(:last-child, :has(+ :is(.vex-code-block, .vex-md-table))):not(.vex-code-block, .vex-md-table)`,
+    ]);
+    expect(winners[0]?.[2]).toContain("border-radius: var(--vex-radius-bubble-you) !important;");
+    expect(winners[1]?.[2]).toContain("border-radius: var(--vex-radius-bubble-vex) !important;");
+    // Her answer's runs: the top corners on a run's first part, the bottom
+    // ones on its last; a code block or a table between runs stays square.
+    expect(winners[2]?.[2]).toContain("border-top-left-radius: var(--vex-radius-bubble-corner-speaker) !important;");
+    expect(winners[2]?.[2]).toContain("border-top-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-left-radius: var(--vex-radius-bubble-corner) !important;");
+    const room = stripComments(tokensCss);
+    expect(declarationValue(room, "--vex-radius-bubble-vex")).toBe("4px 18px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-you")).toBe("18px 4px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner")).toBe("18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner-speaker")).toBe("4px");
+    // The avatar is a circle drawn as SVG, never a CSS radius: the law
+    // leaves it whole, so it needs no exception.
+    const sources = new Map(rendererSources());
+    for (const [file, disc] of [
+      [path.join("features", "appShell", "TranscriptMessage.tsx"), "vex-you__disc"],
+      [path.join("features", "appShell", "SidebarProfile.tsx"), "vex-prof__disc"],
+    ] as const) {
+      expect(sources.get(file), file).toMatch(new RegExp(`<circle className="${disc}"`));
+    }
+  });
+
   it("resets Tailwind's radius, shadow and blur scales, and zeroes the app's own names", () => {
     const theme = stripComments(tokensCss.slice(tokensCss.indexOf("@theme {")));
     for (const reset of ["--radius-*: initial;", "--shadow-*: initial;", "--blur-*: initial;"]) {
@@ -182,6 +224,29 @@ describe("the shape law", () => {
       // box-shadow list, where `none` would void the whole declaration.
       expect(declarationValue(theme, token)).toBe("0 0 #0000");
     }
+  });
+});
+
+describe("1px rules only (docs/design/H3-DESKTOP.md section 2.4)", () => {
+  it("draws no frame, rule or outline at 1.5px in any sheet", () => {
+    // VEX Cloud's SK STYLE 2.3: lines and fills are 1px only. R3's heavier
+    // 1.5px ink and blue frames retired; a heavier frame is the ink at 1px.
+    const offenders = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/g)].map(
+        (match) => `${name}: ${match[0]}`,
+      ),
+    );
+    expect(offenders).toEqual([]);
+    expect("border: 1.5px solid x;").toMatch(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/);
+  });
+
+  it("draws no 1.5px frame through a utility in any renderer source", () => {
+    const pattern = /\b(?:border|outline)(?:-[trblxy])?-\[1\.5px\]/;
+    expect("x border-b-[1.5px] y").toMatch(pattern);
+    const offenders = rendererSources()
+      .filter(([, source]) => pattern.test(source))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
   });
 });
 

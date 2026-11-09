@@ -23,7 +23,7 @@
  * LOOK (docs/design/R3-MINIMAL.md sections 1.3, 1.5 and 12). The pick area is a
  * 1px dotted rule box holding the chosen picture and the Add image key (the kit
  * `Button`, quiet and small). Every picture is square: the 64px preview and the
- * 44px locker tiles carry a 1px rule, and the chosen tile takes the 1.5px blue
+ * 44px locker tiles carry a 1px rule, and the chosen tile takes the 1px blue
  * frame plus a solid swatch in its corner, so the choice is never colour alone.
  * Notes are a swatch beside the sentence in ink, never red or amber.
  */
@@ -217,7 +217,7 @@ function LockerTile({
         "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
         "disabled:cursor-not-allowed disabled:border-dotted",
         selected
-          ? "border-[1.5px] border-accent-primary"
+          ? "border border-accent-primary"
           : "border border-rule enabled:hover:border-rule-ink",
       )}
     >

@@ -97,12 +97,12 @@ describe("ComposerQuickActions", () => {
     expect(cell).not.toMatch(/border-radius/);
   });
 
-  it("sets the title in sans 16 ink and the line in sans 14 muted, 24 in", () => {
-    expect(rule(".vex-starter__title")).toMatch(/font-size:\s*16px;/);
+  it("sets the title in sans 15 ink and the line in sans 13 muted, 20 in (VEX Cloud's starters)", () => {
+    expect(rule(".vex-starter__title")).toMatch(/font-size:\s*15px;/);
     expect(rule(".vex-starter__title")).toMatch(/color:\s*var\(--vex-alias-label-primary\);/);
-    expect(rule(".vex-starter__line")).toMatch(/font-size:\s*14px;/);
+    expect(rule(".vex-starter__line")).toMatch(/font-size:\s*13px;/);
     expect(rule(".vex-starter__line")).toMatch(/color:\s*var\(--vex-alias-label-tertiary\);/);
-    expect(rule(".vex-starter")).toMatch(/padding:\s*18px 24px 20px;/);
+    expect(rule(".vex-starter")).toMatch(/padding:\s*16px 18px 16px 20px;/);
     expect(rule(".vex-starters")).toMatch(/padding:\s*0 24px 34px;/);
   });
 

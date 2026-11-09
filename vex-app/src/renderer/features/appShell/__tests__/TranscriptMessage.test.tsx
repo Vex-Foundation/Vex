@@ -809,3 +809,89 @@ describe("TranscriptMessage mission stop result (Kairos E-1 follow-up)", () => {
     );
   });
 });
+
+// ── Her bubble runs: code and tables stand out of the bubble (C3-C-02) ──────
+
+describe("TranscriptMessage: Vex's answer in bubble runs", () => {
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const sheet = (name: string): string =>
+    readFileSync(join(process.cwd(), "src/renderer/styles/global-css", name), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+  const RUN = ".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose";
+  const BLOCK = ":is(.vex-code-block, .vex-md-table)";
+
+  function answerParts(): HTMLElement[] {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({
+          variant: "assistant",
+          content: [
+            "First, the plan.",
+            "Then the detail.",
+            "```ts\nconst a = 1;\n```",
+            "After the code.",
+            "| Pair | Price |\n|---|---|\n| ETH | 3200 |",
+            "Done.",
+          ].join("\n\n"),
+        }),
+      }),
+    );
+    const prose = container.querySelector(".vex-reply .vex-answer > .vex-chat-prose");
+    expect(prose, "the answer's prose sits directly in its wrapper").not.toBeNull();
+    return Array.from(prose?.children ?? []) as HTMLElement[];
+  }
+
+  it("renders a code block and a table as the prose's own parts, each with its hook", () => {
+    const parts = answerParts();
+    expect(parts.map((part) => part.className.split(" ")[0] ?? part.tagName)).toEqual([
+      expect.any(String),
+      expect.any(String),
+      "vex-code-block",
+      expect.any(String),
+      "vex-md-table",
+      expect.any(String),
+    ]);
+    expect(parts[0]?.tagName).toBe("P");
+    expect(parts[4]?.querySelector("table")).not.toBeNull();
+  });
+
+  it("lays the prose in a fit-content(82%) column and sets code and tables across the full width, square", () => {
+    const css = sheet("chat-transcript.css");
+    const body = (selector: string): string => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at, `${selector} not found`).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", at) + 1, css.indexOf("}", at));
+    };
+    const grid = body(RUN);
+    expect(grid).toContain("display: grid;");
+    expect(grid).toContain("grid-template-columns: fit-content(82%) minmax(0, 1fr);");
+    const part = body(`${RUN} > *`);
+    expect(part).toContain("grid-column: 1;");
+    expect(part).toContain("background: var(--vex-alias-bubble-vex);");
+    const block = body(`${RUN} > ${BLOCK}`);
+    expect(block).toContain("grid-column: 1 / -1;");
+    expect(block).toContain("background: transparent;");
+    // The wrapper itself is no longer the bubble: no 82% cap, no fill.
+    expect(css).not.toMatch(/\.vex-reply :is\(\.vex-answer, \.vex-answer-resolve\) \{[^}]*max-width: 82%/);
+  });
+
+  it("rounds each run, a new one after every block, and never a block", () => {
+    const base = sheet("base.css");
+    const selectorOf = (corner: string): string => {
+      const match = new RegExp(`([^{}]+)\\{[^}]*${corner}: var\\(--vex-radius-bubble-corner[a-z-]*\\) !important`).exec(base);
+      expect(match, corner).not.toBeNull();
+      return (match?.[1] ?? "").trim();
+    };
+    const parts = answerParts();
+    const top = selectorOf("border-top-left-radius");
+    const bottom = selectorOf("border-bottom-left-radius");
+    const tops = parts.map((part) => part.matches(top));
+    const bottoms = parts.map((part) => part.matches(bottom));
+    // Runs: [plan, detail] code [after] table [done].
+    expect(tops).toEqual([true, false, false, true, false, true]);
+    expect(bottoms).toEqual([false, true, false, true, false, true]);
+  });
+});

@@ -12,7 +12,7 @@
  *   blocked     the reason, Try again
  *   error       the message, Open download page, Try again, Dismiss
  *
- * A critical update and a failure take the 1.5px ink frame. There is no
+ * A critical update and a failure take the 1px ink frame. There is no
  * veil, no shadow and no dismiss control for a state whose only way out is
  * its own button: an update the user has not finished deciding about is never
  * removable by a stray click.

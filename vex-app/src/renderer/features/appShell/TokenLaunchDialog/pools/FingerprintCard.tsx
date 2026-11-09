@@ -24,7 +24,7 @@
  * 13 / 600 sentence-case line; each row is a muted 13 label at the left and its
  * value at the right, and every address, hash, fingerprint, amount and the
  * countdown is set as a figure (mono, `vex-num`). The alarms are ink callouts
- * (`InkCallout`): a 1.5px ink frame and a swatch beside the sentence, never a
+ * (`InkCallout`): a 1px ink frame and a swatch beside the sentence, never a
  * hue, so they read the same on paper and at night.
  *
  * ── THE COUNTDOWN, AND WHY IT IS NOT DECORATION ────────────────────────────

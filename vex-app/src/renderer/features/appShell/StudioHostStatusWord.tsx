@@ -7,7 +7,7 @@
  * the target, unavailable the cross. It stays in view while her section is
  * open, which is why
  * it is the header's and not the console's. The card behind it is a flat
- * popover: the ground, a 1.5px ink frame, no shadow.
+ * popover: the ground, a 1px ink frame, no shadow.
  *
  * It reads `EV.studio.hostStatus` through `useStudioHostStatus`, which is
  * event-driven: main pushes every transition, so this is a LEVEL and never a

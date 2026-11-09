@@ -103,10 +103,11 @@
 /* ── The person's message ────────────────────────────────────────────────
  * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
  * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
- * right. The bubble is the bubble fill (#212325) with the
- * words in sans 17 / 24 ink, 11 above and below and 16 at the sides (46 high
- * on one line), at most 560 wide; square, by the shape law (base.css), where
- * the capture rounds three corners. The avatar is a 36px disc. The clock and
+ * right. The bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16 /
+ * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
+ * column (VEX Cloud's `.t-you p`); 18 round with the corner by the avatar
+ * sharp at 4 (`--vex-radius-bubble-you`, one of the shape law's two
+ * exceptions in base.css). The avatar is a 36px disc. The clock and
  * the message keys sit at the bubble's left, hover-revealed, so at rest the
  * row is the bubble and the disc alone. */
 .vex-you {
@@ -121,26 +122,26 @@
   align-items: center;
   gap: 8px;
   height: 20px;
-  /* Centred on the bubble's first line: 11 + 24 / 2 - 20 / 2. */
-  margin-top: 13px;
+  /* Centred on the bubble's first line: 12 + 23.2 / 2 - 20 / 2. */
+  margin-top: 14px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-you__stack {
   display: flex;
   min-width: 0;
-  max-width: min(560px, 100%);
+  max-width: 74%;
   flex-direction: column;
   align-items: flex-end;
 }
 .vex-you__body {
   max-width: 100%;
   margin: 0;
-  padding: 11px 16px;
+  padding: 12px 16px;
   background: var(--vex-alias-bubble);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 400;
-  line-height: 24px;
+  line-height: 1.45;
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -154,8 +155,7 @@
   color: var(--vex-alias-label-tertiary);
 }
 /* The avatar cell: the disc on the chosen rule, the person glyph in ink. The
- * disc's measured #151718 has no token; raised 2 (#101214) is the nearest
- * step the alias tier has. */
+ * disc is Cloud's avatar ground (--vx-avatar, #151618), the plate step. */
 .vex-you__avatar {
   display: flex;
   flex: none;
@@ -168,7 +168,7 @@
   display: block;
 }
 .vex-you__disc {
-  fill: var(--vex-alias-bg-overlay);
+  fill: var(--vex-alias-avatar);
   stroke: var(--vex-alias-rule-chosen);
 }
 .vex-you__glyph {
@@ -180,22 +180,65 @@
  * column's own left edge: the thinking row, the steps, the answer and the
  * receipt span the column, level with the person's bubble on the right, with
  * no token beside them (her presence is the Vex key in the header). Her
- * answer is the sans at 16 / 1.6 in ink, 12 between paragraphs: a step under
- * the bubble's 17, the reading size H3 gives a message. */
+ * answer stands in her bubble, as VEX Cloud draws it (`.t-vex p`): the sans
+ * at 16 / 1.45 at -0.005em in ink, 12 between paragraphs, padded 12 by 16,
+ * on white at 6%, 18 round with her corner sharp at 4 (base.css), the
+ * reading size of the person's message.
+ *
+ * BUBBLE RUNS (VEX Cloud's G18, `styles/thread.css`): a code block or a
+ * table never sits in the bubble. The answer's prose is a two-column grid,
+ * `fit-content(82%)` then the rest: every prose part stands in the first
+ * column on the bubble's fill, so consecutive prose reads as one bubble as
+ * wide as its widest part and never wider than 82%; a code block or a table
+ * spans both columns at the column's full width as a square cell, ending
+ * the bubble; the prose after it opens a new one. A run's first part takes
+ * the top corners (4 by her, 18 away), its last the bottom ones (18), so a
+ * run of one part is the whole bubble. The answer's wrappers (`.vex-answer`,
+ * and `.vex-answer-resolve` while it streams) scope this, so the reasoning
+ * trace, which renders the same markdown, keeps its own frame. */
 .vex-reply {
   position: relative;
 }
 .vex-reply .vex-chat-prose {
   font-size: 16px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
   gap: 12px;
   color: var(--vex-alias-label-primary);
 }
-/* A table's head cells in an answer are labels: caps 12, tracked, muted, as
- * H3 sets its table heads. */
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose {
+  display: grid;
+  grid-template-columns: fit-content(82%) minmax(0, 1fr);
+  gap: 0;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > * {
+  grid-column: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 16px 0;
+  background: var(--vex-alias-bubble-vex);
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :last-child,
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :has(+ :is(.vex-code-block, .vex-md-table)) {
+  padding-bottom: 12px;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(.vex-code-block, .vex-md-table) {
+  grid-column: 1 / -1;
+  margin: 12px 0;
+  padding: 0;
+  background: transparent;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(.vex-code-block, .vex-md-table):first-child {
+  margin-top: 0;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(.vex-code-block, .vex-md-table):last-child {
+  margin-bottom: 0;
+}
+/* A table's head cells in an answer are labels: caps 11, tracked, muted, as
+ * VEX Cloud sets its table heads (`.tbl th`). */
 .vex-reply .vex-chat-prose th {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -212,13 +255,14 @@
 }
 
 /* "Stopped", a status in H3's grammar (section 2.2): the small outline square
- * and the word in caps 13, tracked, in ink. */
+ * 6 before the word in caps 11, tracked, in ink (VEX Cloud's status label at
+ * its row size). */
 .vex-reply__stopped {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.45;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -319,11 +363,11 @@
   text-transform: uppercase;
 }
 /* The step's word, in the time column where there is no time (VEX Cloud's
- * trace): caps 12 tracked, muted for a step that ran, ink for one still
+ * trace): caps 11 tracked, muted for a step that ran, ink for one still
  * pending, FAILED in the refusal ink. */
 .vex-step__word {
   flex: none;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -563,9 +607,10 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 /* ── The filled receipt ──────────────────────────────────────────────────
  * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, measured in
  * the signed-moment capture at 1440: a framed card the column's full width,
- * 12 under the steps. Its head, 16 in: the kind and the chain in caps 13
- * tracked muted, the time in the mono 13 muted and the stamp (the status
- * green fill, white caps 12, 24 high) at the right; under them the pair in
+ * 12 under the steps. Its head, 16 in: the kind and the chain in caps 11
+ * tracked muted, the time in the mono 11 muted at the figures' 0.04em and
+ * the stamp (the status green fill, white caps 11, 24 high) at the right
+ * (VEX Cloud's `.xc-top.cap`, `.xc-when` and `.tag`); under them the pair in
  * sans 20 ink and the chain in 16 ink 2. Then the rows on a 34 pitch, each on
  * the rule: the label in the mono caps of the field-label register, muted,
  * and the value in the mono 13 ink at the right. */
@@ -592,7 +637,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
@@ -602,7 +647,8 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 .vex-receipt__time {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-figure);
   font-variant-numeric: tabular-nums;
   color: var(--vex-alias-label-tertiary);
 }
@@ -614,7 +660,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   align-items: center;
   height: 24px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -663,8 +709,8 @@ html[data-still] .vex-step-node[data-step-node="running"] {
  *  captures at 1440: "Vex's thinking is a framed row". A square *
  *  cell on the ground in the 1px rule, the column's full width; *
  *  its head 40 high, 16 in, the glyph (10) then the label 14    *
- *  after it in caps 13 tracked ink, the figures at the right in *
- *  the mono 12 muted. Under the head's rule, the step rows, the *
+ *  after it in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`),   *
+ *  the figures at the right in the mono 12 muted. Under the head's rule, the step rows, the *
  *  live trace or the opened trace, on the label's 40 edge. The  *
  *  live turn's frame (`TurnIsland`) and a persisted thinking    *
  *  row (`ReasonedBlock`) are the same cell.                     *
@@ -684,14 +730,14 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 .vex-live-row .vex-step__title {
   max-width: none;
   flex: 0 1 auto;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
 .vex-live-row .vex-step__word {
-  font-size: 13px;
+  font-size: 11px;
 }
 .vex-live-row .vex-step__num {
   color: var(--vex-alias-label-tertiary);
@@ -823,7 +869,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 
 /* ── The thinking row (a persisted Thought row) ──────────────────────────
  * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
- * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
+ * for 2.8 s" in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then
  * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
  * whole row is the key: the label is the button, and its hit area stretches
  * over the row. Opened, the trace sits under the head's rule in the frame. */
@@ -831,10 +877,11 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   margin-bottom: 12px;
   border: 1px solid var(--vex-alias-rule);
 }
-/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label. */
+/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label.
+ * It takes the figures' 0.04em (VEX Cloud's `.rz-ms`). */
 .vex-reasoned__figure {
   font-variant-numeric: tabular-nums;
-  letter-spacing: normal;
+  letter-spacing: var(--tracking-figure);
   text-transform: none;
 }
 .vex-reasoned__row {
@@ -859,7 +906,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;

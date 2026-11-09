@@ -11,15 +11,15 @@
  * The disc is the one the transcript gives the person's own messages
  * (`TranscriptMessage.tsx`, `YouAvatar`): a circle on the chosen rule with
  * the person glyph in ink, drawn as SVG, since every box is square (radius
- * 0). Its measured fill, #151718, has no token; it takes raised 2 (#101214)
- * as the transcript's does.
+ * 0). Its fill is Cloud's avatar ground (#151618, `--vex-alias-avatar`), as
+ * the transcript's is.
  *
  * Its portal Menu keeps every destination it had: Personalize, Memory,
  * Sessions, Agent Scan, How Vex works, Settings, Lock Vex, plus a read-only
  * runtime row pinned in the menu footer. Opened upward from the cell, the
  * menu is the profile panel: 316 wide, 12 in from the window's edge (the
- * Menu's margin), its foot on the cell's top rule, raised 2 behind the
- * chosen rule, never a shadow.
+ * Menu's margin), its foot on the cell's top rule, the card ground behind
+ * the chosen rule, never a shadow.
  *
  * The name is the person's own "Vex setup" `displayName` once set, and "You"
  * before that (and while the profile loads or cannot be read): H3's word,

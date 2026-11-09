@@ -209,7 +209,7 @@
   outline: 0;
 }
 
-.lit-input-shell input::placeholder { color: var(--vex-alias-label-tertiary); }
+.lit-input-shell input::placeholder { color: var(--vex-alias-label-placeholder); }
 
 .lit-input-shell b,
 .lit-unit-toggle {
@@ -275,7 +275,7 @@
 .lit-slippage-controls > button + button { margin-left: -1px; }
 .lit-slippage-controls > button:hover { color: var(--lit-ink); }
 
-/* Selected: raised 2, in ink. */
+/* Selected: the open ground, in ink. */
 .lit-slippage-controls > button[aria-pressed="true"] {
   background: var(--lit-pressed);
   color: var(--lit-ink);
@@ -384,7 +384,7 @@
   gap: 8px;
 }
 
-/* Qty | Risk: two small key cells in caps, the chosen one on raised 2. */
+/* Qty | Risk: two small key cells in caps, the chosen one on the open ground. */
 .lit-size-mode {
   display: inline-flex;
   border: 1px solid var(--vex-alias-rule);
@@ -676,8 +676,8 @@
 .lit-ticket-approval-action:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
 
 /* Ticket feedback: preparation, validation, approval and provider outcomes.
- * A flat note: a 1px ink frame for news, 1.5px for attention, 1.5px with an
- * 8px hatch band for an error. The bar under it drains the time it stays. */
+ * A flat note in a 1px ink frame (1px rules only, H3 2.4), an error with an
+ * 8px hatch band. The bar under it drains the time it stays. */
 .lit-review-outcome {
   position: relative;
   overflow: hidden;
@@ -741,12 +741,7 @@
   from { opacity: 0; }
 }
 
-.lit-review-outcome[data-tone="warn"] {
-  border-width: 1.5px;
-}
-
 .lit-review-outcome[data-tone="error"] {
-  border-width: 1.5px;
   padding-left: 18px;
 }
 
@@ -921,7 +916,7 @@
   height: 10px;
   flex: 0 0 auto;
   box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   color: var(--lit-positive);
 }
 
@@ -1216,7 +1211,7 @@
   outline: none;
 }
 
-.lit-setup-amount input::placeholder { color: var(--lit-ink-muted); }
+.lit-setup-amount input::placeholder { color: var(--vex-alias-label-placeholder); }
 
 .lit-setup-amount b {
   flex: 0 0 auto;
@@ -1242,14 +1237,14 @@
 }
 
 /* Shortfall: the amount is larger than the wallet holds. Names the gap and
- * hands over the address that closes it, in the 1.5px ink frame of
+ * hands over the address that closes it, in the 1px ink frame of
  * attention. */
 .lit-setup-fund {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 1px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   padding: 10px 12px;
 }
 
@@ -1345,7 +1340,7 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   color: var(--lit-ink-secondary);
 }
 

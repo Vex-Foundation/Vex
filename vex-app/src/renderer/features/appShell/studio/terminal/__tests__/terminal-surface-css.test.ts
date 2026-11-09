@@ -66,13 +66,13 @@ describe("terminal.css surfaces", () => {
     expect(rules).not.toMatch(/\.vex-tab-shell\[data-active\][^{]*:hover/);
   });
 
-  it("draws a tab as a cell behind its rule, the active one on the raised fill", () => {
+  it("draws a tab as a cell behind its rule, the active one on the open ground", () => {
     const rest = ruleBody(".vex-tab-shell");
     expect(rest).toMatch(/padding:\s*0 20px 0 24px/);
     expect(rest).toMatch(/border-right:\s*1px solid var\(--vex-alias-rule-quiet\)/);
     expect(rest).not.toMatch(/border-bottom/);
     const active = ruleBody(".vex-tab-shell[data-active]");
-    expect(active).toMatch(/background:\s*var\(--vex-alias-bg-overlay\)/);
+    expect(active).toMatch(/background:\s*var\(--vex-alias-interactive-active\)/);
     // No underline, and no blue anywhere in the chrome.
     expect(active).not.toMatch(/border/);
     expect(rules).not.toMatch(/accent-primary|button-accent|button-primary/);
@@ -134,12 +134,12 @@ describe("terminal.css surfaces", () => {
     expect(ruleBody(".vex-ws-picker__value")).toMatch(/font-family:\s*var\(--font-mono\)/);
   });
 
-  it("marks the active pane of a split by its 36 head on the raised fill, never an outline", () => {
+  it("marks the active pane of a split by its 36 head on the open ground, never an outline", () => {
     const head = ruleBody(".vex-ws-pane__head");
     expect(head).toMatch(/height:\s*36px/);
     expect(head).toMatch(/border-bottom:\s*1px solid var\(--vex-alias-rule-quiet\)/);
     expect(ruleBody(".vex-ws-pane[data-active] > .vex-ws-pane__head")).toMatch(
-      /background:\s*var\(--vex-alias-bg-overlay\)/,
+      /background:\s*var\(--vex-alias-interactive-active\)/,
     );
     expect(ruleBody(".vex-ws-pane")).toMatch(/background:\s*var\(--vex-alias-bg-base\)/);
     expect(rules).not.toMatch(/outline:\s*1\.5px/);

@@ -224,7 +224,7 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-plate-studio-rail__key--files[data-open] {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-interactive-active);
 }
 
 /* The rail's drawer: over the centre's left edge, under the band. Two
@@ -279,7 +279,7 @@
   white-space: nowrap;
 }
 .vex-plate-studio__tab[data-selected] {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }
 .vex-plate-studio__tab--file {
@@ -415,7 +415,7 @@
   white-space: nowrap;
 }
 .vex-plate-studio__pane[data-active] > .vex-plate-studio__pane-head {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }
 .vex-plate-studio__pane-close {

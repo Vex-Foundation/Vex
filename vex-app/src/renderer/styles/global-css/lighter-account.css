@@ -95,8 +95,9 @@
 .lit-risk-strip dd[data-tone="positive"] { color: var(--vex-alias-trade-up); }
 .lit-risk-strip dd[data-tone="negative"] { color: var(--vex-alias-trade-down); }
 
-/* The margin meter: ten cells, each a tenth of the collateral in use. The on
- * cells are the blue; past 80% they turn to the ink. */
+/* The margin meter: ten cells, each a tenth of the collateral in use, VEX
+ * Cloud's meter: cells 6 x 12, 2 apart, an unlit cell white at 8%, a lit one
+ * 39%, the last lit one 60%. Past 80% the lit cells turn to the ink. */
 .lit-margin-usage-bar {
   display: inline-flex;
   align-items: center;
@@ -105,20 +106,21 @@
 
 .lit-margin-usage-bar > i {
   display: block;
-  width: 4px;
-  height: 10px;
+  width: 6px;
+  height: 12px;
   flex: none;
-  box-sizing: border-box;
-  border: 1px solid var(--lit-line);
+  background: var(--vex-alias-meter-off);
 }
 
 .lit-margin-usage-bar > i[data-on] {
-  border-color: var(--lit-positive);
-  background: var(--lit-positive);
+  background: var(--vex-alias-meter-on);
+}
+
+.lit-margin-usage-bar > i[data-head] {
+  background: var(--vex-alias-meter-head);
 }
 
 .lit-margin-usage-bar[data-level="high"] > i[data-on] {
-  border-color: var(--lit-ink);
   background: var(--lit-ink);
 }
 
@@ -508,7 +510,7 @@
   color: var(--lit-ink);
 }
 
-/* A flat popover: paper and a 1.5px ink frame, never a shadow
+/* A flat popover: paper and a 1px ink frame, never a shadow
  * (docs/design/R3-MINIMAL.md section 12). */
 .lit-close-card {
   /* FIXED HERE, NOT IN THE COMPONENT, and it is not only about where the card
@@ -529,7 +531,7 @@
   min-width: 220px;
   flex-direction: column;
   gap: 10px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--lit-panel);
   padding: 12px;
   font-family: var(--font-sans);
@@ -594,7 +596,7 @@
 .lit-close-card-keys button:hover { background: var(--lit-hover); }
 
 /* Market close is the destructive key: the ink frame, the ink fill on hover. */
-.lit-close-card-keys button[data-danger] { border: 1.5px solid var(--vex-alias-rule-ink); }
+.lit-close-card-keys button[data-danger] { border: 1px solid var(--vex-alias-rule-ink); }
 
 .lit-close-card-keys button[data-danger]:hover {
   background: var(--lit-ink-fill);
@@ -791,7 +793,7 @@
  * square cells on the 1px rule.
  *
  *   - the TABS as cells (POSITIONS 2, OPEN ORDERS, TRADE HISTORY, ASSETS),
- *     the chosen one on raised 2, and REFRESH and the fold key as cells at
+ *     the chosen one on the open ground, and REFRESH and the fold key as cells at
  *     the row's right end; the account and the time of its read are said to
  *     assistive tech and in Refresh's tooltip;
  *   - the SUMMARY STRIP under them: EQUITY, AVAILABLE, UNREALIZED PNL in gain
@@ -910,19 +912,6 @@
 }
 
 .lit-risk-strip dd { gap: 8px; }
-
-/* The ten-cell meter: off cells on the chosen rule, on cells the ink. */
-.lit-margin-usage-bar > i {
-  width: 5px;
-  border: 0;
-  background: var(--vex-alias-rule-chosen);
-}
-
-.lit-margin-usage-bar > i[data-on],
-.lit-margin-usage-bar[data-level="high"] > i[data-on] {
-  border: 0;
-  background: var(--lit-ink);
-}
 
 /* The table: caps heads over 40 high rows. */
 .lit-account-columns {

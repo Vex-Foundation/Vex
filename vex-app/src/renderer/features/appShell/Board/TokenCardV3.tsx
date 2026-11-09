@@ -31,7 +31,7 @@
  * setting, and a reader who found it "on" would have no idea what it was
  * doing. `aria-pressed` still reports which tile the spotlight is currently
  * about, so the selected state is not left to an outline colour; the selected
- * tile also wears the 1.5px blue outline `board.css` draws inside it.
+ * tile also wears the 1px blue outline `board.css` draws inside it.
  *
  * THREE DATA STATES, and each is a designed state of the SAME elements, never
  * a missing element: a pool with no hydration row, a row whose price the
@@ -121,7 +121,7 @@ import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
 /**
  * The tile plate.
  *
- * `vex-board-card` is the selected-tile seam (`board.css` draws the 1.5px blue
+ * `vex-board-card` is the selected-tile seam (`board.css` draws the 1px blue
  * outline inside it) and `vex-bd-tile` is the frame (`board-layout.css`: the
  * tile's right and bottom rule, its padding 16 18 14, no fill, the hover
  * wash). The hover moves COLOUR only, never geometry: a tile that scaled or

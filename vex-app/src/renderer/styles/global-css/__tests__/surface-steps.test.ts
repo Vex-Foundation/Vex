@@ -5,11 +5,14 @@
  * near-black ground and lifts only a few cells off it, each by a step the
  * contract names. Pinned here:
  *
- *   1. the columns, the cards, the rails and the fields sit on the ONE ground
+ *   1. the chat column, its fields and the boards sit on the ground
  *      (#010203) - the composer's field and the card's amount field are on
- *      the ground behind their rule in the captures;
- *   2. the wells take the cell step, popovers and the selected tab raised 2,
- *      a pressed segment raised, the person's message the bubble;
+ *      the ground behind their rule in the captures; the side columns stand
+ *      on VEX Cloud's rail (#010101) and the page under the frame on its page
+ *      (#020205);
+ *   2. the wells take the cell step, popovers and menus the card, a selected
+ *      tab and the washes the open ground, a pressed segment raised, the two
+ *      bubbles Cloud's white at 13% and 6%;
  *   3. every rule is white at an alpha (the sheet's 7% rule and its 24%
  *      chosen rule), so it composes over any of those steps;
  *   4. the steps rise in order, so a cell never reads darker than the ground
@@ -59,7 +62,6 @@ describe("the H3 surface steps", () => {
       "--vex-alias-bg-deep",
       "--vex-alias-bg-layer-1",
       "--vex-alias-bg-layer-2",
-      "--vex-alias-sidebar-fill",
       "--vex-alias-field",
       "--vex-alias-board-surface",
       "--vex-alias-board-card",
@@ -67,22 +69,28 @@ describe("the H3 surface steps", () => {
       expect(value(room, alias), alias).toBe("var(--color-h3-ground)");
     }
     expect(value(room, "--vex-alias-composer")).toBe("var(--vex-alias-field)");
+    expect(value(room, "--vex-alias-sidebar-fill")).toBe("var(--color-h3-rail)");
+    expect(value(room, "--vex-alias-bg-page")).toBe("var(--color-h3-page)");
+    expect(hex("--color-h3-rail")).toBe("#010101");
+    expect(hex("--color-h3-page")).toBe("#020205");
   });
 
   it("lifts each cell by the step the contract names for it", () => {
     expect(value(room, "--vex-alias-bg-layer-3")).toBe("var(--color-h3-cell)");
-    expect(value(room, "--vex-alias-bg-overlay")).toBe("var(--color-h3-raised-2)");
-    expect(value(room, "--vex-alias-interactive-active")).toBe("var(--color-h3-raised-2)");
-    expect(value(room, "--vex-alias-accent-wash")).toBe("var(--color-h3-raised-2)");
+    expect(value(room, "--vex-alias-bg-overlay")).toBe("var(--color-h3-card)");
+    expect(value(room, "--vex-alias-interactive-active")).toBe("var(--color-h3-cell-open)");
+    expect(value(room, "--vex-alias-accent-wash")).toBe("var(--color-h3-cell-open)");
     expect(value(room, "--vex-alias-interactive-solid")).toBe("var(--color-h3-raised)");
     expect(value(room, "--vex-alias-board-card-hover")).toBe("var(--color-h3-raised)");
-    expect(value(room, "--vex-alias-bubble")).toBe("var(--color-h3-bubble)");
+    expect(value(room, "--vex-alias-bubble")).toBe("rgba(255, 255, 255, 0.13)");
+    expect(value(room, "--vex-alias-bubble-vex")).toBe("rgba(255, 255, 255, 0.06)");
   });
 
-  it("fades the selected row from its measured start to the ground", () => {
+  it("fades the chosen row from Cloud's #1A1B1C to transparent", () => {
     expect(value(room, "--vex-alias-row-selected")).toBe(
-      "linear-gradient( 90deg, var(--color-h3-row), var(--color-h3-ground) )",
+      "linear-gradient( 90deg, var(--color-h3-row), transparent )",
     );
+    expect(hex("--color-h3-row")).toBe("#1a1b1c");
   });
 
   it("draws every rule in white at an alpha: the sheet's 7% rule and its 24% chosen rule", () => {
@@ -94,14 +102,17 @@ describe("the H3 surface steps", () => {
     expect(block("@theme inline")).toContain("--color-rule-chosen: var(--vex-alias-rule-chosen);");
   });
 
-  it("rises in order: ground, cell, raised, raised 2, the row, the bubble", () => {
+  it("rises in order: rail, ground, page, card, cell, raised, open, plate, the row", () => {
     const steps = [
+      "--color-h3-rail",
       "--color-h3-ground",
+      "--color-h3-page",
+      "--color-h3-card",
       "--color-h3-cell",
       "--color-h3-raised",
-      "--color-h3-raised-2",
+      "--color-h3-cell-open",
+      "--color-h3-tooltip",
       "--color-h3-row",
-      "--color-h3-bubble",
     ].map((name) => lightness(hex(name)));
     for (let at = 1; at < steps.length; at += 1) {
       expect(steps[at], `step ${String(at)}`).toBeGreaterThan(steps[at - 1] as number);

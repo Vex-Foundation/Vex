@@ -46,14 +46,14 @@ import {
 
 /**
  * THE KIT CHECKBOX, drawn on the native input (docs/design/R3-MINIMAL.md
- * section 1.5): 16 x 16, a 1.5px ink border, and when it is on the blue fill
+ * section 1.5): 16 x 16, a 1px ink border, and when it is on the blue fill
  * with a white tick; focus is the kit's 2px outline, 3px clear. The input keeps
  * its checkbox semantics, its label and its `disabled` behaviour; only the
  * paint changed. Shared with the delete dialog's trash choice, which is the
  * other consent checkbox in this folder, so the two cannot drift.
  */
 export const CONSENT_CHECKBOX_CLASS = cn(
-  "relative mt-0.5 h-4 w-4 shrink-0 cursor-pointer appearance-none border-[1.5px] border-rule-ink bg-transparent",
+  "relative mt-0.5 h-4 w-4 shrink-0 cursor-pointer appearance-none border border-rule-ink bg-transparent",
   "checked:border-button-accent-edge checked:bg-button-accent",
   "checked:after:absolute checked:after:top-0 checked:after:left-[3.5px] checked:after:h-2 checked:after:w-1 checked:after:rotate-45 checked:after:border-solid checked:after:border-r-2 checked:after:border-b-2 checked:after:border-ink-on-button-accent checked:after:content-['']",
   "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",

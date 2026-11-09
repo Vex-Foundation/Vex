@@ -88,6 +88,17 @@ describe("CellMeter", () => {
     expect(meter.querySelectorAll("i").length).toBe(8);
     expect(meter.querySelectorAll("i[data-on]").length).toBe(3);
     expect(meter.getAttribute("aria-valuenow")).toBe("3");
+    // VEX Cloud's meter: the last lit cell is the head, and only it.
+    const head = meter.querySelectorAll("i[data-head]");
+    expect(head.length).toBe(1);
+    expect(head[0]).toBe(meter.querySelectorAll("i")[2]);
+  });
+
+  it("marks no head while nothing is lit", () => {
+    render(<CellMeter value={0} max={4} label="Empty" />);
+    const meter = screen.getByRole("meter", { name: "Empty" });
+    expect(meter.querySelectorAll("i[data-on]").length).toBe(0);
+    expect(meter.querySelectorAll("i[data-head]").length).toBe(0);
   });
 
   it("clamps and flags over", () => {

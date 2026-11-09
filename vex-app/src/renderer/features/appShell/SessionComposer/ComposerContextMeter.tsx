@@ -168,7 +168,7 @@ export function ComposerContextMeter({
           role="dialog"
           aria-label="Session context"
           data-vex-area="composer-context-panel"
-          className="absolute bottom-full right-0 z-30 mb-2 flex w-[264px] flex-col gap-2 border-[1.5px] border-rule-ink bg-surface-base p-3"
+          className="absolute bottom-full right-0 z-30 mb-2 flex w-[264px] flex-col gap-2 border border-rule-ink bg-surface-base p-3"
         >
           <p className="text-[13px] leading-5 text-ink-primary">
             Context {percent}% used

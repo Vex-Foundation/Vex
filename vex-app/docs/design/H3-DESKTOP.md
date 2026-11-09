@@ -7,7 +7,7 @@ This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`.
 The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 November 2026. Cloud builds the same design in `Jcaster99/Vex` (`apps/web`). No H3 branch was on that remote on 3 November 2026, so both apps start from the same mockup; wherever this document derives a number the mockup does not print, the number is reconciled with Cloud once Cloud's branch exists.
 
 ## Rules
-- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0, no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the selected nav row's fill.
+- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0 (save the chat bubbles and the avatar circle, section 2.4), no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the chosen row's fill (a chosen row and the row under the pointer in the chats column).
 - Labels are uppercase and tracked; sentences, names and values are in sentence case. Words are written in sentence case in code and uppercased by the label style, so a screen reader reads words, not letters.
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
 - A status is a small square beside a word, and every status has its own drawing (solid, blink, target, cross, frame, dotted frame, hatch), so a colour never stands alone (section 2.2). Gains and losses in trading values take green and red type.
@@ -95,7 +95,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
-| logo | 0, 171 | the mark and "CLOUD" | the mark; on macOS it starts after the traffic lights (section 4.7) |
+| logo | 0, 171 | the mark and "CLOUD" | the mark, 34 x 27 in ink (VEX Cloud's `.hd-home svg`), 24 in from the cell's edge; on macOS it starts after the traffic lights (section 4.7) |
 | sidebar key | 171, 77 | the panel icon | the same key: it folds the chats column to the rail |
 | Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | her mood still closed; open, Cloud's portrait glyph on the open ground, the two crossfading (section 1.6) |
 | Vex key, state | 324, 295 | the state square and word, a timer while live; then HIDE VEX or SHOW VEX and three keycaps | the same, with desktop's state words |
@@ -282,15 +282,18 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 
 | Role | Sheet token and value | sRGB | App captures, measured | Desktop takes |
 |---|---|---|---|---|
-| ground | `--page` oklch(9% 0.012 264); `--panel` oklch(8.5% 0.008 264) | #020205; #010203 | #000002 to #020202 (OKLCH 7 to 8.5%) in every column, no readable hue | oklch(8.5% 0.008 264), #010203 |
+| ground | `--panel` oklch(8.5% 0.008 264) | #010203 | #000002 to #020202 (OKLCH 7 to 8.5%) in every column, no readable hue | oklch(8.5% 0.008 264), #010203: the chat column, its cards' fields, the window's first paint |
+| page | `--page` oklch(9% 0.012 264) | #020205 | | Cloud's built `--vx-page`: the page under the frame (html, body, #root) |
+| rail | none; Cloud's `--vx-rail` oklch(6% 0.006 264) | #010101 | | Cloud's built value: the side columns, the chats column (and its 76 rail) and Vex's column |
 | cell | `--cell` oklch(11% 0.006 264) | #040406 | #050407: the New chat cell, the composer's model cell, the greyed approve key | the sheet value |
 | raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
-| card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: menus, dialogs, the ground under a failure's red (section 5) |
-| plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1) |
-| open ground | none; Cloud's `--vx-cell-open` oklch(16% 0.004 264) | #0C0D0F | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell | Cloud's value: the Vex key's portrait cell while she is open (section 1.6) |
-| raised 2 | none | | #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
-| bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
-| selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
+| card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: the money card, menus, popovers, dialogs and sheets, the connection banner, the ground under a failure's red (section 5) |
+| plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1); the avatar's disc (Cloud's `--vx-avatar`, the same value) |
+| open ground | none; Cloud's `--vx-cell-open` oklch(16% 0.004 264) | #0C0D0F | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell | Cloud's value: the Vex key's portrait cell while she is open (section 1.6), Kimm's open corner key, a selected tab or cell, a pressed key, every wash |
+| bubbles | Cloud's `--vx-bubble` and `--vx-bubble-you`, white at 6% and 13% | #101112 and #222324 over the ground | #0F1112 to #121416 (the greeting); #212325 (the person's message) | Cloud's values: Vex's answer and greeting at 6%, the person's message at 13% |
+| chosen row | Cloud's `--vx-chosen-row-rail` from oklch(22% 0.004 264) | #1A1B1C | a gradient from #181A1C (21.6%) | Cloud's value: from #1A1B1C at the row's left edge to transparent, under a chosen row and the row under the pointer in the chats column |
+| placeholder | Cloud's `--vx-placeholder`, white at 55% | #8D8D8E over the ground | | Cloud's value, 6.3:1 on the field (v99's 40% failed AA) |
+| dimmed | white at 24% (Cloud's chosen rule) | #3E3F3F over the ground | | decoration and disabled marks only, never a word |
 | ink | `--ink` oklch(97% 0.005 264) | #F3F5F9 | glyph peaks up to #FFFFFF | the sheet value |
 | ink 2 | `--ink-2` oklch(80% 0.012 264) | #BABEC6 | "Nothing needs you." and Portfolio's lead line peak at #ABADAE, read as ink 2 | the sheet value |
 | muted | `--muted` oklch(62% 0.02 264) | #808693 | group heads and times peak at #8B8D91 to #9C9E9D, at or a little above the sheet value | the sheet value |
@@ -298,8 +301,8 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | chosen rule | `--rule-chosen` oklch(100% 0 0 / 0.24) | #3E3F3F over the ground | #2F3133 above TOTAL DEBIT; #38373A on keycap borders | the sheet value |
 | blue | `--blue` oklch(45.2% 0.313 264.1) | #0000FF | #0000FF: SEND, Portfolio's LIVE · MAINNET key | the sheet value |
 | blue hover | `--blue-hover` oklch(56% 0.28 264) | #1557FF | not drawn | the sheet value |
-| gain | `--live` oklch(78% 0.13 150) | #76CF8A | Portfolio's +$182.40 peaks at #88D09E | the sheet value, as type |
-| loss | `--err` oklch(74% 0.17 27) | #FF7A6E | no loss is drawn as type | the sheet value, as type |
+| gain | Cloud's built `--vx-pnl-up` (its `--vx-live-bubble-text`) oklch(80% 0.12 150) | #83D494 | Portfolio's +$182.40 peaks at #88D09E | Cloud's built value, as type (the sheet's `--live`, #76CF8A, retired) |
+| loss | Cloud's built `--vx-pnl-down` (its `--vx-err-bubble-text`) oklch(76% 0.15 27) | #FF887C | no loss is drawn as type | Cloud's built value, as type (the sheet's `--err`, #FF7A6E, retired) |
 | status green | none | | #1B813F (a square), #1D7E3F (the FILLED stamp): about oklch(52% 0.13 150) | #1D7E3F |
 | status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226, the turn error row's square (section 2.2) |
 | status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | replaced by the hud, below |
@@ -308,11 +311,11 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 
 Where the app screens differ from the sheet:
 1. **The ground is closer to black.** It matches `--panel` (8.5%) better than `--page` (9%) and shows no blue tint at WebP's resolution; the two differ by one to three sRGB steps. Desktop's ground is #010203. The window's `backgroundColor` (`src/main/windows/main-window.ts`, today `#1b1412`) and the Windows caption overlay colour (`src/main/windows/chrome-options.ts`, today `#1B1412`) take the same value, since the theme-matrix test ties them to the ground (S1-06).
-2. **There are raised steps above `--raised`.** The bubbles, the selected tab and the open fold cell use fills between 15 and 26% that the sheet has no token for. Desktop adds raised 2 and bubble as measured.
+2. **There are raised steps above `--raised`.** The bubbles, the selected tab and the open fold cell use fills between 15 and 26% that the sheet has no token for. Desktop first added raised 2 (#101214) and a solid bubble (#212325) as measured; Cloud's built tokens (W3 to W5) settled them, and both retired (2026-11-09): a selected tab, a pressed key and the washes take the open ground, menus and popovers the card, the bubbles Cloud's white at 6% and 13%, the avatar's disc the plate.
 3. **Status fills are darker than `--live` and `--err`.** The sheet's green and red are type colours, which the app uses for gains and losses; the status squares and the FILLED stamp use a darker green and red.
 4. **Two greys mark running in the captures.** Cloud's built status sheet (`apps/web/src/styles/status.css`, 2026-11-05) settles it: a running square is the hud (#EBEBEB) and blinks (section 2.2). Cloud's built values win over the mockup where they differ, so the hud and the refusal ink are primitives of their own (`--color-h3-hud`, `--color-h3-err-text`); the refusal ink has the loss colour's hex but never reads a trading primitive.
 
-Open: the exact values of every "none" row and of the ground. Settled by the mockup source from the designer; the measured values stand until then.
+Cloud's built tokens (`apps/web/src/styles.css` on `rebranding-v99-ui`, W3 to W5) settle the page, the rail, the bubbles, the chosen row, the placeholder, the gain and the loss; they win where they differ from the sheet or the captures. Open: the status green and red, still as measured.
 
 ### 2.2 Status
 A status is a square beside a word in caps, and **every status has its own drawing**, so a colour never stands alone (VEX Cloud's PD-03 and `contracts/status.md`; the square is Cloud's StateDot, desktop's `StateSquare`, `.vex-sq` in `ui-primitives/marks.css`). The square is 8px, 6px in a row, and every frame is 1px. The word is ink; a failure's word is the refusal ink.
@@ -347,7 +350,9 @@ Contrast on the ground (#010203), computed from the values above:
 | Pair | Ratio |
 |---|---|
 | ink, ink 2, muted on the ground | 19.0, 11.1, 5.7 |
-| gain, loss on the ground | 10.9, 8.2 |
+| gain, loss on the ground | 11.7, 9.0 |
+| ink in Vex's bubble, in the person's | 17.3, 14.4 |
+| the placeholder on the field | 6.3 |
 | white on blue, on blue hover | 8.6, 5.5 |
 | white on status green, on status red | 5.1, 5.9 |
 | status green, status red squares on the ground | 4.1, 3.5 (marks beside a word: above the 3:1 for graphics) |
@@ -356,52 +361,73 @@ Contrast on the ground (#010203), computed from the values above:
 
 ### 2.3 Type
 - **Families.** Be Vietnam Pro, 400 and 600, for every word. Roboto Mono 400 with tabular figures for figures, balances, addresses, the money card's field labels and the receipt's labels. Both are bundled as local woff2 files with their licences (S1-01, S1-02). Instrument Sans and Instrument Serif retire. Studio's approved plate (section 4.9) moves the terminal onto Roboto Mono 13/20, with a bundled 700 for its bold text (2026-11-04); code elsewhere keeps `--font-code` (JetBrains Mono) until its own change.
-- **Labels.** Caps with 0.08em tracking (the sheet's value; the measured widths were not checked against the font files). Labels are sans, except the money card's and the receipt's field labels, which are mono caps. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
+- **Labels.** Caps with 0.08em tracking (`--tracking-label`), at VEX Cloud's sizes: the caps label 11 (the mockup's `.cap`), the section head 12 at 600 (`.head`), a key 13 (`.key`). Desktop first set each label 1px above these, which is what made the left column measure about 8% wide; the tracking was right. Cloud tracks a few roles apart, and so does desktop: field and check rows 0.06em (`--tracking-field`), times and counts 0.04em (`--tracking-figure`), the trace's kind 0.1em (`--tracking-kind`; desktop's trace has no kind label yet). Labels are sans, except the money card's and the receipt's field labels, which are mono caps 12 at the field row's 0.06em. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
 - **Weights,** read by eye: 600 for section heads (NEEDS YOU, CHATS, AI PERMISSION, RECENT ACTIVITY, Portfolio's EQUITY, ALLOCATION and OPEN POSITIONS), the tagline and Portfolio's equity figure; 400 for everything else.
 - **Links** are ink with an underline ("Change in Settings"), never blue.
 
-Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70em and Roboto Mono's as 0.711em. One image pixel of cap height is 1.3px of size at this scale, so each size is plus or minus 1. The sheet's own labels run 12 to 13; the app's labels measure 11 to 14.
+The sizes are VEX Cloud's (2026-11-05), read from its mockup source, `v99-ui-rebrand/mockups/h3-merged/css/app.css` on Cloud's `rebranding-v99-ui` branch; the line given is that file's. They replace the cap-height measures this table first held (each was plus or minus 1, and every label read 1px large). Where a caps label is listed, it is the label register's (section 2.3, Labels).
 
-| Use | Face, size, weight | Captures |
+| Use | Face, size, weight | app.css |
 |---|---|---|
-| Portfolio's equity figure | sans 33, 600 | portfolio |
-| Portfolio's tile figures | sans 24, 400; gains in the gain colour | portfolio |
-| the card's sentence; the Needs you row's decision; the tagline | sans 20; the tagline 600 in caps, its second clause muted | approval, welcome |
-| the greeting; the reason field | sans 18, 400 | welcome, approval |
-| suggestion titles; the composer field; the person's message; the permission sentence | sans 16 to 17, 400 | welcome, approval |
-| rows: chat rows, "Search chats", the chat title, "Nothing needs you.", activity rows, the card's consequence line, "You"; REVIEW and the page tabs; nav labels | sans 15 (nav labels 14 to 15), caps where they are keys or labels | welcome, approval, portfolio |
-| MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
-| the Vex key's state word (13, Cloud's CSS); CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
-| the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 13, caps | approval |
-| HIDE VEX or SHOW VEX in the Vex key (12, Cloud's CSS); group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY | sans 11 to 12, caps (times are figures) | welcome |
-| keycap letters | sans 10 at 0.04em, caps, muted (Cloud's CSS) | welcome |
-| a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
-| figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
+| Portfolio's wallet total (the hero tile) | sans 24 / 1.1, 600, -0.01em | 757 |
+| Portfolio's other tile figures | sans 18 / 1.1, 400, -0.01em; gains in the gain colour | 756 |
+| Portfolio's tile labels; its table heads | sans 11, caps, muted | 756 (`.fig dt`, `.cap`), 808 |
+| Portfolio's tile lines | sans 12, muted, 8 under the figure | 758 |
+| the page tabs (ALL WALLETS) | sans 13, caps, ink 2 | 731 |
+| the person's message | sans 16 / 1.45 in their bubble, 12 by 16, at most 74% | 291 |
+| Vex's answer and the greeting | sans 16 / 1.45, -0.005em, in her bubble, 12 by 16, at most 82%; in the answer a code block or a table leaves the bubble (bubble runs, section 2.4) | 292 |
+| the welcome's notes | sans 11 / 1.55 caps, muted, 10 after a 6px hud square, 6 apart | 308, 309 |
+| a starter's title; its line | sans 15 / 1.3 ink; sans 13 / 1.4 muted, 6 under it | 319, 320 |
+| the chat's title; the line under it | sans 14 / 1.3 ink; sans 11 caps, muted | 196, 156 |
+| NEW CHAT; the nav | sans 13 caps, ink 2 (ink when chosen or under the pointer) | 248, 255 |
+| "Search chats" | sans 14 | 252 |
+| CHATS; a section head (NEEDS YOU, RECENT ACTIVITY, AI PERMISSION, Portfolio's heads) | sans 12, 600, caps, ink | 49 |
+| a group head (TODAY) | sans 11 caps, muted | 261 (`.cap`) |
+| a chat row | sans 14 / 1.3, ink 2 (ink when open) | 262 |
+| a row's time; a count | sans 11 (a count 13), 0.04em, tabular | 266, 601 |
+| a row's tag (RUNNING) | sans 11 caps, ink, 6 after a 6px square | 265 |
+| the account row | sans 14 / 1.25 ink over sans 12 / 1.3 muted | 273, 274 |
+| the Needs you count | sans 13, 0.04em, ink | 601 |
+| a decision in the console; its line | sans 15 / 1.3 ink; sans 13 / 1.3 muted (14 under 1440, section 1.5) | 607, 608 |
+| REVIEW, a key | sans 13 caps | 53, 609 |
+| the Vex key's state word; HIDE VEX or SHOW VEX in it | sans 13 caps; sans 12 caps, ink | 220, 225 |
+| keycap letters in the Vex key | sans 10 at 0.04em, caps, muted, 18 high | 228 |
+| "Nothing needs you." | sans 15, muted | 613 |
+| the missions row | sans 14 / 1.3, ink 2 | 614 |
+| the permission sentence; where it comes from | sans 14 / 1.45 ink; sans 13 | 630, 631 |
+| an activity row; its status | sans 14 / 1.3 ink 2; sans 11 caps, 8 after the square | 637, 638 |
+| OPEN ACTIVITY | sans 11 caps, ink 2 | 639 (`.cap`) |
+| the status strip | sans 11 caps, 32 high with its rule; the model's name sans 12 ink | 365, 370 |
+| the status label in a row | sans 11 caps, 6 after the 6px square | 265 |
+| the trace's head (THOUGHT FOR); its figure | sans 11 caps; 0.04em | 48, 329 |
+| the receipt's head (its kind, time and stamp) | sans 11 caps, the time at 0.04em | 353 |
+| the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 12, caps, 0.06em | 115 |
+| figures in rows and tables, balances, the amount field | mono 12 to 13, tabular | 808 to 812 |
 
-**As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
-- the Needs you row's decision sentence: sans 16, not 20 (14 under 1440, Cloud's width rule); the bottom row's tagline: Cloud's `--moment-size`, clamp(14px, 1.1vw, 22px) (14 at 1280, 16 at 1440, 21 at 1920), 600 caps at 0.01em, line height 1.15, not 20; the narration in its place while Vex works, sans 14 times the wide zoom in ink 2, sentence case, line height 1.4 (Cloud's two registers, `.moment`);
-- the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
-- "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
-- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
+**As built, beside the table:**
+- the bottom row's tagline: Cloud's `--moment-size`, clamp(14px, 1.1vw, 22px) (14 at 1280, 16 at 1440, 21 at 1920), 600 caps at 0.01em, line height 1.15 (app.css 651); the narration in its place while Vex works, sans 14 times the wide zoom in ink 2, sentence case, line height 1.4 (Cloud's two registers, `.moment`, app.css 650);
+- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself, so the Lighter ticket and the receipt take it too); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
 - the money card at a short window, Cloud's density rule (DG-0, H3 tokens.css: 1024 wide and up, 820 tall or less): the strip 4 shorter (2 over and 2 under its line), the head 10 under the consequence rather than 14, and the docked reason field 40 high rather than 56; the field rows stay 34 and the decision row 72. At 1280 x 720 this keeps the swap card's top under the header's rule, where the toast proof expects it.
 
-Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
+Settled by the mockup source (2026-11-05): the labels' 8% came from their sizes, 1px over Cloud's, not from the tracking, which stays 0.08em.
 
 ### 2.4 Cells, rules and keys
-- Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
+- Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps. **Every line is 1px** (VEX Cloud's SK STYLE 2.3): R3's heavier 1.5px ink and blue frames (popovers, callouts, a chosen card, the composer's frame while an approval waits, the selected board tile, tab underlines, the swatch outlines) are 1px now, the heavier ones told apart by the ink rather than the width; the padding that gave back their half pixel went with them. `glass-tokens.test.ts` refuses a 1.5px border or outline in any sheet or utility. The hatch strokes (1.5px every 4px) are a pattern, not a line, and stay.
+- **Radius** is 0 everywhere (base.css's shape law), with VEX Cloud's two exceptions (STYLE 5.5) and no others: the chat bubbles, 18 round with the corner next to the speaker sharp at 4 (Vex's answer and the greeting 4 18 18 18, from the left; the person's message 18 4 18 18, from the right; `--vex-radius-bubble-vex` and `-you`), and the avatar circle, which desktop draws as SVG geometry and so needs no radius. `glass-tokens.test.ts` holds the exceptions to exactly these.
+- **Her answer in bubble runs** (VEX Cloud's G18, `styles/thread.css`, built in W4): a code block or a table never sits in her bubble. The answer's prose is a grid, `fit-content(82%)` then the rest; consecutive prose parts stand in the first column on the bubble's fill and read as one bubble as wide as its widest part, at most 82%; a code block or a table spans the column's full width as a square cell, 12 above and below, and ends the bubble; the prose after it opens a new one. A run's first part takes the top corners (4 by her, 18 away), its last part the bottom ones (18). The hooks are `.vex-code-block` and `.vex-md-table` (chat-transcript.css, base.css).
 - A cell's text sits 24 in from its left edge (section 1.3).
-- **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
+- **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover; on SEND (and STOP, the same cell) and the docked approve key it rises from the key's foot over 420ms (`--vex-duration-key-fill`), Cloud's `--vx-blue-fill-hover` layer, never a swap of the fill. A look only: when a key acts is unchanged. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
 - **Her corner key** is an opaque cell on the header's ground without its alpha (#010102), no blur, 56 high (section 1.5).
 - **Keycaps:** VEX Cloud's keycaps beside a label (the H3 mockup's `.vk-keys kbd`, the kit's plain variant): 18 high and at least 18 wide, 5 in from each side, a 1px chosen-rule border, caps letters 10 at 0.04em, muted, 3 apart (the captures measured 19 high with letters 11 to 12; Cloud's CSS is the source). The first-close hint draws them as Cloud's tooltip keycaps: 22 high, 11px at 0.04em in ink-2, 6 in from each side, 3 apart, in title case ("Ctrl", "Shift", "B"; the Mac's glyphs ⇧, ⌘, B).
-- **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
+- **Focus:** a 2px white ring (`--vex-alias-focus`, white; Cloud's `--vx-focus-ring-color`) drawn 2px inside a cell (`outline-offset: -2px`: keys, tabs, segments, rows; "the 2px white ring inside the cell", `h3-merged__plate-controls`). A link, a check box and a switch keep it outside, where an inset ring would cover what it marks.
 - **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.
 - **Tick box** (the card's middle cell; not on desktop, section 4.3): 18 x 18, a 1px light border.
 - **The receipt's stamp:** a status green fill with white caps (FILLED), about 60 x 24 on the phone capture.
 
-These replace R3's tokens and its guard contracts: the 23 primitives and both themes in `theme-matrix.test.ts`, the sentence-case register in `micro-label-register.test.ts`, the mono-caps ban in `shell-design-guard.test.ts` and status by fill in `status-contrast.test.ts`. Each is rewritten as an H3 contract in the slice that changes what it guards.
+These replace R3's tokens and its guard contracts: the 24 primitives and the one room in `theme-matrix.test.ts`, the sentence-case register in `micro-label-register.test.ts`, the mono-caps ban in `shell-design-guard.test.ts` and status by fill in `status-contrast.test.ts`. Each is rewritten as an H3 contract in the slice that changes what it guards.
 
 ---
 
@@ -530,7 +556,7 @@ Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/
 1. Strategies, everywhere: the console's strategies row and strategy rows, Strategies in the nav, the page strip's strategies cell, allocation by strategy, and the word "strategy" in any line. F11 has not started, and even F11 is paper only.
 2. The network menu, and Paper against Live. There is no testnet and no paper mode; a static MAINNET and REAL FUNDS is true.
 3. PAUSE ALL. Desktop has per-run pause and stop, and Lock Vex, which stops signing, not workers.
-4. DAILY BUDGET. There is no daily budget; the status strip's CONTEXT meter takes its cell.
+4. DAILY BUDGET. There is no daily budget; the status strip's CONTEXT meter takes its cell. It is drawn as Cloud's meter (`.vx-cmp-bars`, its `--vx-meter-off`, `-on` and `-head`): ten cells 6 x 12, 2 apart, an unlit cell white at 8%, a lit one 39%, the last lit one 60%; past the engine's critical band the lit cells turn ink. The Lighter account's margin meter (`lit-margin-usage-bar`) is the same drawing, its lit cells ink past 80%.
 5. The card's limits line ("up to 10,000 USD per order, 50,000 USD a day"). F04 has not started.
 6. "Change in Settings" under AI PERMISSION. A chat's permission is set when it is created and locked.
 7. The composer's image key. Attachments are not supported.

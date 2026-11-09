@@ -46,7 +46,7 @@ A fresh agent should be able to rebuild these surfaces from this file.
 Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
 - Head: the header's logo cell and sidebar key (`AgentSidebarHeader.tsx`,
-  H3-DESKTOP.md section 1.3): the vx mark alone, 28 high (`SidebarHomeSigil`,
+  H3-DESKTOP.md section 1.3): the vx mark alone, 34 x 27 (`SidebarHomeSigil`,
   "Back to welcome" in a session), set 92 in on macOS after the traffic lights
   and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
 - New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to
@@ -75,7 +75,7 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 - Update slot `vex-upd-slot` (`updates/update-card-slot.ts`): `UpdateCard`
   portals into it above the account row; with no slot it floats at the lower left.
 - Account cell (`SidebarProfile.tsx`, the bottom row's first cell): the person's
-  avatar disc (the transcript's drawing, raised 2 on the chosen rule), the name
+  avatar disc (the transcript's drawing, the avatar ground on the chosen rule), the name
   or "You", then "Account and settings" (or the runtime's trouble as a sentence),
   and the up chevron. Its upward menu, its foot on the cell's top rule:
   Personalize (which asks for a name while there is none), Memory (when

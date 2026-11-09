@@ -17,7 +17,7 @@
 
 /* ---- the H3 page frame (every page) ----------------------------------
  * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57
- * high across the page, the tabs at the left (the selected one on raised 2,
+ * high across the page, the tabs at the left (the selected one on the open ground,
  * the contract's selected tab fill) and "Updated {time}" with the page's
  * keys at the right; under its rule the page body, 24 in from each edge and
  * as wide as the column, not R3's centred reading column.
@@ -46,8 +46,8 @@
   font-family: var(--font-sans);
 }
 /* The tab cells: each bounded by the rule on both sides (two neighbours
- * share one), 15 caps tracked 0.08em (section 2.3: "REVIEW and the page
- * tabs ... sans 15"), ink 2 at rest, ink on raised 2 when selected. */
+ * share one), a key's caps 13 tracked 0.08em (VEX Cloud's `.pg-tabs a`),
+ * ink 2 at rest, ink on the open ground when selected. */
 .vex-pg-tabs {
   display: flex;
   min-width: 0;
@@ -67,7 +67,7 @@
   border-left: 1px solid var(--vex-alias-rule);
   background: transparent;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -110,10 +110,10 @@
   }
 }
 /* A card head's tabs (the equity chart's range): the same cells at the
- * head's own height and the 13 label step. */
+ * head's own height and the 11 caps step (VEX Cloud's `.range button`). */
 .vex-pg-tabs[data-size="head"] .vex-pg-tab {
-  padding: 0 16px;
-  font-size: 13px;
+  padding: 0 14px;
+  font-size: 11px;
 }
 .vex-pg-bar__end {
   display: flex;
@@ -187,8 +187,9 @@
  * hatch and MAINNET (PD-05) and the lead (15, "Real money on mainnet." in
  * ink, the rest in ink 2), then the tiles: square cells told apart by 1px rules (the grid's
  * 1px gaps over the rule colour, so two cells share one rule and the frame is
- * one rule all round), each a caps label (13, muted), the figure (sans, 24 /
- * 400; the wallet total 33 / 600) and a muted line (14). As many columns as
+ * one rule all round), each a caps label (11, muted; VEX Cloud's `.fig
+ * dt`), the figure (sans 18 / 1.1 at -0.01em, 400; the wallet total 24 /
+ * 600, VEX Cloud's `.fig dd` and `.fig.is-hero dd`) and a muted line (12). As many columns as
  * tiles, up to four in a row where the page is wide; two in a row when four
  * would not fit; one under 480. */
 
@@ -240,11 +241,11 @@
 }
 .vex-pf-tile {
   min-width: 0;
-  padding: 18px 20px 20px;
+  padding: 16px 16px 18px;
   background: var(--vex-alias-bg-base);
 }
 .vex-pf-tile__l {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -253,18 +254,19 @@
 .vex-pf-tile__fig {
   margin: 10px 0 0;
   font-family: var(--font-sans);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 400;
-  line-height: 1.2;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--vex-alias-label-primary);
 }
-/* The wallet total: the contract's equity figure, 33 / 600. */
+/* The wallet total: the equity figure, 24 / 600 (VEX Cloud's hero tile). */
 .vex-pf-tile[data-vex-tile="total"] .vex-pf-tile__fig {
-  font-size: 33px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.01em;
@@ -276,22 +278,23 @@
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__u {
-  font-size: 14px;
+  font-size: 12px;
+  letter-spacing: 0;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__sub {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: 8px 0 0;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__sub .vex-num {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 /* ---- the wallet total chart (`EquityChart`) ---------------------------
  * H3's EQUITY card (sections 1.9 and 4.1 item 12): one framed cell; a head
- * 48 high with the label at the left (13 caps, 600) and the range keys as
+ * 48 high with the label at the left (12 caps, 600, VEX Cloud's `.head`) and the range keys as
  * cells at the right, the selected one underlined in ink as H3 draws 30
  * DAYS; then the plot on a dotted ground, the values at the left (mono 12,
  * muted) and the dates under it. The line is ink 1.5; the area under it a
@@ -313,7 +316,7 @@
   align-items: center;
   margin: 0;
   padding: 0 20px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -393,7 +396,7 @@
   transform: translate(-50%, -50%);
 }
 .vex-pf-chart__mark[data-vex-mark="partial"] {
-  border: 1.5px solid var(--vex-alias-label-secondary);
+  border: 1px solid var(--vex-alias-label-secondary);
   background: var(--vex-alias-bg-base);
 }
 .vex-pf-chart__x {
@@ -432,7 +435,7 @@
   height: 7px;
   flex: none;
   box-sizing: border-box;
-  border: 1.5px solid var(--vex-alias-label-secondary);
+  border: 1px solid var(--vex-alias-label-secondary);
 }
 
 .vex-pf-top__empty {
@@ -590,8 +593,8 @@
   margin: 0 0 4px;
 }
 /* The section head, H3's label (section 2.3: EQUITY, ALLOCATION, OPEN
- * POSITIONS): the name in 13 caps tracked 0.08em, 600, ink; the note after it
- * stays a sentence, 13 muted. */
+ * POSITIONS): the name in 12 caps tracked 0.08em, 600, ink (VEX Cloud's
+ * `.head`); the note after it stays a sentence, 13 muted. */
 .vex-pf-sec__t {
   display: inline-flex;
   min-width: 0;
@@ -604,6 +607,7 @@
   line-height: 1.6;
 }
 .vex-pf-sec__name {
+  font-size: 12px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -639,7 +643,7 @@
  * count): the section head's label, with the count a muted figure. */
 .vex-pf-subh {
   margin: 20px 0 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -684,7 +688,7 @@
 .vex-pf-t th {
   padding: 10px 0;
   border-bottom: 1px solid var(--vex-alias-rule);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-align: left;
@@ -838,7 +842,7 @@
 }
 .vex-pf-kv4 dt {
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -953,7 +957,7 @@
   border-radius: 0;
   background: none;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -1034,7 +1038,7 @@
   z-index: 1;
 }
 .vex-ov[data-frame="h3"] .vex-scan-filter__name {
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -1052,7 +1056,7 @@
 }
 .vex-ov[data-frame="h3"] .vex-scan-day {
   padding: 22px 0 8px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -1105,7 +1109,7 @@
   line-height: 18px;
 }
 .vex-ov[data-frame="h3"] .vex-scan-detail > dt {
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -1171,7 +1175,7 @@
 }
 .vex-mk__h {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -1206,7 +1210,7 @@
 }
 .vex-mk__row--head {
   min-height: 40px;
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);

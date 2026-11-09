@@ -16,8 +16,8 @@
  *
  * Each row is an H3 cell on the 40 pitch, edge to edge: the icon in muted, its
  * word in caps (14, tracked, ink) at 58. The selected row takes H3's one row
- * gradient, `--vex-alias-row-selected` (#181A1C at the column's left edge,
- * fading to the ground at its right), and its icon turns ink. The block
+ * gradient, `--vex-alias-row-selected` (#1A1B1C at the row's left edge,
+ * fading to transparent at its right), and its icon turns ink. The block
  * stands between two rules, the one under Search chats and its own. On the
  * rail the rows are keys, icon only, with the name as the tooltip and the
  * accessible name.

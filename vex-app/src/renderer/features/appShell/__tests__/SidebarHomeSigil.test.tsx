@@ -65,14 +65,15 @@ describe("SidebarHomeSigil", () => {
     ).toBe("20");
   });
 
-  it("stands 28 high in the header's logo cell, open and over the rail alike", () => {
-    // docs/design/H3-DESKTOP.md section 1.3: the mark measured about 34 x 28
-    // in the logo cell; the rail's cell is the same header cell, 76 wide.
+  it("stands 34 x 27 in the header's logo cell, open and over the rail alike", () => {
+    // docs/design/H3-DESKTOP.md section 1.3: VEX Cloud's header mark
+    // (`.hd-home svg`, 34 x 27); the rail's cell is the same header cell.
     const { container, rerender } = render(<SidebarHomeSigil sidebarOpen cell />);
     const height = (): string | null | undefined =>
       container.querySelector("[data-vex-home-mark] svg")?.getAttribute("height");
-    expect(height()).toBe("28");
+    expect(height()).toBe("27");
+    expect(container.querySelector("[data-vex-home-mark] svg")?.getAttribute("width")).toBe("34");
     rerender(<SidebarHomeSigil sidebarOpen={false} cell />);
-    expect(height()).toBe("28");
+    expect(height()).toBe("27");
   });
 });

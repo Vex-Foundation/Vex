@@ -624,7 +624,7 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 .vex-pre-primary:focus-visible,
 .vex-pre-danger:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -4px;
+  outline-offset: -2px;
 }
 @media (max-width: 1279px) {
   .vex-pre-key {
@@ -708,7 +708,7 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 }
 .vex-wzp__actions > [data-vex-button]:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -4px;
+  outline-offset: -2px;
 }
 @media (max-width: 1279px) {
   .vex-wzp__actions > [data-vex-button] {
@@ -765,7 +765,7 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
   letter-spacing: 0.18em;
 }
 .vex-pre .vex-password > input::placeholder {
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-placeholder);
   font-family: var(--font-sans);
   letter-spacing: normal;
 }
@@ -1214,7 +1214,7 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 }
 .vex-unl__go:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -4px;
+  outline-offset: -2px;
 }
 /* "Set up a new vault?": its words in the work column, its keys in its row. */
 .vex-unl__panel-body {

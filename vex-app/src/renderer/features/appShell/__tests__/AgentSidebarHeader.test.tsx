@@ -61,12 +61,13 @@ describe("AgentSidebarHeader (the head row)", () => {
     expect(cells).toEqual(["logo", "sidebar-key"]);
   });
 
-  it("sets the mark alone at the logo cell's 28, and the key as the whole cell", () => {
+  it("sets the mark alone at the logo cell's 34 x 27, and the key as the whole cell", () => {
     // docs/design/H3-DESKTOP.md section 1.3 and Appendix A.1: the mark alone,
     // where H3 writes "CLOUD" beside it.
     const { container } = render(<AgentSidebarHeader onCollapse={vi.fn()} />);
     const logo = container.querySelector("[data-vex-head-cell='logo']");
-    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("28");
+    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("27");
+    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("width")).toBe("34");
     expect(logo?.textContent).toBe("");
     const key = container.querySelector("[data-vex-head-cell='sidebar-key'] button");
     expect(key?.classList.contains("vex-ls-hkey")).toBe(true);
@@ -77,7 +78,7 @@ describe("AgentSidebarHeader (the head row)", () => {
     const head = container.querySelector("[data-vex-head-cell='chats']");
     expect(head?.hasAttribute("data-rail")).toBe(true);
     expect(head?.classList.contains("vex-drag")).toBe(true);
-    expect(head?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("28");
+    expect(head?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("27");
     expect(screen.queryByRole("button", { name: /Collapse/i })).toBeNull();
   });
 

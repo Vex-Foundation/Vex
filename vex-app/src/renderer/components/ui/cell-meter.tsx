@@ -1,7 +1,8 @@
 /**
  * CellMeter: a row of cells, `value` of `max` filled (the composer context
- * meter, a budget, a limit). Filled cells are the blue; past the limit
- * (`over`) they turn ink, never red. Exposes `role="meter"` so the reading is
+ * meter, a budget, a limit), VEX Cloud's meter: unlit cells white at 8%, lit
+ * ones 39%, the last lit one (`data-head`) 60%; past the limit (`over`) the
+ * lit cells turn ink, never red. Exposes `role="meter"` so the reading is
  * not lost with the drawing. Styles: `ui-primitives/marks.css`.
  */
 
@@ -40,7 +41,11 @@ export function CellMeter({
       {...rest}
     >
       {Array.from({ length: max }, (_, index) => (
-        <i key={index} data-on={index < filled ? "" : undefined} />
+        <i
+          key={index}
+          data-on={index < filled ? "" : undefined}
+          data-head={index === filled - 1 ? "" : undefined}
+        />
       ))}
     </span>
   );

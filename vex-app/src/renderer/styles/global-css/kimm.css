@@ -20,7 +20,7 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-kimm-key[data-kimm-key="open"] {
-  background: var(--vex-alias-bg-overlay);
+  background: var(--vex-alias-cell-open);
 }
 .vex-kimm-key__sheet {
   position: absolute;

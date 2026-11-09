@@ -298,9 +298,10 @@ describe("composer capsule - chrome", () => {
     expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
     // Its words truncate before they push a neighbour out.
     expect(words.className).toContain("truncate");
-    // The ink frame is drawn inside the composer's box, so nothing moves.
+    // The ink frame is drawn inside the composer's box, so nothing moves;
+    // 1px, as every rule is (H3-DESKTOP.md section 2.4).
     expect(CONSOLE_CSS).toMatch(
-      /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1\.5px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1\.5px;/,
+      /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1px;/,
     );
   });
 });
@@ -379,8 +380,17 @@ describe("composer capsule - send cell", () => {
     expect(CONSOLE_CSS).toMatch(
       /\.vex-composer-send,\s*\.vex-composer-stop \{[^}]*background-color: var\(--vex-alias-button-accent-fill\);[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
+    // The blue hover rises from the key's foot (VEX Cloud's
+    // --vx-blue-fill-hover): a layer scaled up from 0, never a swap of the
+    // key's own fill.
     expect(CONSOLE_CSS).toMatch(
-      /:hover:not\(:disabled\) \{[^}]*background-color: var\(--vex-alias-button-accent-hover\);/,
+      /\.vex-composer-send::before,\s*\.vex-composer-stop::before \{[^}]*background: var\(--vex-alias-button-accent-hover\);[^}]*transform: scaleY\(0\);[^}]*transform-origin: bottom;[^}]*transition: transform var\(--vex-duration-key-fill\)/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:hover:not\(:disabled\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
+    );
+    expect(CONSOLE_CSS).not.toMatch(
+      /\.vex-composer-send:hover:not\(:disabled\),\s*\.vex-composer-stop:hover:not\(:disabled\) \{[^}]*background-color/,
     );
     // EC-04: an empty draft holds SEND. The held look is the cell fill with a
     // muted word, never the blue: a blue key that does nothing is a trust

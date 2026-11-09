@@ -119,9 +119,9 @@ function turnSeams(turnHead: boolean, working: boolean): TurnSeams {
  * Drawn as ONE SVG, as `VxToken` draws its disc, so the disc is a circle while
  * every box keeps radius 0 (base.css's shape law). Desktop has no profile
  * picture, so the glyph is the only honest face: the same person for every
- * message, never initials or a stand-in portrait. The disc's measured fill
- * (#151718) has no token of its own; `.vex-you__disc` paints the nearest
- * raised step. Decorative: the caption's sr-only "You" names the speaker.
+ * message, never initials or a stand-in portrait. The disc's fill is Cloud's
+ * avatar ground (--vx-avatar, #151618, `--vex-alias-avatar`). Decorative:
+ * the caption's sr-only "You" names the speaker.
  */
 function YouAvatar(): JSX.Element {
   return (
@@ -209,15 +209,16 @@ function AssistantActionsTail({
  *
  * TYPOGRAPHY LAW (docs/design/H3-DESKTOP.md section 2.3): every word is Be
  * Vietnam Pro, 400 with 600 for emphasis and heads, in ink; figures inside
- * code and tables keep their own faces. Vex's answer is set at 16 / 1.6 with
- * 12 between paragraphs, a step under the person's 17 in the bubble, the
- * reading size H3 gives a message. The face is declared on `.vex-chat-prose`
- * (type.css) and the turn's metric on `.vex-reply .vex-chat-prose`
- * (chat-transcript.css); this wrapper only owns the tone and wrapping.
+ * code and tables keep their own faces. Vex's answer is set at 16 / 1.45
+ * with 12 between paragraphs in her bubble, the person's own reading size
+ * (VEX Cloud's `.t-vex p`). The face is declared on `.vex-chat-prose`
+ * (type.css), the turn's metric on `.vex-reply .vex-chat-prose` and the
+ * bubble on this wrapper, `.vex-answer` (chat-transcript.css); the wrapper
+ * only owns the tone and wrapping here.
  */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   return (
-    <div className="break-words text-ink-primary">
+    <div className="vex-answer break-words text-ink-primary">
       <MarkdownContent text={content} />
     </div>
   );

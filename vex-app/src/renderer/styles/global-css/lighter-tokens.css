@@ -235,7 +235,7 @@
 .lit-live-status[data-status="unavailable"] i,
 .lit-live-dot[data-status="unavailable"],
 .lit-chart-connection[data-status="unavailable"] i {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background:
     linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
     linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
@@ -244,6 +244,6 @@
 .lit-live-status[data-status="stopped"] i,
 .lit-live-dot[data-status="stopped"],
 .lit-chart-connection[data-status="stopped"] i {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background: transparent;
 }

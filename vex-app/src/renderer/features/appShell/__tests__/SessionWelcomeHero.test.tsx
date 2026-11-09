@@ -184,12 +184,12 @@ describe("SessionWelcomeHero - the greeting bubble", () => {
     expect(heading.getAttribute("title")).toContain("Self-custodial");
   });
 
-  it("is a bubble: sans 18 in ink on the raised 2 fill, square, set from the left", () => {
+  it("is Vex's bubble: sans 16 in ink on her bubble (white at 6%), set from the left", () => {
     const rule = cssRule(".vex-welcome__greeting");
-    expect(rule).toMatch(/font-size:\s*18px;/);
+    expect(rule).toMatch(/font-size:\s*16px;/);
     expect(rule).toMatch(/font-weight:\s*400;/);
     expect(rule).toMatch(/font-family:\s*var\(--font-sans\);/);
-    expect(rule).toMatch(/background:\s*var\(--vex-alias-bg-overlay\);/);
+    expect(rule).toMatch(/background:\s*var\(--vex-alias-bubble-vex\);/);
     expect(rule).toMatch(/padding:\s*12px 16px;/);
     expect(rule).not.toMatch(/text-align:\s*center/);
     expect(rule).not.toMatch(/border-radius/);
@@ -201,7 +201,7 @@ describe("SessionWelcomeHero - the greeting bubble", () => {
       "utf8",
     );
     expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
-    expect(tokens).toContain("--vex-alias-bg-overlay: var(--color-h3-raised-2);");
+    expect(tokens).toContain("--vex-alias-bubble-vex: rgba(255, 255, 255, 0.06);");
   });
 
   it("stands at the column's top, 24 in and 28 under the header, the composer at the foot", () => {
@@ -236,17 +236,18 @@ describe("SessionWelcomeHero - the notes", () => {
     }
   });
 
-  it("are written in sentence case and set in tracked caps, each behind a small ink square", () => {
+  it("are written in sentence case and set in tracked caps, each behind a small hud square", () => {
     for (const note of WELCOME_NOTES) expect(note).not.toBe(note.toUpperCase());
     const line = cssRule(".vex-welcome__note");
     expect(line).toMatch(/text-transform:\s*uppercase;/);
     expect(line).toMatch(/letter-spacing:\s*var\(--tracking-label\);/);
-    expect(line).toMatch(/font-size:\s*12px;/);
+    expect(line).toMatch(/font-size:\s*11px;/);
     expect(line).toMatch(/color:\s*var\(--vex-alias-label-tertiary\);/);
     const square = cssRule(".vex-welcome__note::before");
     expect(square).toMatch(/width:\s*6px;/);
     expect(square).toMatch(/height:\s*6px;/);
-    expect(square).toMatch(/background:\s*var\(--vex-alias-label-primary\);/);
+    // VEX Cloud's runtime rows (`.t-sys i`): the hud's white square.
+    expect(square).toMatch(/background:\s*var\(--vex-alias-state-running-mark\);/);
   });
 });
 

@@ -533,6 +533,7 @@ describe("composer toolbar - the context meter panel", () => {
     expect(meter?.previousElementSibling?.className).toContain("vex-composer-context__label");
     expect(meter?.querySelectorAll("i")).toHaveLength(10);
     expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(5);
+    expect(meter?.querySelectorAll("i[data-head]")).toHaveLength(1);
     expect(trigger.querySelector("svg")).toBeNull();
   });
 

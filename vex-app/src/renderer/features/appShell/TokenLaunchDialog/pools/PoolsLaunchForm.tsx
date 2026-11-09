@@ -8,7 +8,7 @@
  * the shared dialog vocabulary (`SessionCreator/dialog-fields.ts`: the 42 high
  * field, the 13 / 500 label, the 12.5 muted hint). An exclusive choice (the
  * paired asset, the holder payout, the image source) is a row of square keys:
- * the chosen one takes the blue 1.5px frame and a solid swatch, the others a
+ * the chosen one takes the blue 1px frame and a solid swatch, the others a
  * rule outline and an empty swatch, so the choice never rests on colour alone
  * (docs/design/R3-MINIMAL.md sections 1.5 and 12).
  *
@@ -58,12 +58,12 @@ const PAIRED_ASSETS: readonly PoolsPairedAsset[] = ["weth", "usdg", "stock"];
 const HOLDER_REWARDS_MODES: readonly PoolsHolderRewardsMode[] = ["token", "paired", "both"];
 
 /**
- * The kit checkbox (docs/design/R3-MINIMAL.md section 1.5): 16 x 16, a 1.5px
+ * The kit checkbox (docs/design/R3-MINIMAL.md section 1.5): 16 x 16, a 1px
  * ink border, and when on the blue fill with a paper tick. The native input
  * stays the control, so keyboard, label and assistive technology are unchanged.
  */
 const CHECKBOX_CLASS = cn(
-  "relative mt-[2px] size-4 shrink-0 cursor-pointer appearance-none border-[1.5px] border-rule-ink bg-transparent",
+  "relative mt-[2px] size-4 shrink-0 cursor-pointer appearance-none border border-rule-ink bg-transparent",
   "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
   "checked:border-button-accent-edge checked:bg-button-accent",
   "checked:after:absolute checked:after:left-[3.5px] checked:after:top-0 checked:after:h-2 checked:after:w-1 checked:after:rotate-45",
@@ -309,7 +309,7 @@ export function PoolsLaunchForm({
 /**
  * One key of an exclusive choice. It stays a `role="radio"` button inside a
  * `role="radiogroup"` (that is the semantics the form and its tests rely on);
- * only its paint is R3. Chosen: the 1.5px blue frame, the blue word and a solid
+ * only its paint is R3. Chosen: the 1px blue frame, the blue word and a solid
  * swatch. Not chosen: a 1px rule, ink 2 and an empty swatch. The padding gives
  * back the half pixel the heavier frame takes, so choosing never moves a key.
  */
@@ -339,7 +339,7 @@ function ChoiceKey({
         "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
         "disabled:cursor-not-allowed disabled:text-ink-tertiary",
         selected
-          ? "border-[1.5px] border-accent-primary px-[11.5px] text-accent-primary"
+          ? "border border-accent-primary px-3 text-accent-primary"
           : "border border-rule px-3 text-ink-secondary enabled:hover:bg-interactive-hover enabled:hover:text-ink-primary",
       )}
     >

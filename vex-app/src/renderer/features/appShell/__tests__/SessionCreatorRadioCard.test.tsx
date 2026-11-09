@@ -1,7 +1,7 @@
 /**
  * RadioCard (new-session form grids, Studio project dialogs) - pins the R3
  * selection law (docs/design/R3-MINIMAL.md section 12): the checked card is
- * marked by the solid swatch and the 1.5px blue frame (a state is a fill, not
+ * marked by the solid swatch and the 1px blue frame (a state is a fill, not
  * a wash), the control stays a real native radio for AT, and selection never
  * restyles the title away from primary ink (theme-safe in chronos AND
  * celeris).

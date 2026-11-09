@@ -1103,7 +1103,8 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
   it("frames the card as an H3 cell: a 1px rule, square, no shadow and no hatch band, never a hue", () => {
     const frame = ruleBody(".vex-appr");
     expect(frame).toContain("border: 1px solid var(--vex-alias-rule)");
-    expect(frame).toContain("background: var(--vex-alias-bg-base)");
+    // VEX Cloud's card ground (--vx-card, `.t-card`), #030405.
+    expect(frame).toContain("background: var(--vex-alias-card)");
     // R3's ink frame and its band are gone; nothing rounds, shadows or blurs.
     const sheet = APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(sheet).not.toMatch(/\.vex-real-funds|border-radius|box-shadow|backdrop-filter|1\.5px solid/);
@@ -1915,6 +1916,22 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       expect(armed).toContain("background: var(--vex-alias-rule-ink)");
       expect(armed).not.toContain("accent");
       expect(rule(".vex-appr__foot[data-docked] > button:focus-visible")).toContain("outline-offset: -2px");
+    });
+
+    it("raises the approve key's blue hover from its foot, a look only, never on the armed key", () => {
+      // VEX Cloud's --vx-blue-fill-hover: a layer under the word, scaled
+      // from 0 on the key-fill step; the key's own fill never swaps.
+      const layer = rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]::before');
+      expect(layer).toContain("background: var(--vex-alias-button-accent-hover)");
+      expect(layer).toContain("transform: scaleY(0)");
+      expect(layer).toContain("transform-origin: bottom");
+      expect(layer).toContain("transition: transform var(--vex-duration-key-fill)");
+      expect(
+        rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]:enabled:not([data-armed]):hover::before'),
+      ).toContain("transform: scaleY(1)");
+      expect(sheet).not.toMatch(
+        /\[data-vex-key="approve"\]:enabled:hover \{[^}]*background/,
+      );
     });
   });
 });
