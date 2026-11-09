@@ -1,7 +1,8 @@
 /**
- * KIMM'S PANEL (docs/design/H3-DESKTOP.md section 4.13): her glyph field edge
- * to edge and her figure still for her mood, as the lock screen draws her
- * beside the master password. A picture only: no key, no strip, no wipe and
+ * KIMM'S PANEL (docs/design/H3-DESKTOP.md sections 4.13 and 6.3): her glyph
+ * field edge to edge and her figure still for her mood, as the lock screen
+ * draws her beside the master password and D2's Vex column draws her
+ * portrait card (`VexPortraitCard`, the `card` seat). A picture only: no key, no strip, no wipe and
  * no phase, so it is built from her section's pieces rather than her section
  * itself (`KimmSection.tsx` carries the corner key and the motion between
  * open and closed, which the lock screen has no use for).
@@ -36,10 +37,18 @@ export interface KimmPanelProps {
   readonly mood: KimmMood;
   /** Her figure stands over the field; false keeps the field alone (her stored choice hides her). */
   readonly figure: boolean;
+  /**
+   * Where she stands: the lock screen's half ("lock", her figure on the
+   * panel's foot) or D2's portrait card ("card", her section's rule: 48 from
+   * her top, 88% of the width, cut by the foot; kimm.css).
+   */
+  readonly seat?: "lock" | "card";
+  /** Her field holds its frame though her figure stands (on a page, as her section did). */
+  readonly hold?: boolean;
   readonly className?: string;
 }
 
-export function KimmPanel({ mood, figure, className }: KimmPanelProps): JSX.Element {
+export function KimmPanel({ mood, figure, seat = "lock", hold = false, className }: KimmPanelProps): JSX.Element {
   const art = useKimmArt();
   const still = art.sections[mood];
   const [fieldDrawn, setFieldDrawn] = useState(false);
@@ -51,11 +60,12 @@ export function KimmPanel({ mood, figure, className }: KimmPanelProps): JSX.Elem
       data-kimm-figure={figure ? "shown" : "hidden"}
       data-kimm-art={isKimmArtReady(still) ? "ready" : "missing"}
       data-kimm-field={fieldDrawn ? "live" : undefined}
-      className={cn("vex-kimm-panel", className)}
+      data-kimm-seat={seat}
+      className={cn("vex-kimm-panel", seat === "card" && "vex-kimm-panel--card", className)}
       style={kimmGroundStyle(art.field)}
     >
       <div className="vex-kimm-panel__ground" />
-      <KimmField open={figure} onDrawn={setFieldDrawn} />
+      <KimmField open={figure} hold={hold} onDrawn={setFieldDrawn} />
       {figure && isKimmArtReady(still) ? (
         <img
           src={still.src}

@@ -44,7 +44,7 @@
  * Tooltips and accessible names carry the words. Under 1280 the column never
  * opens (docs/design/H3-DESKTOP.md section 4.12: no track changes there), so
  * the rail ends in a Projects and files key instead: it opens the same
- * projects and explorer as a 248 drawer over Vex's column (under the band
+ * projects and explorer as a 248 drawer over the chat (D2; under the band
  * below 1024), and the drawer closes on a pick, on Escape and on the key.
  *
  * ## Search

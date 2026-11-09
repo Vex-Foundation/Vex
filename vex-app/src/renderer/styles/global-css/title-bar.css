@@ -95,8 +95,9 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   display: flex;
   align-items: center;
 }
-/* The Vex key fills its cell, the row's whole height; the rule on its right
- * is the column's edge against the chat's title (section 1.3). */
+/* The cell over Vex's column fills the row's whole height. On the desk H3's
+ * Vex key stands in it with the rule on its right (section 1.3); D2's VEX
+ * cell takes the rule on its left (below). */
 .vex-shell-head > [data-vex-head-cell="vex-key"] {
   grid-column: vex;
   align-items: stretch;
@@ -128,6 +129,115 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
 }
 .vex-shell-head > [data-vex-head-cell="caption-reserve"] {
   grid-column: reserve;
+}
+
+/* ── D2's cells (docs/design/H3-DESKTOP.md section 6.2) ───────────────────
+ * NEEDS YOU over the chat, between its title and the network statement: the
+ * whole cell is one key that opens the Needs you page (NeedsYouHeadCell),
+ * the word in caps 12 at 600, its count a figure after it, muted at zero, as
+ * the console's head draws them. Under 1024 the console line carries Needs
+ * you (section 1.10), so the cell leaves the row. */
+.vex-shell-head > [data-vex-head-cell="needs"] {
+  grid-column: needs;
+  align-items: stretch;
+  border-left: 1px solid var(--vex-alias-rule);
+}
+.vex-shell-frame[data-vex-tier="band"] > .vex-shell-head > [data-vex-head-cell="needs"] {
+  display: none;
+}
+.vex-head-needs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-head-needs:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-head-needs:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-head-needs__word {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-head-needs__count {
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: var(--tracking-figure);
+}
+.vex-head-needs__count[data-zero] {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* THE VEX CELL over Vex's column at the right edge (VexHeadCell): VEX in caps
+ * 24 in from the column's rule, and at its right end the 44 square key with
+ * the panel glyph, 16 in from the cell's edge (the caption reserve, on
+ * Windows and Linux, after it). The cell's rule on its left runs on down as
+ * her column's own. The desk keeps H3's Vex key and its rule (above). */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-head > [data-vex-head-cell="vex-key"] {
+  border-right: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-head-vex {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px 0 24px;
+}
+.vex-head-vex__word {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-head-vex__key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard),
+    color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-head-vex__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-head-vex__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-head-vex__key[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-head-needs,
+  .vex-head-vex__key {
+    transition: none;
+  }
 }
 
 /* ── Left cell: the title (14 / 500) and its mode or count (13, muted) ───── */

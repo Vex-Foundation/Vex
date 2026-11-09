@@ -5,8 +5,8 @@
  * chat share; its hover and drag feedback live in styles/global-css/shell.css.
  * The desk keeps R3's frame with its chat on the right
  * (`lib/shell-columns.ts` `shellColumnOrder`), so the frame places this on the
- * chat's left edge and reads a drag to the left as a wider chat; H3's frame,
- * whose Vex column sits between the chats and the chat, mounts no handle.
+ * chat's left edge and reads a drag to the left as a wider chat; the shell's
+ * own frame, whose Vex column is a fixed 280 (D2), mounts no handle.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX, type PointerEvent } from "react";

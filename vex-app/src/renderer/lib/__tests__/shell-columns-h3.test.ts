@@ -1,28 +1,24 @@
 /**
- * The H3 column solver (docs/design/H3-DESKTOP.md, the layout numbers and
- * tiers), pinned at the parity widths (1000, 1023, 1024, 1280, 1366, 1440,
- * 1920, 2560), each with the chats open and folded and a page's strip on and
- * off; at the band seam one pixel on each side; and through the invariants
- * the grid relies on (integers, nothing negative, the tracks add back up to
- * the frame).
+ * The shell's column solver, D2 (docs/design/H3-DESKTOP.md section 6; owner
+ * decision 2026-11-09): chats | chat | Vex, Vex's column a fixed 280 at the
+ * right edge. Pinned at the parity widths (1000, 1023, 1024, 1279, 1280,
+ * 1366, 1440, 1920, 2560), each with the chats open and folded and a page's
+ * strip on and off; at the band seam one pixel on each side; and through the
+ * invariants the grid relies on (integers, nothing negative, the tracks add
+ * back up to the frame, and Vex's track never depends on the chats).
  */
 
 import { describe, expect, it } from "vitest";
 import {
+  D2_VEX_WIDTH,
   H3_CHATS_WIDTH,
   H3_COLUMNS_MIN,
   H3_FOOT_ROW,
   H3_ZOOMED_FOOT_ROW,
   H3_RAIL_WIDTH,
-  H3_VEX_MAX,
-  H3_VEX_MIN,
-  H3_VEX_NARROW,
-  H3_VEX_PERCENT,
-  H3_VEX_SHARE_MIN,
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
-  H3_BAND_KEY_WIDTH,
   H3_CONSOLE_LINE_HEIGHT,
   H3_CHATS_OPEN_MIN,
   LIGHTER_CHAT_MAX,
@@ -44,9 +40,9 @@ function h3(viewport: number, chats: boolean, vexStrip = false): H3ShellColumns 
   return computeH3ShellColumns({ viewport, chats, vexStrip });
 }
 
-/** The three tracks in the grid's order: chats | Vex | chat. */
+/** The three tracks in the grid's order: chats | chat | Vex. */
 function tracks(cols: H3ShellColumns): readonly [number, number, number] {
-  return [cols.chats, cols.vex, cols.chat];
+  return [cols.chats, cols.chat, cols.vex];
 }
 
 /** Every track adds back up to the frame. */
@@ -54,31 +50,24 @@ function total(cols: H3ShellColumns): number {
   return cols.chats + cols.vex + cols.chat;
 }
 
-describe("the H3 geometry", () => {
+describe("the D2 geometry", () => {
   it("states the plates' widths and the band seam", () => {
-    expect([H3_CHATS_WIDTH, H3_RAIL_WIDTH, H3_VEX_PERCENT]).toEqual([248, 76, 30]);
+    expect([H3_CHATS_WIDTH, H3_RAIL_WIDTH, D2_VEX_WIDTH]).toEqual([248, 76, 280]);
     expect(H3_COLUMNS_MIN).toBe(1024);
-    // Cloud's Vex column (PD-14): clamp(360px, 30vw, 768px) from 1280, 340 under it.
-    expect([H3_VEX_MIN, H3_VEX_MAX, H3_VEX_SHARE_MIN, H3_VEX_NARROW]).toEqual([360, 768, 1280, 340]);
   });
 });
 
-describe("the proof plates", () => {
-  it("1440: chats 248, Vex 432, chat 760, the chat starting at 680", () => {
+describe("the owner's D2 plates", () => {
+  it("1440: chats 248, chat 912, Vex 280 at the right edge, the chat starting at 248", () => {
     expect(h3(1440, true)).toEqual({
       layout: "columns",
       chats: 248,
-      vex: 432,
-      chat: 760,
+      vex: 280,
+      chat: 912,
       chatsRail: false,
       vexSeat: "column",
-      chatLeft: 680,
+      chatLeft: 248,
     });
-  });
-
-  it("2560: the chat starts at x 1016", () => {
-    expect(h3(2560, true).chatLeft).toBe(1016);
-    expect(tracks(h3(2560, true))).toEqual([248, 768, 1544]);
   });
 });
 
@@ -88,63 +77,67 @@ describe("the proof plates", () => {
  * the chats hands the chat 172 and the strip hands it the Vex column.
  */
 describe("the parity widths, chats open and folded, strip off and on", () => {
-  it("1000 x 720, the window minimum: the band, 76 | 0 | 924 every way", () => {
-    expect(tracks(h3(1000, true))).toEqual([76, 0, 924]);
-    expect(tracks(h3(1000, false))).toEqual([76, 0, 924]);
-    expect(tracks(h3(1000, true, true))).toEqual([76, 0, 924]);
-    expect(tracks(h3(1000, false, true))).toEqual([76, 0, 924]);
+  it("1000 x 720, the window minimum: the band, 76 | 924 | 0 every way", () => {
+    expect(tracks(h3(1000, true))).toEqual([76, 924, 0]);
+    expect(tracks(h3(1000, false))).toEqual([76, 924, 0]);
+    expect(tracks(h3(1000, true, true))).toEqual([76, 924, 0]);
+    expect(tracks(h3(1000, false, true))).toEqual([76, 924, 0]);
   });
 
-  it("1023, the last band pixel: 76 | 0 | 947 every way", () => {
-    expect(tracks(h3(1023, true))).toEqual([76, 0, 947]);
-    expect(tracks(h3(1023, false))).toEqual([76, 0, 947]);
-    expect(tracks(h3(1023, true, true))).toEqual([76, 0, 947]);
-    expect(tracks(h3(1023, false, true))).toEqual([76, 0, 947]);
+  it("1023, the last band pixel: 76 | 947 | 0 every way", () => {
+    expect(tracks(h3(1023, true))).toEqual([76, 947, 0]);
+    expect(tracks(h3(1023, false))).toEqual([76, 947, 0]);
+    expect(tracks(h3(1023, true, true))).toEqual([76, 947, 0]);
+    expect(tracks(h3(1023, false, true))).toEqual([76, 947, 0]);
   });
 
-  it("1024, the first column pixel: 76 | 340 | 608 whatever the stored choice", () => {
+  it("1024, the first column pixel: 76 | 668 | 280 whatever the stored choice", () => {
     // Under H3_CHATS_OPEN_MIN the chats are the rail; their key opens the
-    // chats panel over Vex's column, never the track. Vex's column is
-    // Cloud's fixed 340 here (PD-14), the chat 608 as Cloud measures it.
-    expect(tracks(h3(1024, true))).toEqual([76, 340, 608]);
-    expect(tracks(h3(1024, false))).toEqual([76, 340, 608]);
-    expect(tracks(h3(1024, true, true))).toEqual([76, 0, 948]);
-    expect(tracks(h3(1024, false, true))).toEqual([76, 0, 948]);
+    // chats panel over the chat, never the track.
+    expect(tracks(h3(1024, true))).toEqual([76, 668, 280]);
+    expect(tracks(h3(1024, false))).toEqual([76, 668, 280]);
+    expect(tracks(h3(1024, true, true))).toEqual([76, 948, 0]);
+    expect(tracks(h3(1024, false, true))).toEqual([76, 948, 0]);
   });
 
-  it("1280 x 800, the stored default: 248 | 384 | 648", () => {
-    expect(tracks(h3(1280, true))).toEqual([248, 384, 648]);
-    expect(tracks(h3(1280, false))).toEqual([76, 384, 820]);
-    expect(tracks(h3(1280, true, true))).toEqual([248, 0, 1032]);
-    expect(tracks(h3(1280, false, true))).toEqual([76, 0, 1204]);
+  it("1279, the last rail pixel: 76 | 923 | 280", () => {
+    expect(tracks(h3(1279, true))).toEqual([76, 923, 280]);
+    expect(tracks(h3(1279, false))).toEqual([76, 923, 280]);
   });
 
-  it("1366 x 768: 248 | 409.8 | 708.2, Cloud's unrounded 30vw", () => {
-    expect(tracks(h3(1366, true))).toEqual([248, 409.8, 708.2]);
-    expect(tracks(h3(1366, false))).toEqual([76, 409.8, 880.2]);
-    expect(tracks(h3(1366, true, true))).toEqual([248, 0, 1118]);
-    expect(tracks(h3(1366, false, true))).toEqual([76, 0, 1290]);
+  it("1280 x 800, the stored default: 248 | 752 | 280", () => {
+    expect(tracks(h3(1280, true))).toEqual([248, 752, 280]);
+    expect(tracks(h3(1280, false))).toEqual([76, 924, 280]);
+    expect(tracks(h3(1280, true, true))).toEqual([248, 1032, 0]);
+    expect(tracks(h3(1280, false, true))).toEqual([76, 1204, 0]);
   });
 
-  it("1440 x 900, the plate: 248 | 432 | 760", () => {
-    expect(tracks(h3(1440, true))).toEqual([248, 432, 760]);
-    expect(tracks(h3(1440, false))).toEqual([76, 432, 932]);
-    expect(tracks(h3(1440, true, true))).toEqual([248, 0, 1192]);
-    expect(tracks(h3(1440, false, true))).toEqual([76, 0, 1364]);
+  it("1366 x 768: 248 | 838 | 280", () => {
+    expect(tracks(h3(1366, true))).toEqual([248, 838, 280]);
+    expect(tracks(h3(1366, false))).toEqual([76, 1010, 280]);
+    expect(tracks(h3(1366, true, true))).toEqual([248, 1118, 0]);
+    expect(tracks(h3(1366, false, true))).toEqual([76, 1290, 0]);
   });
 
-  it("1920 x 1080: 248 | 576 | 1096", () => {
-    expect(tracks(h3(1920, true))).toEqual([248, 576, 1096]);
-    expect(tracks(h3(1920, false))).toEqual([76, 576, 1268]);
-    expect(tracks(h3(1920, true, true))).toEqual([248, 0, 1672]);
-    expect(tracks(h3(1920, false, true))).toEqual([76, 0, 1844]);
+  it("1440 x 900, the plate: 248 | 912 | 280", () => {
+    expect(tracks(h3(1440, true))).toEqual([248, 912, 280]);
+    expect(tracks(h3(1440, false))).toEqual([76, 1084, 280]);
+    expect(tracks(h3(1440, true, true))).toEqual([248, 1192, 0]);
+    expect(tracks(h3(1440, false, true))).toEqual([76, 1364, 0]);
   });
 
-  it("2560, the second plate: 248 | 768 | 1544", () => {
-    expect(tracks(h3(2560, true))).toEqual([248, 768, 1544]);
-    expect(tracks(h3(2560, false))).toEqual([76, 768, 1716]);
-    expect(tracks(h3(2560, true, true))).toEqual([248, 0, 2312]);
-    expect(tracks(h3(2560, false, true))).toEqual([76, 0, 2484]);
+  it("1920 x 1080: 248 | 1392 | 280", () => {
+    expect(tracks(h3(1920, true))).toEqual([248, 1392, 280]);
+    expect(tracks(h3(1920, false))).toEqual([76, 1564, 280]);
+    expect(tracks(h3(1920, true, true))).toEqual([248, 1672, 0]);
+    expect(tracks(h3(1920, false, true))).toEqual([76, 1844, 0]);
+  });
+
+  it("2560: 248 | 2032 | 280", () => {
+    expect(tracks(h3(2560, true))).toEqual([248, 2032, 280]);
+    expect(tracks(h3(2560, false))).toEqual([76, 2204, 280]);
+    expect(tracks(h3(2560, true, true))).toEqual([248, 2312, 0]);
+    expect(tracks(h3(2560, false, true))).toEqual([76, 2484, 0]);
   });
 });
 
@@ -199,41 +192,26 @@ describe("what the grid reads", () => {
     expect(seat(h3(1000, true, true))).toEqual(["band", "band", true]);
   });
 
-  it("the x where the chat starts", () => {
-    expect(h3(1280, true).chatLeft).toBe(632);
-    expect(h3(1366, true).chatLeft).toBe(657.8);
-    expect(h3(1440, false).chatLeft).toBe(508);
+  it("the x where the chat starts: the chats track, whatever Vex's column is", () => {
+    expect(h3(1280, true).chatLeft).toBe(248);
+    expect(h3(1366, true).chatLeft).toBe(248);
+    expect(h3(1440, false).chatLeft).toBe(76);
     expect(h3(1440, true, true).chatLeft).toBe(248);
     expect(h3(1023, true).chatLeft).toBe(76);
   });
 
-  it("the column template, in H3's order, with the chat as the 1fr track", () => {
-    expect(h3GridTemplateColumns(h3(1440, true))).toBe("248px 432px minmax(0, 1fr)");
-    expect(h3GridTemplateColumns(h3(1440, false, true))).toBe("76px 0px minmax(0, 1fr)");
-    expect(h3GridTemplateColumns(h3(1000, true))).toBe("76px 0px minmax(0, 1fr)");
+  it("the column template, in D2's order, with the chat as the 1fr track", () => {
+    expect(h3GridTemplateColumns(h3(1440, true))).toBe("248px minmax(0, 1fr) 280px");
+    expect(h3GridTemplateColumns(h3(1440, false, true))).toBe("76px minmax(0, 1fr) 0px");
+    expect(h3GridTemplateColumns(h3(1000, true))).toBe("76px minmax(0, 1fr) 0px");
   });
 });
 
 describe("the Vex column", () => {
-  it("is Cloud's: 340 from 1024 to 1279, clamp(360px, 30vw, 768px) from 1280, unrounded", () => {
-    expect(h3(1024, true).vex).toBe(340);
-    expect(h3(1180, true).vex).toBe(340);
-    expect(h3(1279, true).vex).toBe(340);
-    expect(h3(1280, true).vex).toBe(384);
-    // 1366 x 0.3 = 409.8, as Cloud measures it (renders/checks.json).
-    expect(h3(1366, true).vex).toBe(409.8);
-    expect(h3(1440, true).vex).toBe(432);
-    expect(h3(1920, true).vex).toBe(576);
-    expect(h3(2560, true).vex).toBe(768);
-    // The cap: 30% of 3000 would be 900.
-    expect(h3(3000, true).vex).toBe(768);
-  });
-
-  it("is a function of the window alone: the chats and her section never reach it", () => {
+  it("is a fixed 280 at the right edge at every width from 1024 up", () => {
     for (let viewport = H3_COLUMNS_MIN; viewport <= 3000; viewport += 1) {
-      const expected = viewport < 1280 ? 340 : Math.min(768, Math.max(360, (viewport * 30) / 100));
-      expect(h3(viewport, true).vex, String(viewport)).toBe(expected);
-      expect(h3(viewport, false).vex, String(viewport)).toBe(expected);
+      expect(h3(viewport, true).vex, String(viewport)).toBe(D2_VEX_WIDTH);
+      expect(h3(viewport, false).vex, String(viewport)).toBe(D2_VEX_WIDTH);
     }
   });
 
@@ -243,7 +221,7 @@ describe("the Vex column", () => {
       const folded = h3(viewport, false);
       const label = String(viewport);
       expect(folded.vex, label).toBe(open.vex);
-      expect(folded.chat - open.chat, label).toBeCloseTo(H3_CHATS_WIDTH - H3_RAIL_WIDTH, 9);
+      expect(folded.chat - open.chat, label).toBe(H3_CHATS_WIDTH - H3_RAIL_WIDTH);
     }
   });
 
@@ -259,25 +237,34 @@ describe("the Vex column", () => {
       }
     }
   });
+
+  it("has no input for her shown or hidden choice: a chat's tracks cannot follow it", () => {
+    // The money rule's first leg (section 3.6): the solve reads the window,
+    // the chats choice and a page's strip, nothing else.
+    expect(Object.keys({ viewport: 0, chats: true, vexStrip: false } satisfies Parameters<typeof computeH3ShellColumns>[0]))
+      .toEqual(["viewport", "chats", "vexStrip"]);
+  });
 });
 
 /**
- * H3 keeps the plate rule rather than R3's 640 centre floor. These pin where
- * that matters, so a change to either is a visible decision.
+ * D2 keeps H3's rule against R3's 640 centre floor. These pin where that
+ * matters, so a change to either is a visible decision.
  */
 describe("no centre floor", () => {
   it("under 1280 the chats are the rail whatever the stored choice says, so no track waits on it", () => {
     for (let viewport = 0; viewport < H3_CHATS_OPEN_MIN; viewport += 1) {
       expect(h3(viewport, true), String(viewport)).toEqual(h3(viewport, false));
     }
-    expect(h3(1024, true).chat).toBe(608);
-    expect(h3(1279, true).chat).toBe(863);
-    expect(h3(1280, true).chat).toBe(648);
+    expect(h3(1024, true).chat).toBe(668);
+    expect(h3(1279, true).chat).toBe(923);
+    expect(h3(1280, true).chat).toBe(752);
   });
 
-  it("with the chats folded the columns never take the chat under 608", () => {
+  it("the columns never take the chat under 668", () => {
     for (let viewport = H3_COLUMNS_MIN; viewport <= 2560; viewport += 1) {
-      expect(h3(viewport, false).chat, String(viewport)).toBeGreaterThanOrEqual(608);
+      for (const chats of [false, true]) {
+        expect(h3(viewport, chats).chat, String(viewport)).toBeGreaterThanOrEqual(668);
+      }
     }
   });
 
@@ -304,12 +291,12 @@ describe("invariants", () => {
         for (const vexStrip of [false, true]) {
           const cols = h3(viewport, chats, vexStrip);
           const label = `${String(viewport)} ${String(chats)} ${String(vexStrip)}`;
-          // The Vex track is Cloud's unrounded clamp, so only the chats
-          // track is a whole pixel; the chat carries the fraction.
-          expect(Number.isInteger(cols.chats), label).toBe(true);
-          for (const track of tracks(cols)) expect(track, label).toBeGreaterThanOrEqual(0);
-          expect(total(cols), label).toBeCloseTo(Math.round(viewport), 9);
-          expect(cols.chatLeft, label).toBe(cols.chats + cols.vex);
+          for (const track of tracks(cols)) {
+            expect(Number.isInteger(track), label).toBe(true);
+            expect(track, label).toBeGreaterThanOrEqual(0);
+          }
+          expect(total(cols), label).toBe(Math.round(viewport));
+          expect(cols.chatLeft, label).toBe(cols.chats);
           expect(cols.layout, label).toBe(h3ShellLayout(viewport));
           expect(cols.chatsRail, label).toBe(cols.chats !== H3_CHATS_WIDTH);
         }
@@ -331,6 +318,7 @@ describe("invariants", () => {
 
   it("a frame narrower than the rail is all rail; a width that is not one solves as 0", () => {
     expect(tracks(h3(50, true))).toEqual([50, 0, 0]);
+    expect(tracks(h3(200, true))).toEqual([76, 124, 0]);
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
@@ -341,41 +329,37 @@ describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
   it("names the band, the medium tier and the wide tier, each seam to the wider side", () => {
     // Cloud's fold point (PD-14): the chats open from 1280, the rail under it.
     expect(H3_CHATS_OPEN_MIN).toBe(1280);
-    expect(H3_CHATS_OPEN_MIN).toBe(H3_VEX_SHARE_MIN);
     expect([1000, 1023, 1023.4].map(h3ShellTier)).toEqual(["band", "band", "band"]);
     expect([1023.5, 1024, 1279].map(h3ShellTier)).toEqual(["medium", "medium", "medium"]);
     expect([1279.5, 1280, 1440, 2560].map(h3ShellTier)).toEqual(["wide", "wide", "wide", "wide"]);
   });
 
-  it("folds the chats at Cloud's 1280, where Vex's column leaves the fixed 340", () => {
+  it("folds the chats at Cloud's 1280; Vex's column stays 280 on both sides", () => {
     expect(h3(1280, true).chatsRail).toBe(false);
     expect(h3(1279, true).chatsRail).toBe(true);
-    expect(tracks(h3(1279, true))).toEqual([76, 340, 863]);
-    expect(tracks(h3(1280, true))).toEqual([248, 384, 648]);
-  });
-
-  it("keeps the chat at 608 or more at every width, whatever the stored choice", () => {
-    // Cloud's 340 column leaves 608 at 1024 (PD-14), its narrowest; there is
-    // no other floor.
-    for (let width = 1000; width <= 2560; width += 1) {
-      for (const chats of [false, true]) {
-        expect(h3(width, chats).chat, String(width)).toBeGreaterThanOrEqual(608);
-      }
-    }
+    expect(tracks(h3(1279, true))).toEqual([76, 923, 280]);
+    expect(tracks(h3(1280, true))).toEqual([248, 752, 280]);
   });
 });
 
 describe("the frame per mode", () => {
-  it("stands the agent shell and Studio in H3's order: chats | Vex | chat", () => {
+  it("stands the agent shell and Studio in D2's order: chats | chat | Vex", () => {
     for (const mode of ["agent", "studio"] as const) {
       expect(shellFrameKind(mode)).toBe("h3");
-      expect(shellColumnOrder(mode)).toEqual(["chats", "vex", "chat"]);
+      expect(shellColumnOrder(mode)).toEqual(["chats", "chat", "vex"]);
     }
   });
 
-  it("stands the Lighter desk in H3's rows with its own order: rail | desk | Vex", () => {
+  it("under 1024 puts her console line before the chat it stands over", () => {
+    for (const mode of ["agent", "studio"] as const) {
+      expect(shellColumnOrder(mode, true)).toEqual(["chats", "vex", "chat"]);
+    }
+  });
+
+  it("stands the Lighter desk in H3's rows with its own order: rail | desk | Vex, with no band", () => {
     expect(shellFrameKind("lighter")).toBe("desk");
     expect(shellColumnOrder("lighter")).toEqual(["chats", "chat", "vex"]);
+    expect(shellColumnOrder("lighter", true)).toEqual(["chats", "chat", "vex"]);
   });
 });
 
@@ -434,33 +418,25 @@ describe("the Lighter desk's tracks (H3-DESKTOP.md section 4.9)", () => {
 });
 
 describe("the header's cells", () => {
-  it("names each cell's lines, the Vex key between the chats and the chat in H3's order", () => {
-    expect(shellHeadTemplateColumns({ chats: 248, vex: 432, vexBetween: true })).toBe(
-      "[chats-start] 248px [chats-end vex-start] 432px [vex-end title-start] minmax(0, 1fr) " +
-        "[title-end funds-start] auto [funds-end reserve-start] var(--overlay-w) [reserve-end]",
+  it("names each cell's lines, the VEX cell over Vex's column at the right beside the reserve", () => {
+    expect(shellHeadTemplateColumns({ chats: 248, vex: 280 })).toBe(
+      "[chats-start] 248px [chats-end title-start] minmax(0, 1fr) [title-end needs-start] auto " +
+        "[needs-end funds-start] auto [funds-end vex-start] calc(280px - var(--overlay-w)) " +
+        "[vex-end reserve-start] var(--overlay-w) [reserve-end]",
     );
   });
 
-  it("puts the Vex key at the right end, as wide as the key, over R3's right-hand column", () => {
-    expect(shellHeadTemplateColumns({ chats: 264, vex: null, vexBetween: false })).toBe(
-      "[chats-start] 264px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
-        "[funds-end vex-start] auto [vex-end reserve-start] var(--overlay-w) [reserve-end]",
-    );
-  });
-
-  it("on the desk shares the right-hand column between the Vex key and the caption reserve", () => {
-    expect(shellHeadTemplateColumns({ chats: 76, vex: 432, vexBetween: false, reserveInVex: true })).toBe(
-      "[chats-start] 76px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
-        "[funds-end vex-start] calc(432px - var(--overlay-w)) [vex-end reserve-start] var(--overlay-w) [reserve-end]",
+  it("sizes the VEX cell to what it holds where no column stands under it", () => {
+    expect(shellHeadTemplateColumns({ chats: 76, vex: null })).toBe(
+      "[chats-start] 76px [chats-end title-start] minmax(0, 1fr) [title-end needs-start] auto " +
+        "[needs-end funds-start] auto [funds-end vex-start] auto [vex-end reserve-start] var(--overlay-w) [reserve-end]",
     );
   });
 
   it("always ends in the caption reserve, the window's top-right corner", () => {
-    for (const vexBetween of [false, true]) {
-      for (const vex of [null, 0, 307]) {
-        const template = shellHeadTemplateColumns({ chats: 76, vex, vexBetween });
-        expect(template.endsWith(" reserve-start] var(--overlay-w) [reserve-end]")).toBe(true);
-      }
+    for (const vex of [null, 280, 432]) {
+      const template = shellHeadTemplateColumns({ chats: 76, vex });
+      expect(template.endsWith(" reserve-start] var(--overlay-w) [reserve-end]")).toBe(true);
     }
   });
 });
@@ -477,7 +453,6 @@ describe("the frame's rows", () => {
   it("under 1024 puts the console line between the header and the body, a fixed 48", () => {
     // Her band is a box over the chat under it (`--vex-band-h`), never a row.
     expect(H3_CONSOLE_LINE_HEIGHT).toBe(48);
-    expect(H3_BAND_KEY_WIDTH).toBe(288);
     expect(shellGridTemplateRows({ head: true, foot: false, band: true })).toBe(
       "var(--head-h) 48px minmax(0, 1fr) 0px",
     );

@@ -192,21 +192,6 @@
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
 }
-/* The strip's room (section 1.5): "the console's rest starts under the
- * strip". Her strip stands over the first 56 of the console's rest in every
- * state, so the rest that follows her section in the column begins below
- * it; open, she covers all of it anyway. A fixed length, never a measure. */
-.vex-kimm ~ .vex-vs__rest {
-  padding-top: var(--vex-h3-strip-h);
-}
-/* A pointer's Hide Vex guards what it reveals (section 3.4; kimm-guard.ts):
- * while `data-kimm-guard` stands on her box, the console's rest takes no
- * pointer, so a second click or a pointer resting where Hide Vex was never
- * lands on it. It lifts once the close has ended, 500ms have passed and the
- * pointer has left the pressed key's box. */
-.vex-kimm[data-kimm-guard] ~ .vex-vs__rest {
-  pointer-events: none;
-}
 .vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
   visibility: hidden;
 }
@@ -383,6 +368,21 @@
   height: calc(100% - 64px);
   transform: translateX(-50%);
   user-select: none;
+}
+/* D2'S PORTRAIT CARD (docs/design/H3-DESKTOP.md section 6.3; VexPortraitCard):
+ * the panel as the top of Vex's column, the column's full width and about
+ * 360 high (280 / 0.78), flush under the header, its foot on the rule. Her
+ * figure stands as her section's settled rule has her in any box: 48 from
+ * her top, 88% of the width, centred, cut by the foot. */
+.vex-kimm-panel--card {
+  border-right: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kimm-panel--card .vex-kimm-panel__figure {
+  top: 48px;
+  bottom: auto;
+  width: 88%;
+  height: auto;
 }
 
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----

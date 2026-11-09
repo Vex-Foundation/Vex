@@ -527,6 +527,32 @@ describe("composer capsule - placeholder + starter chips", () => {
     typeDraft("typing now");
     expect(container.querySelector("[data-vex-composer-starters]")).not.toBeNull();
   });
+
+  it("stands the suggestions in the welcome's slot when the welcome stands (D2), and back over the field without it", async () => {
+    const { setWelcomeStartersSlot } = await import("../../welcome-starters-slot.js");
+    const view = render(
+      <>
+        <div ref={setWelcomeStartersSlot} data-testid="welcome-slot" />
+        <SessionComposer activeSession={null} activeSessionId={null} />
+      </>,
+    );
+    const slot = screen.getByTestId("welcome-slot");
+    const grid = (): Element | null => view.container.querySelector("[data-vex-composer-starters]");
+    expect(slot.contains(grid())).toBe(true);
+    expect(view.container.querySelectorAll("[data-vex-composer-starters]")).toHaveLength(1);
+    // Everything the grid does stays the composer's: it conceals in place
+    // while the draft has text (keeping its box) and comes back when it empties.
+    typeDraft("typing now");
+    const list = slot.querySelector('[data-vex-area="composer-starters"]');
+    expect(list?.hasAttribute("data-concealed")).toBe(true);
+    expect(list?.getAttribute("aria-hidden")).toBe("true");
+    typeDraft("");
+    expect(slot.querySelector('[data-vex-area="composer-starters"]')?.hasAttribute("data-concealed")).toBe(false);
+    // With no welcome, over the field again.
+    view.rerender(<SessionComposer activeSession={null} activeSessionId={null} />);
+    expect(grid()).not.toBeNull();
+    expect(grid()?.closest("[data-testid='welcome-slot']")).toBeNull();
+  });
 });
 
 describe("composer capsule - slash commands (combobox)", () => {

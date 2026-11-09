@@ -8,7 +8,9 @@
  *
  *   1. the chats column 248, the header row 76, the bottom row 72, Kimm's
  *      closed strip 56, the band's 76 rail and its edge at 1024;
- *   2. the Vex column is VEX Cloud's (PD-14): clamp(360px, 30vw, 768px)
+ *   2. the shell's Vex column is D2's fixed 280 at the right (section 6);
+ *      the stages' (wake, checks, wizard) keeps VEX Cloud's (PD-14):
+ *      clamp(360px, 30vw, 768px)
  *      from 1280, unrounded, and a fixed 340 from 1024 to 1279, and with the
  *      chats column it reproduces the contract's tier table, the printed
  *      plates at 1440 and 2560 included, so the chat keeps the rest;
@@ -20,6 +22,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { D2_VEX_WIDTH } from "../../../lib/shell-columns.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tokensCss = readFileSync(path.join(here, "..", "tokens.css"), "utf8").replace(
@@ -68,7 +71,12 @@ describe("the H3 shell geometry", () => {
     expect(px("--vex-h3-band-under")).toBe(1024);
   });
 
-  it("sets the Vex column as Cloud does: clamp(360px, 30vw, 768px), and 340 under 1280", () => {
+  it("stands the shell's Vex column at a fixed 280 (D2, section 6), the solver's own", () => {
+    expect(px("--vex-d2-vex-w")).toBe(D2_VEX_WIDTH);
+    expect(D2_VEX_WIDTH).toBe(280);
+  });
+
+  it("keeps the stages' Vex column as Cloud's: clamp(360px, 30vw, 768px), and 340 under 1280", () => {
     expect(token("--vex-h3-vex-share")).toBe("30vw");
     expect(token("--vex-h3-vex-w")).toBe("clamp(360px, var(--vex-h3-vex-share), 768px)");
     expect(under1280).toMatch(/:root \{\s*--vex-h3-vex-w: 340px;\s*\}/);

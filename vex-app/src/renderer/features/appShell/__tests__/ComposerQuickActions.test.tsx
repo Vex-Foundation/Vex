@@ -1,7 +1,7 @@
 /**
  * ComposerQuickActions - the welcome's suggestions (docs/design/H3-DESKTOP.md
- * section 1.7 and Appendix A.4), H3's two-by-two grid of cells over the
- * composer. Pins H3's four in its order, each cell one key with its icon, its
+ * sections 1.7 and 6.6 and Appendix A.4), a two-by-two grid of cells that D2
+ * stands in the welcome, 28 under the greeting's notes. Pins H3's four in its order, each cell one key with its icon, its
  * title, its muted line (the prompt Send seeds) and the arrow; "Create a
  * mission" opens the new session form instead of seeding a chat message;
  * "Analyze BTC 4h" asks for what the technical analysis tool really does, and
@@ -95,6 +95,14 @@ describe("ComposerQuickActions", () => {
     expect(cell).toMatch(/border-right:\s*1px solid var\(--vex-alias-rule\);/);
     expect(cell).toMatch(/border-bottom:\s*1px solid var\(--vex-alias-rule\);/);
     expect(cell).not.toMatch(/border-radius/);
+  });
+
+  it("stands 28 under the welcome's notes in D2, on the reading column's width (section 6.6)", () => {
+    expect(rule(".vex-welcome__starters > .vex-starters")).toMatch(/padding:\s*28px 0 0;/);
+    expect(rule(".vex-welcome__starters:empty")).toMatch(/display:\s*none;/);
+    expect(rule('.vex-shell-frame[data-vex-frame="h3"] .vex-starter-grid')).toMatch(
+      /width:\s*var\(--vex-read-w\);/,
+    );
   });
 
   it("sets the title in sans 15 ink and the line in sans 13 muted, 20 in (VEX Cloud's starters)", () => {

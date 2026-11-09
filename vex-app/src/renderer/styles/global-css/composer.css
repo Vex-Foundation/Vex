@@ -194,6 +194,60 @@ html[data-still] .vex-welcome__greeting {
   width: 100%;
   padding: 0 24px 34px;
 }
+/* D2 (section 6.6): the welcome stands on the reading column, anchored at
+ * the chat's left: the opening's words and the suggestions start on the
+ * reading line and keep its width. "Ready when you are." is set large, the
+ * notes under it in muted sentence case, as the owner's D2 plate draws them;
+ * the words are the welcome's own. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-starters {
+  padding-inline: var(--vex-read-x) 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-starter-grid {
+  width: var(--vex-read-w);
+}
+/* In the welcome (its slot under the notes, welcome-starters-slot.ts) the
+ * grid stands 28 under the notes, on the welcome's own reading line, so the
+ * greeting, its notes and the suggestions are one group at the column's top
+ * and the chat under them is empty down to the composer. */
+.vex-welcome__starters {
+  width: 100%;
+}
+.vex-welcome__starters:empty {
+  display: none;
+}
+.vex-welcome__starters > .vex-starters {
+  padding: 28px 0 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__starters > .vex-starters {
+  padding-inline: 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome {
+  padding: 72px 24px 0 var(--vex-read-x);
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__greeting {
+  max-width: var(--vex-read-w);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: -0.01em;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__notes {
+  gap: 2px;
+  margin-top: 12px;
+  padding: 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__note {
+  font-size: 15px;
+  line-height: 22px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__note::before {
+  display: none;
+}
 /* The cells: two equal columns, rows at least 113 (the plate's 226 tall
  * grid), each cell bounded by the 1px rule. Every cell draws its right and
  * bottom rule and the grid its top and left, so the inner lines are one

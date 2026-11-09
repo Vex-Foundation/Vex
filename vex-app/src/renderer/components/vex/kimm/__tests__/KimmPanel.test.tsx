@@ -44,6 +44,25 @@ describe("KimmPanel", () => {
     expect(panel.querySelector("button, a, input, [tabindex]")).toBeNull();
   });
 
+  it("stands as D2's portrait card in the card seat, its field holding on a page", () => {
+    // docs/design/H3-DESKTOP.md section 6.3: the top of Vex's column.
+    const view = render(<KimmPanel mood="think" figure seat="card" />);
+    const panel = panelOf(view.container);
+    expect(panel.getAttribute("data-kimm-seat")).toBe("card");
+    expect(panel.classList.contains("vex-kimm-panel--card")).toBe(true);
+    expect(panel.querySelector("img.vex-kimm-panel__figure")?.getAttribute("src")).toBe("/art/kimm/still-think.webp");
+    view.rerender(<KimmPanel mood="think" figure seat="card" hold />);
+    // Held, her figure stands and the field keeps one frame.
+    expect(panel.querySelector("img")).not.toBeNull();
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-running")).toBe("false");
+  });
+
+  it("is the lock screen's panel by default", () => {
+    const { container } = render(<KimmPanel mood="hi" figure />);
+    expect(panelOf(container).getAttribute("data-kimm-seat")).toBe("lock");
+    expect(panelOf(container).classList.contains("vex-kimm-panel--card")).toBe(false);
+  });
+
   it("keeps the field without her figure when her figure is hidden", () => {
     const { container } = render(<KimmPanel mood="rest" figure={false} />);
     const panel = panelOf(container);

@@ -137,18 +137,28 @@ function ModelName({ modelId }: { readonly modelId: string }): JSX.Element {
   );
 }
 
+/** The words before the effort key in D2's model cell ("Reasoning: High"). */
+export const REASONING_PREFIX = "Reasoning:";
+
 /**
  * The options control: the model's name, then the effort key (the menu, or
- * its quiet placeholder while the catalogue loads), H3's "{model} HIGH".
- * Renders nothing when neither half has anything to show.
+ * its quiet placeholder while the catalogue loads). D2 sets it in the bottom
+ * row's model cell (docs/design/H3-DESKTOP.md section 6.5), the name over
+ * "Reasoning: High", the effort key's own word and chevron after the words;
+ * the words stand only before a real effort key (`reasoning`), never before
+ * a value nobody has read yet. Renders nothing when neither half has
+ * anything to show.
  */
 export function ComposerOptions({
   modelId,
   effort,
+  reasoning = false,
 }: {
   readonly modelId: string | null;
   /** The effort key, or `null` when the model has no reasoning selector. */
   readonly effort: ReactNode | null;
+  /** `effort` is the real effort key, so "Reasoning:" may stand before it. */
+  readonly reasoning?: boolean;
 }): JSX.Element | null {
   if (modelId === null && effort === null) return null;
   return (
@@ -157,7 +167,16 @@ export function ComposerOptions({
       className="vex-composer-options min-w-0"
     >
       {modelId === null ? null : <ModelName modelId={modelId} />}
-      {effort}
+      {effort === null ? null : (
+        <span className="vex-composer-options__reasoning min-w-0">
+          {reasoning ? (
+            <span className="vex-composer-options__prefix" aria-hidden="true">
+              {REASONING_PREFIX}
+            </span>
+          ) : null}
+          {effort}
+        </span>
+      )}
     </div>
   );
 }

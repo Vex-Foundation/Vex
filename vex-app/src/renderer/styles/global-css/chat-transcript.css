@@ -108,17 +108,17 @@ html[data-still] .vex-latest {
   width: min(var(--vex-transcript-max, 760px), calc(100% - 24px));
   margin-inline: auto;
 }
-/* IN H3's FRAME (docs/design/H3-DESKTOP.md section 1.11): the column stands
- * on the reading line, `--vex-read-x` in from each side of the chat, and
- * zooms with the window from 1760 up (`--vex-zoom`), so its text starts on
- * the line at every width (704 at 1440, 983.6 at 1920, 1270 at 2560, as VEX
- * Cloud measures them). Its margins are set in the column's own zoomed
- * pixels. The waiting card stands one inset wider, so its text, 24 in, is on
- * the line too; and the card's decision row in the dock zooms with it. */
+/* IN THE SHELL'S FRAME (docs/design/H3-DESKTOP.md sections 1.11 and 6.6):
+ * the column stands on D2's reading column, `--vex-read-x` in from the
+ * chat's LEFT edge and `--vex-read-w` wide, anchored there rather than
+ * centred, and zooms with the window from 1760 up (`--vex-zoom`). Its
+ * margin and width are set in the column's own zoomed pixels. The waiting
+ * card stands one inset wider, so its text, 24 in, is on the line too; and
+ * the card's decision row in the dock zooms with it. */
 .vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre .vex-reading-col {
   zoom: var(--vex-zoom);
-  width: auto;
-  margin-inline: calc(var(--vex-read-x) / var(--vex-zoom));
+  width: calc(var(--vex-read-w) / var(--vex-zoom));
+  margin-inline: calc(var(--vex-read-x) / var(--vex-zoom)) 0;
 }
 .vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre [data-vex-area="approvals-region"] {
   margin-inline: -24px;

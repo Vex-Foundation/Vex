@@ -1,19 +1,16 @@
-/* THE VEX SIDEBAR (docs/design/H3-DESKTOP.md sections 1.5 and 1.9): Vex's
- * own column, between the chats and the chat (the right-hand column on the
- * Lighter desk), with a 1px quiet rule on the side that meets the chat, the
- * same ground as the centre. Her console in square cells, her plate laid
- * under its top block (Kimm's section takes its place, S4), the console's
- * rest under that. Width is the frame's (30% of the window; 0 hidden); the
- * column only fills its track. Radius 0, no shadow, no blur, tokens only.
+/* THE VEX SIDEBAR (docs/design/H3-DESKTOP.md sections 1.9 and 6): Vex's
+ * own column at the right edge (D2; the Lighter desk's right-hand column
+ * too), with a 1px quiet rule on its left, against the chat, on the same
+ * ground. Width is the frame's (a fixed 280 in the shell; 0 for a page's
+ * strip and the band); the column only fills its track. Hidden in a chat, it
+ * keeps its ground and rule and nothing else. Radius 0, no shadow, no blur,
+ * tokens only.
  *
- *   aside.vex-vs[data-vex-vex-open][data-vex-seat]
+ *   aside.vex-vs[data-vex-vex-open][data-vex-seat][data-vex-shown]
  *     .vex-vs__body
- *       .vex-console__top     Needs you and the missions row (VexConsole.tsx)
- *       .vex-kimm             her section, laid over the rest (VexPortraitPlate,
- *                             kimm.css)
- *       .vex-vs__rest         This project, the page slot, AI permission,
- *                             recent activity
- *     (on the desk: .vex-vs__info with R3's Needs you, the plate, .vex-vs__desk)
+ *       .vex-col              D2's column (VexColumn.tsx, below)
+ *     (on the desk: .vex-console__top, her section laid over it
+ *      (VexPortraitPlate, kimm.css), .vex-vs__desk)
  *     (on a table page with her closed: .vex-strip, the page strip) */
 
 .vex-vs {
@@ -33,16 +30,6 @@
 .vex-vs[data-vex-vex-open="false"] {
   border-left: 0;
 }
-/* Between the chats and the chat (docs/design/H3-DESKTOP.md section 1) the
- * chats column draws the rule on her left, so hers is on her right, against
- * the chat. */
-.vex-shell-frame[data-vex-frame="h3"] .vex-vs {
-  border-left: 0;
-  border-right: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-vex-open="false"] {
-  border-right: 0;
-}
 
 .vex-vs__back:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -59,13 +46,109 @@
 .vex-vs__body[hidden] {
   display: none;
 }
-/* THE WIDE ZOOM (docs/design/H3-DESKTOP.md section 1.11): in H3's frame the
- * console zooms with the window from 1760 up, and her section with it, so
- * her box starts 148 x zoom under the header, her key is 56 x zoom high and
- * her strip folds to 56 x zoom, as VEX Cloud lays them; the column's width
- * is the frame's and never zooms. */
-.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="column"] > .vex-vs__body {
-  zoom: var(--vex-zoom);
+/* D2's column never zooms (section 6.3): it is a fixed 280, like the chats
+ * column, so its cells keep their measures at every width; the page strip
+ * that stands for it on a page still zooms (below). */
+
+/* ---- D2'S COLUMN (docs/design/H3-DESKTOP.md section 6.3; VexColumn.tsx) ----
+ * Top to bottom, each part a cell over the next one's rule, text 24 in:
+ *
+ *   portrait card   the column's width, 280 / 0.78 high (about 360), flush
+ *                   under the header; it gives way first, to 160, when a
+ *                   short window cannot hold the rest under it
+ *   state row       44: the square and the word in caps 13, the timer at
+ *                   the right end in mono, muted
+ *   THIS CHAT       at least 68: the label in caps 11, muted, over Vex's line
+ *   Needs you, the missions row: the console's top block (148)
+ *   Open activity   the foot row, 44
+ *
+ * and the column's ground under it. Should even that not fit, the body
+ * scrolls; the card never covers anything. */
+.vex-col {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.vex-col__card {
+  flex: 0 1 auto;
+  height: calc(var(--vex-d2-vex-w) / 0.78);
+  min-height: 160px;
+}
+.vex-col__card > .vex-kimm-panel {
+  height: 100%;
+}
+.vex-col__state {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-col__square {
+  flex: none;
+}
+.vex-col__word {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-col__timer {
+  flex: none;
+  margin-left: auto;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-figure);
+}
+.vex-col__this {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  min-height: 68px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-col__label {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-col__line {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.vex-col > .vex-console__top,
+.vex-col > .vex-col__foot {
+  flex: none;
+}
+.vex-col__foot > .vex-console__open {
+  height: 44px;
 }
 /* What scrolls when the information outgrows the column: never the plate. */
 .vex-vs__info {
@@ -321,43 +404,8 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* ---- the console's rest (VexConsole.tsx): under her section ----
- * What her section covers while she is open and shows while she is closed,
- * scrolling within the column when it outgrows it. Each part opens with a 44
- * head (12, 600, caps) over the rule. */
-.vex-vs__rest {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 0;
-  flex-direction: column;
-  overflow-y: auto;
-}
-/* OPEN ACTIVITY IS THE CONSOLE'S FOOT (VEX Cloud's `.vx-cn-foot`, DG-3
- * decision 7): Recent activity, the last part, takes the room left, and its
- * Open activity key sits on the column's foot, 44 high under a top rule on
- * the column's ground, sticky while the rest scrolls, so it is a press away
- * whatever the rest holds. */
-.vex-vs__rest > [data-vex-area="vex-recent-activity"] {
-  display: flex;
-  flex: 1 0 auto;
-  flex-direction: column;
-}
-.vex-vs__rest > [data-vex-area="vex-recent-activity"] > .vex-console__open {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  flex: none;
-  height: 44px;
-  margin-top: auto;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  border-bottom: 0;
-  background: var(--vex-alias-sidebar-fill);
-}
-/* Opaque even under the pointer, so no row shows through the foot: the
- * pointer lifts the words to ink instead. */
-.vex-vs__rest > [data-vex-area="vex-recent-activity"] > .vex-console__open:hover {
-  background: var(--vex-alias-sidebar-fill);
-}
+/* ---- the console's sections (VexConsole.tsx): Studio's This project ----
+ * Each opens with a 44 head (12, 600, caps) over the rule. */
 .vex-console__head--section {
   height: 44px;
   font-size: 12px;
@@ -370,14 +418,9 @@
   font-size: 14px;
   line-height: 20px;
 }
-.vex-console__rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/* AI PERMISSION: the chat's permission as its sentence (14 / 1.45, ink),
- * then where it comes from (13, muted), as VEX Cloud's `.cn-perm` sets the
- * sentence and its link. */
+/* A section's sentence (This project's access: 14 / 1.45, ink), then where it
+ * comes from (13, muted), as VEX Cloud's `.cn-perm` sets the sentence and its
+ * link. */
 .vex-console__permission {
   padding: 14px var(--vex-console-inset) 16px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
@@ -446,44 +489,6 @@
 .vex-console__fact > dd .vex-num {
   font-family: var(--font-mono);
   font-size: 13px;
-}
-/* One activity: its line (14 / 1.3, ink 2; VEX Cloud's `.rc-t`), then its
- * status at the right: the 6px
- * square in the status colour 8 before the word (11, caps, ink; VEX Cloud's
- * `.rc-s`). */
-.vex-console__activity {
-  display: flex;
-  box-sizing: border-box;
-  height: 43px;
-  align-items: center;
-  gap: 16px;
-  padding: 0 var(--vex-console-inset);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-console__activity-title {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  color: var(--vex-alias-label-secondary);
-  font-size: 14px;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vex-console__status {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  max-width: 55%;
-  font-size: 11px;
-}
-.vex-console__status-word {
-  overflow: hidden;
-  letter-spacing: var(--tracking-label);
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 /* OPEN ACTIVITY: 11 in caps (VEX Cloud's `.cn-more .cap`), the arrow at the
  * right edge. */

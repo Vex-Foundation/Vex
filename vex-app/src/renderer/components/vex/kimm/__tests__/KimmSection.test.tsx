@@ -339,9 +339,6 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
     expect(stripKey).not.toMatch(/(?:^|[\s;])(?:width|top|right)\s*:/);
   });
 
-  it("leaves the strip its room: the console's rest starts under it", () => {
-    expect(rule(".vex-kimm ~ .vex-vs__rest")).toMatch(/padding-top:\s*var\(--vex-h3-strip-h\)/);
-  });
 });
 
 describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => {

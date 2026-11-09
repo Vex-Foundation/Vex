@@ -3,17 +3,7 @@
  * `v99-ui-rebrand/mockups/h3-shell-gaps`). The console's cells and rules
  * stand in vex-sidebar.css; what this sheet adds is how the console says a
  * status, and it loads after that sheet so its rules lead.
- *
- * RECENT ACTIVITY's status is Cloud's StatusLabel at its row size: the 6px
- * state square (`StateSquare`) 6 before the word in caps 11, the word ink,
- * a failure's in the refusal ink. A row in flight blinks (PD-06). */
-.vex-console__status {
-  gap: 6px;
-  font-size: 11px;
-}
-.vex-console__activity[data-vex-activity-status="failed"] .vex-console__status-word {
-  color: var(--vex-alias-state-refusal);
-}
+ */
 
 /* NEEDS YOU, H3-DESKTOP.md section 1.5 and VEX Cloud's console states
  * (`h3-shell-gaps` decisions 4 to 6). The top block keeps its fixed 148, so
@@ -116,32 +106,6 @@
   font-size: 14px;
 }
 
-/* RECENT ACTIVITY's states (VEX Cloud's `.cn-recent`): while loading two
- * rows of covers in the rows' own height; a read that failed "Could not load
- * this section." beside the cross, 14 ink 2, at least 56 high; an empty feed
- * "Vex has not acted yet.", 14 muted, padded 14 24 16, with no rule under it. */
-.vex-console__covers .vex-console__activity {
-  justify-content: space-between;
-  cursor: progress;
-}
-.vex-console__fail {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 0 var(--vex-console-inset);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-  color: var(--vex-alias-label-secondary);
-  font-size: 14px;
-  line-height: 1.4;
-}
-.vex-console__note--quiet {
-  padding: 14px var(--vex-console-inset) 16px;
-  border-bottom: 0;
-  color: var(--vex-alias-label-tertiary);
-  line-height: 1.45;
-}
 
 /* The page strip's loading and failed cells: a cover where the words will
  * land, "Not available" beside the cross. */

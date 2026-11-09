@@ -191,30 +191,26 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
 }
 
 /**
- * The H3 frame (docs/design/H3-DESKTOP.md, the layout numbers and tiers),
- * solved beside R3's above. The agent shell and Studio stand on it; the
- * Lighter desk keeps computeShellColumns.
+ * The shell's frame, D2 (docs/design/H3-DESKTOP.md section 6; owner decision
+ * 2026-11-09), solved beside R3's above. The agent shell and Studio stand on
+ * it; the Lighter desk keeps computeDeskColumns. The names keep H3's prefix:
+ * D2 keeps H3's cells, rows, tiers and words and moves only Vex's column.
  *
- * H3 moves Vex between the chats and the chat:
+ * D2 stands Vex's column at the RIGHT edge, narrow and fixed:
  *
- *   chats | Vex | chat
+ *   chats | chat | Vex
  *
  * - The CHATS column is a fixed H3_CHATS_WIDTH (248) from H3_CHATS_OPEN_MIN
  *   up, or the H3_RAIL_WIDTH (76) rail where the user folded it (the sidebar
  *   key). Under H3_CHATS_OPEN_MIN it is the rail whatever the stored choice
  *   says: there the sidebar key slides the chats PANEL out of the rail, over
- *   Vex's column, and no track changes (section 4.12).
- * - The VEX column is VEX Cloud's (PD-14, `--vex-w` in the H3 mockup's
- *   tokens.css): clamp(360px, 30vw, 768px) from H3_VEX_SHARE_MIN (1280) up,
- *   unrounded as Cloud lays it (409.8 at 1366), and a fixed H3_VEX_NARROW
- *   (340) from H3_COLUMNS_MIN to 1279. Folding the chats never changes it:
- *   the chat gains the difference (172).
+ *   the chat, and no track changes (section 4.12).
  * - The CHAT takes the rest.
+ * - The VEX column is a fixed D2_VEX_WIDTH (280) at every width from
+ *   H3_COLUMNS_MIN up. Folding the chats never changes it: the chat gains the
+ *   difference (172).
  *
- * Both proof plates fit this rule exactly: 248 | 432 | 760 at 1440, and the
- * chat starting at x 1016 (248 + 768) at 2560; Cloud's own measured boxes
- * (`renders/checks.json`) give 384 at 1280, 409.8 at 1366, 576 at 1920 and
- * 340 from 1024 to 1279.
+ * At 1440 that is 248 | 912 | 280, the owner's D2 plates.
  *
  * Under H3_COLUMNS_MIN (1024) the frame is the BAND layout: the chats fold to
  * the rail whatever the stored choice says (derived; the choice is never
@@ -224,30 +220,20 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  * from the rail to the right edge. The window minimum is 1000, so 1000 to 1023
  * is a real band, not a fallback.
  *
- * Vex never closes in an H3 chat: closing her only folds Kimm's section
- * inside the Vex column, so there is no "Vex closed" input. That is the money
- * rule by construction: nothing about Kimm reaches this function, so opening
- * or closing her cannot move the chat, or a waiting swap card in it. A page
- * may instead fold the Vex column to its one-line strip (vexStrip): the column
- * is 0, the strip is drawn inside the chat, and the chat takes the room.
+ * HIDING VEX NEVER REACHES THIS SOLVE IN A CHAT. Hidden, her column keeps its
+ * track and shows its ground and rule only, so the chat keeps its width: the
+ * money rule by construction (section 3.6), since nothing about her shown or
+ * hidden choice can move the chat, or a waiting swap card in it. A page may
+ * instead fold the Vex column to its one-line strip (vexStrip): the column is
+ * 0, the strip is drawn inside the chat, and the chat takes the room.
  *
- * No centre floor. R3's CENTER_MIN (640) is not an H3 rule and is not applied
- * here, nor any 640 of its own: under H3_CHATS_OPEN_MIN the chats are the
- * rail and Vex's column Cloud's 340, so the columns layout never takes the
- * chat under 608 (Cloud's own measure at 1024), and the band never under 924
- * from the window minimum up.
+ * No centre floor. R3's CENTER_MIN (640) is not applied here: under
+ * H3_CHATS_OPEN_MIN the chats are the rail and Vex's column 280, so the
+ * columns layout never takes the chat under 668 (at 1024), and the band never
+ * under 924 from the window minimum up.
  *
- * THE CHATS UNDER H3_CHATS_OPEN_MIN (section 4.12, the money rule's first
- * leg). From H3_COLUMNS_MIN to H3_CHATS_OPEN_MIN (h3ShellTier's "medium")
- * the chats column is the rail, and it stays the rail: the sidebar key opens
- * the chats panel, a box laid over Vex's column (`ChatsPanel.tsx`), so a
- * waiting card in the chat never moves while the panel opens or closes. The
- * solver reads the stored choice only from H3_CHATS_OPEN_MIN up.
- *
- * The chats track is an integer; the Vex track is Cloud's unrounded
- * clamp(360px, 30vw, 768px), so the chat may carry the fraction. The three
- * add back up to the frame, and the grid hands the chat minmax(0, 1fr), so
- * it lands exactly on `chat`.
+ * Every track is an integer, and the grid hands the chat minmax(0, 1fr), so a
+ * fractional frame lands in the chat and never in a fixed column.
  */
 
 /** From this frame width up: three columns. Under it, the band. */
@@ -258,33 +244,22 @@ export const H3_CHATS_WIDTH = 248;
 /** The folded chats column: the rail, by the user's choice or under H3_CHATS_OPEN_MIN. */
 export const H3_RAIL_WIDTH = 76;
 
-/**
- * The Vex column's share of the frame from H3_VEX_SHARE_MIN up, as a whole
- * percent: 432 at 1440 and 768 at 2560 on the plates. A percent rather than
- * 0.3 so the solve is one division of two integers (see h3VexWidth).
- */
-export const H3_VEX_PERCENT = 30;
-/** The share's floor and cap, Cloud's clamp(360px, 30vw, 768px). */
-export const H3_VEX_MIN = 360;
-export const H3_VEX_MAX = 768;
-/** From this frame width up the Vex column is the share; under it, H3_VEX_NARROW. */
-export const H3_VEX_SHARE_MIN = 1280;
-/** The Vex column from H3_COLUMNS_MIN to 1279 (PD-14): a fixed 340. */
-export const H3_VEX_NARROW = 340;
+/** D2's Vex column at the right edge: a fixed 280 from H3_COLUMNS_MIN up (`--vex-d2-vex-w`). */
+export const D2_VEX_WIDTH = 280;
 
-/** The H3 frame's two layouts: three columns from H3_COLUMNS_MIN up, the band under it. */
+/** The frame's two layouts: three columns from H3_COLUMNS_MIN up, the band under it. */
 export type H3ShellLayout = "columns" | "band";
 
 /**
  * From this frame width up the chats column follows the stored choice: VEX
  * Cloud's fold point (PD-14, "left column 248 from 1280, the 76 rail under
- * 1280"), the same seam as H3_VEX_SHARE_MIN. Under it the chats are the
- * rail, and their key opens the chats panel over Vex's column instead.
+ * 1280"). Under it the chats are the rail, and their key opens the chats
+ * panel over the chat instead.
  */
-export const H3_CHATS_OPEN_MIN = H3_VEX_SHARE_MIN;
+export const H3_CHATS_OPEN_MIN = 1280;
 
 /**
- * The H3 frame's three tiers: "wide" from H3_CHATS_OPEN_MIN up (the chats as
+ * The frame's three tiers: "wide" from H3_CHATS_OPEN_MIN up (the chats as
  * the person left them), "medium" from H3_COLUMNS_MIN (the rail, its key
  * opening the chats panel), "band" under it (the rail, and Vex as a band).
  * Each seam belongs to the wider side, as shellTier's do.
@@ -305,31 +280,31 @@ export interface H3ShellInput {
   /**
    * Whether the chats column is asked open: the stored sidebar choice. False
    * is the rail at any width. Under H3_CHATS_OPEN_MIN it is ignored (the
-   * rail, and the chats panel over Vex's column).
+   * rail, and the chats panel over the chat).
    */
   readonly chats: boolean;
   /**
    * A page folds the Vex column to its one-line strip: the Vex track is 0 and
-   * the chat takes the room. Chats never set it; in H3 their Vex column stays.
+   * the chat takes the room. Chats never set it; their Vex column stays.
    */
   readonly vexStrip?: boolean;
 }
 
-/** Resolved H3 widths for one frame, in the grid's order, plus what it draws where. */
+/** Resolved widths for one frame, plus what it draws where. */
 export interface H3ShellColumns {
   /** Three columns from H3_COLUMNS_MIN up; the band under it. */
   readonly layout: H3ShellLayout;
   /** The chats track: H3_CHATS_WIDTH open, H3_RAIL_WIDTH folded or under H3_CHATS_OPEN_MIN. */
   readonly chats: number;
-  /** The Vex track: 340, or clamp(360, 30%, 768) from 1280 up; 0 for the band and a page's strip. */
+  /** The Vex track: D2_VEX_WIDTH, or 0 for the band and a page's strip. */
   readonly vex: number;
-  /** The chat track: the rest of the frame, the Vex track's fraction included. Never negative. */
+  /** The chat track: the rest of the frame. Never negative. */
   readonly chat: number;
   /** Whether the chats column renders as its rail (the user's fold, or under H3_CHATS_OPEN_MIN). */
   readonly chatsRail: boolean;
   /** Where the Vex console is drawn: its column, the band, or a page's strip. */
   readonly vexSeat: H3VexSeat;
-  /** The x where the chat starts (chats + Vex): the swap card's left edge, a page's start. */
+  /** The x where the chat starts (the chats track): the swap card's column, a page's start. */
   readonly chatLeft: number;
 }
 
@@ -344,20 +319,7 @@ function h3FrameWidth(viewport: number): number {
 }
 
 /**
- * The Vex column at a whole frame width, as Cloud lays it (PD-14): a fixed
- * H3_VEX_NARROW (340) under H3_VEX_SHARE_MIN, and clamp(360px, 30vw, 768px)
- * from there up, unrounded, so the grid and the CSS token
- * (`--vex-h3-vex-w`) agree to the fraction: 1366 gives 409.8, Cloud's own
- * measure. Computed as width * 30 / 100, one rounding step in floating
- * point, where width * 0.3 would take two.
- */
-function h3VexWidth(width: number): number {
-  if (width < H3_VEX_SHARE_MIN) return H3_VEX_NARROW;
-  return Math.min(H3_VEX_MAX, Math.max(H3_VEX_MIN, (width * H3_VEX_PERCENT) / 100));
-}
-
-/**
- * The H3 layout for a frame width. The seam is exact and belongs to the WIDER
+ * The layout for a frame width. The seam is exact and belongs to the WIDER
  * side, as shellTier's do: 1024 is columns, 1023 the band. A fractional width
  * is rounded first, as the solver does, so 1023.5 is columns.
  */
@@ -365,7 +327,7 @@ export function h3ShellLayout(viewport: number): H3ShellLayout {
   return h3FrameWidth(viewport) >= H3_COLUMNS_MIN ? "columns" : "band";
 }
 
-/** The H3 tier for a frame width, rounded first as the solver rounds. */
+/** The tier for a frame width, rounded first as the solver rounds. */
 export function h3ShellTier(viewport: number): H3ShellTier {
   const width = h3FrameWidth(viewport);
   if (width < H3_COLUMNS_MIN) return "band";
@@ -373,7 +335,7 @@ export function h3ShellTier(viewport: number): H3ShellTier {
 }
 
 /**
- * Solve the H3 tracks for one frame. Pure, with no hysteresis, like
+ * Solve the tracks for one frame. Pure, with no hysteresis, like
  * computeShellColumns: the output is a function of the width, the chats
  * choice and the page's strip only. There is no concession chain; at every
  * width from 0 up the three tracks fit by construction (under the rail's own
@@ -392,19 +354,19 @@ export function computeH3ShellColumns(input: H3ShellInput): H3ShellColumns {
   const vexSeat: H3VexSeat = band ? "band" : input.vexStrip === true ? "strip" : "column";
   // A frame narrower than the rail and the column leaves the column what
   // there is, so no track is ever negative.
-  const vex = vexSeat === "column" ? Math.min(Math.max(0, width - chats), h3VexWidth(width)) : 0;
+  const vex = vexSeat === "column" ? Math.min(Math.max(0, width - chats), D2_VEX_WIDTH) : 0;
   const chat = Math.max(0, width - chats - vex);
-  return { layout, chats, vex, chat, chatsRail, vexSeat, chatLeft: chats + vex };
+  return { layout, chats, vex, chat, chatsRail, vexSeat, chatLeft: chats };
 }
 
 /**
- * The grid's column template for an H3 frame, in H3's order (chats | Vex |
- * chat). No track is `auto`, as in R3's frame, so a track transition only
- * interpolates between lengths. The chat is minmax(0, 1fr), not `chat`px, so a
- * fractional frame width lands in the chat and never in a fixed column.
+ * The grid's column template for the frame, in D2's order (chats | chat |
+ * Vex). No track is `auto`, so nothing a cell holds can change a track. The
+ * chat is minmax(0, 1fr), not `chat`px, so a fractional frame width lands in
+ * the chat and never in a fixed column.
  */
 export function h3GridTemplateColumns(cols: H3ShellColumns): string {
-  return `${String(cols.chats)}px ${String(cols.vex)}px minmax(0, 1fr)`;
+  return `${String(cols.chats)}px minmax(0, 1fr) ${String(cols.vex)}px`;
 }
 
 /**
@@ -495,11 +457,11 @@ export function deskGridTemplateColumns(cols: DeskShellColumns): string {
 }
 
 /**
- * THE FRAME PER MODE. The agent shell and Studio stand in H3's frame: the
- * header row over the columns and the columns in H3's order, chats | Vex |
- * chat. The Lighter desk stands in H3's frame with its own order ("desk"):
- * the same header and bottom rows, and its chat on the right, rail | desk |
- * Vex, where the desk chat's drag handle grips the column's left edge.
+ * THE FRAME PER MODE. The agent shell and Studio stand in the shell's frame
+ * ("h3": H3's cells and rows, D2's columns): the header row over the columns
+ * and the columns in D2's order, chats | chat | Vex. The Lighter desk stands
+ * in the same rows with its own order ("desk"), rail | desk | Vex, where the
+ * desk chat's drag handle grips the column's left edge.
  */
 export type ShellFrameKind = "h3" | "desk";
 
@@ -511,16 +473,18 @@ export function shellFrameKind(mode: ShellMode): ShellFrameKind {
   return mode === "lighter" ? "desk" : "h3";
 }
 
-const H3_ORDER: readonly ShellColumnName[] = ["chats", "vex", "chat"];
-const R3_ORDER: readonly ShellColumnName[] = ["chats", "chat", "vex"];
+const RIGHT_ORDER: readonly ShellColumnName[] = ["chats", "chat", "vex"];
+const BAND_ORDER: readonly ShellColumnName[] = ["chats", "vex", "chat"];
 
 /**
- * The columns left to right in a mode, which is also their DOM order, so
- * focus follows the screen. In H3's the Vex column is the second track; on
- * the Lighter desk it is the last, the desk's chat on the right.
+ * The columns in a mode, in their DOM order, so focus follows the screen.
+ * Vex's column is the last, at the right edge, in the shell (D2) and on the
+ * Lighter desk alike. Under 1024 (`band`) the shell has no Vex column: her
+ * console is the line under the header, OVER the chat, so it comes before
+ * the chat in the DOM, as it does on screen. The desk has no band.
  */
-export function shellColumnOrder(mode: ShellMode): readonly ShellColumnName[] {
-  return shellFrameKind(mode) === "h3" ? H3_ORDER : R3_ORDER;
+export function shellColumnOrder(mode: ShellMode, band = false): readonly ShellColumnName[] {
+  return band && shellFrameKind(mode) === "h3" ? BAND_ORDER : RIGHT_ORDER;
 }
 
 /**
@@ -569,9 +533,6 @@ export interface ShellRows {
  */
 export const H3_CONSOLE_LINE_HEIGHT = 48;
 
-/** The Vex key's cell under 1024 (VEX Cloud's `.hd-vex` at 288): her face, her state, the waiting count. */
-export const H3_BAND_KEY_WIDTH = 288;
-
 /**
  * The bottom row's height, the H3 size token (tokens.css, 72: measured, its
  * top rule at y 827 to 828 of the 900-high plates; pinned by
@@ -598,50 +559,38 @@ export function shellGridTemplateRows(rows: ShellRows): string {
 }
 
 /**
- * THE HEADER'S CELLS (docs/design/H3-DESKTOP.md section 1.3): one row across
- * the window with a grid of its own, so a cell keeps its width where the body
- * under it folds (a page's strip leaves the Vex track 0 while the Vex key
- * stays in its cell). Each cell is placed by its named lines:
+ * THE HEADER'S CELLS (docs/design/H3-DESKTOP.md sections 1.3 and 6.2): one
+ * row across the window with a grid of its own, so a cell keeps its width
+ * where the body under it folds (a page's strip leaves the Vex track 0 while
+ * the VEX cell stays). Each cell is placed by its named lines, left to right:
  *
  *   chats    the logo cell and the sidebar key, over the chats column
- *   vex      the Vex key, over the Vex column
  *   title    the chat's title and the title bar's cluster
+ *   needs    NEEDS YOU and its count (the shell's; empty on the desk)
  *   funds    the static network statement (Mainnet, Real funds)
+ *   vex      over Vex's column at the right: the shell's VEX cell and its
+ *            hide or show key, the desk's Vex key
  *   reserve  the Windows and Linux caption buttons' reserve, `--overlay-w`
  *            wide (0 on macOS and on a native frame), a drag region with
  *            nothing in it
  *
- * `vexBetween` puts the Vex key over a Vex column between the chats and the
- * chat (H3's order); without it the key sits at the right end beside the
- * reserve, over a right-hand Vex column (the Lighter desk's). `vex` null
- * sizes the key's cell to the key. `reserveInVex` keeps the key and the
- * reserve together over that right-hand column: the key's cell is the
- * column less `--overlay-w`, so on Windows and Linux the caption buttons
- * stand over the column's top right and the key over the rest of it, and on
- * macOS (an `--overlay-w` of 0) the key is the column's whole width.
+ * `vex` null sizes the VEX cell to what it holds. The VEX cell and the
+ * reserve share the right-hand column: the cell is the column less
+ * `--overlay-w`, so on Windows and Linux the caption buttons stand over the
+ * column's top right and the cell over the rest of it, and on macOS (an
+ * `--overlay-w` of 0) the cell is the column's whole width.
  */
 export interface ShellHeadInput {
   /** The chats track under the logo and sidebar key cells. */
   readonly chats: number;
-  /** The Vex key cell's width; null is as wide as the key. */
+  /** The Vex column under the VEX cell (with the reserve); null is as wide as the cell's contents. */
   readonly vex: number | null;
-  /** The Vex key cell stands between the chats and the chat. */
-  readonly vexBetween: boolean;
-  /** The key's cell and the reserve share the right-hand column (the desk's). */
-  readonly reserveInVex?: boolean;
 }
 
 /** The header's own column template, with each cell's named lines. */
 export function shellHeadTemplateColumns(input: ShellHeadInput): string {
-  const chats = `[chats-start] ${String(input.chats)}px [chats-end`;
-  const vex = input.vex === null
-    ? "auto"
-    : input.reserveInVex === true && !input.vexBetween
-      ? `calc(${String(input.vex)}px - var(--overlay-w))`
-      : `${String(input.vex)}px`;
-  const rest = "minmax(0, 1fr) [title-end funds-start] auto [funds-end";
-  const reserve = "reserve-start] var(--overlay-w) [reserve-end]";
-  return input.vexBetween
-    ? `${chats} vex-start] ${vex} [vex-end title-start] ${rest} ${reserve}`
-    : `${chats} title-start] ${rest} vex-start] ${vex} [vex-end ${reserve}`;
+  const chats = `[chats-start] ${String(input.chats)}px [chats-end title-start] minmax(0, 1fr) [title-end`;
+  const cells = "needs-start] auto [needs-end funds-start] auto [funds-end";
+  const vex = input.vex === null ? "auto" : `calc(${String(input.vex)}px - var(--overlay-w))`;
+  return `${chats} ${cells} vex-start] ${vex} [vex-end reserve-start] var(--overlay-w) [reserve-end]`;
 }

@@ -178,15 +178,19 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(strip.className).toContain("@container");
   });
 
-  it("the strip is H3's four cells: the model and its effort, the promise, the state, the context", () => {
+  it("the strip is D2's four cells: AI permission, the promise, the state, the context", () => {
+    // docs/design/H3-DESKTOP.md section 6.5: the model and its effort went
+    // down into the bottom row's model cell.
     const { container } = mountDocked();
     const strip = toolbarRow(container);
     expect(Array.from(strip.children).map((cell) => cell.className.split(" ")[1])).toEqual([
-      "vex-composer-strip__model",
+      "vex-composer-strip__access",
       "vex-composer-strip__promise",
       "vex-composer-strip__state",
       "vex-composer-strip__context",
     ]);
+    expect(strip.querySelector(".vex-composer-strip__access")?.textContent).toBe("AI permission");
+    expect(strip.querySelector('[data-vex-area="composer-options"]')).toBeNull();
     // Over the composer row, inside the one form.
     expect(strip.nextElementSibling?.getAttribute("data-vex-area")).toBe("composer-row");
     // No daily budget: the context meter takes its cell (section 4.1).
@@ -209,10 +213,10 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     // The name MAY shrink: `min-w-0`, and no `shrink-0` pinning it.
     expect(name.className).toContain("min-w-0");
     expect(name.className).not.toContain("shrink-0");
-    // Its frame and its cluster are the shrinkable ones.
+    // Its frame and its cell are the shrinkable ones (the model cell, D2).
     const frame = name.parentElement as HTMLElement;
     expect(frame.className).toContain("min-w-0");
-    expect((frame.parentElement as HTMLElement).className).toContain("min-w-0");
+    expect((frame.parentElement as HTMLElement).className).toContain("vex-composer-modelcell");
   });
 
   it("labels own the ellipsis, on the options control the bar draws", () => {
@@ -238,7 +242,7 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(container.querySelector('[data-testid="model-brand-icon"]')).toBeNull();
   });
 
-  it("the options control reads \"{model} HIGH\": the name, then the effort key, no Reasoning: label", () => {
+  it("the model cell reads the name over \"Reasoning: High\", the effort key after the words", () => {
     models = [
       {
         modelId: "anthropic/claude-sonnet-4",
@@ -256,15 +260,23 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(frame).not.toBeNull();
     expect(frame.textContent).toContain("claude-sonnet-4");
-    expect(frame.textContent).not.toContain("Reasoning:");
     expect(frame.textContent).not.toContain("·");
     const effort = frame.querySelector('[role="combobox"][aria-label="Reasoning effort"]');
     expect(effort).not.toBeNull();
-    // The effort word follows the name; the sheet sets it in caps.
-    expect(frame.querySelector("[data-vex-model-label]")?.compareDocumentPosition(effort as Node)).toBe(
+    // "Reasoning:" stands before the effort key, under the name (D2,
+    // section 6.5); the words are a picture, the key keeps its own name.
+    const line = frame.querySelector(".vex-composer-options__reasoning");
+    expect(line?.querySelector(".vex-composer-options__prefix")?.textContent).toBe("Reasoning:");
+    expect(line?.querySelector(".vex-composer-options__prefix")?.getAttribute("aria-hidden")).toBe("true");
+    expect(line?.contains(effort)).toBe(true);
+    expect(frame.querySelector("[data-vex-model-label]")?.compareDocumentPosition(line as Node)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(frame.closest(".vex-composer-strip__model")).not.toBeNull();
+    // In the bottom row's model cell, beside the model key, not the strip.
+    const cell = frame.closest('[data-vex-area="composer-model-group"]');
+    expect(cell?.closest('[data-vex-area="composer-row"]')).not.toBeNull();
+    expect(cell?.querySelector(".vex-composer-model")).not.toBeNull();
+    expect(frame.closest('[data-vex-area="composer-strip"]')).toBeNull();
   });
 
   it("the chip shows the bare model name; the full routed id stays the accessible name", () => {

@@ -70,13 +70,6 @@ vi.mock("../NotificationCenter.js", () => ({
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovalsSync: () => <div data-testid="approvals-sync" />,
 }));
-vi.mock("../../vex/VexTokenChip.js", () => ({
-  VexTokenChip: ({ open, onToggle }: { open: boolean; onToggle: () => void }) => (
-    <button type="button" data-testid="token-chip" aria-pressed={open} onClick={onToggle}>
-      chip
-    </button>
-  ),
-}));
 vi.mock("../../vex/useVexPresence.js", () => ({
   useNeedsYou: () => ({
     status: "ready",
@@ -438,7 +431,6 @@ describe("the right cluster", () => {
     // (H3-DESKTOP.md section 1.3, `ShellHeader`): the running head draws the
     // title cell alone, and no chip.
     expect(document.querySelector("[data-vex-head-cell='vex-key']")).toBeNull();
-    expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 
   it("on the desk keeps only Notices in the cluster: Needs you is the console's, no export, no chip", () => {
@@ -448,7 +440,6 @@ describe("the right cluster", () => {
       el.getAttribute("data-testid"),
     );
     expect(order).toEqual(["notices"]);
-    expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 
   it("says a Needs you rise in EVERY mode, the welcome and the desk included, once", () => {
@@ -492,19 +483,6 @@ describe("the right cluster", () => {
       expect(syncs[0]?.closest(".vex-running-head__flank")).toBeNull();
       cleanup();
     }
-  });
-});
-
-describe("the token chip", () => {
-  it("is never drawn, on the desk or in H3's header: the Vex key has that cell", () => {
-    renderHead("lighter", SESSION, { vex: { open: true, onToggle: () => undefined } });
-    expect(screen.queryByTestId("token-chip")).toBeNull();
-    cleanup();
-    renderHead("agent", null, { empty: true, vex: { open: true, onToggle: () => undefined } });
-    expect(screen.queryByTestId("token-chip")).toBeNull();
-    cleanup();
-    renderHead("studio", SESSION, { vex: { open: true, onToggle: () => undefined } });
-    expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 });
 

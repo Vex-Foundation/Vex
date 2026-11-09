@@ -176,48 +176,58 @@ export function useSettledPhase(state: VexState, scope: string): SettledPhase | 
 export function TaglineView({
   line,
   bars,
+  words = true,
 }: {
   readonly line: VexLine;
   /** The bars' mood: her presence state's (`vexBarsMoodOf`). */
   readonly bars: VexBarsMood;
+  /** The line over the bars; D2's shell draws the bars alone (section 6.5). */
+  readonly words?: boolean;
 }): JSX.Element {
   const empty = line.reg === "caps" && line.empty;
   return (
-    <div className="vex-foot" data-vex-area="vex-foot">
+    <div className="vex-foot" data-vex-area="vex-foot" data-vex-foot-words={words ? undefined : "none"}>
       <VexBars mood={bars} />
-      <p
-        className="vex-tagline"
-        data-vex-tagline={line.kind}
-        data-reg={line.reg}
-        data-empty={empty ? "" : undefined}
-        aria-hidden="true"
-      >
-        <span className="vex-tagline__text">
-          {line.reg === "say" ? (
-            line.text
-          ) : (
-            <>
-              <span className="vex-tagline__lead">{line.lead}</span>
-              {line.rest === "" ? null : (
-                <>
-                  {" "}
-                  <span className="vex-tagline__rest">{line.rest}</span>
-                </>
-              )}
-            </>
-          )}
-        </span>
-      </p>
+      {words ? (
+        <p
+          className="vex-tagline"
+          data-vex-tagline={line.kind}
+          data-reg={line.reg}
+          data-empty={empty ? "" : undefined}
+          aria-hidden="true"
+        >
+          <span className="vex-tagline__text">
+            {line.reg === "say" ? (
+              line.text
+            ) : (
+              <>
+                <span className="vex-tagline__lead">{line.lead}</span>
+                {line.rest === "" ? null : (
+                  <>
+                    {" "}
+                    <span className="vex-tagline__rest">{line.rest}</span>
+                  </>
+                )}
+              </>
+            )}
+          </span>
+        </p>
+      ) : null}
     </div>
   );
 }
 
-export function TaglineCell(): JSX.Element {
+/**
+ * The shell's cell. D2 (docs/design/H3-DESKTOP.md section 6.5) draws the
+ * bars alone under Vex's column, no words (`words` false); the stages before
+ * the shell keep the line over them (`TaglineView`).
+ */
+export function TaglineCell({ words = true }: { readonly words?: boolean } = {}): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
   const { state, word, narration } = useVexPresence();
   const settled = useSettledPhase(state, `${runtimeMode}:${activeSessionId ?? ""}`);
   const line = vexLineOf({ runtimeMode, activeSessionId, pageOpen, state, word, narration, settled });
-  return <TaglineView line={line} bars={vexBarsMoodOf(state)} />;
+  return <TaglineView line={line} bars={vexBarsMoodOf(state)} words={words} />;
 }

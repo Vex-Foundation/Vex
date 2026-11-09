@@ -5,14 +5,13 @@
  * VEX Cloud's own answer (`h3-shell-gaps`, decision 3: "under 1280 the rail
  * opens a chats panel, not the column").
  *
- * THE MONEY RULE (section 3.6). The panel is a box laid over Vex's column,
- * never a grid track: the frame's tracks are the same open or closed, so a
- * waiting card in the chat never moves while it opens or closes (the card
- * proof reads it at 1024, 1180 and 1279). It lies above her section, and a
- * scrim lies over the rest of her column beside it; under 1024, and on a
- * page whose Vex column has folded to its strip, there is no column to lie
- * over, so the scrim runs to the window's edge and the chat behind it rests
- * (`covers`, the frame makes it inert) until the panel closes.
+ * THE MONEY RULE (section 3.6). The panel is a box laid over the chat (D2,
+ * section 6.7: the chat stands beside the rail), never a grid track: the
+ * frame's tracks are the same open or closed, so a waiting card in the chat
+ * never moves while it opens or closes (the card proof reads it at 1024,
+ * 1180 and 1279). In the shell it always covers what is read (`covers`): the
+ * scrim runs to the window's edge and the chat and Vex's column behind it
+ * rest (the frame makes them inert) until the panel closes.
  *
  *   section.vex-chats-panel[data-vex-area="chats-panel"]
  *     the CHATS head, 56

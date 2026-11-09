@@ -34,6 +34,10 @@
  *   div[data-vex-area="welcome-opening"]
  *     h1.vex-welcome__greeting    "Ready when you are.", the bubble
  *     ul.vex-welcome__notes       the two notes
+ *     [data-vex-area="welcome-starters-slot"]
+ *                                 the two-by-two suggestions, portalled in by
+ *                                 the composer that owns them (D2, section
+ *                                 6.6: one group with the greeting)
  *     ErrorCallout?               a read that failed (the database down)
  *     VexInferenceNotice?         "AI is now paid in VEX", until dismissed or
  *                                 while another provider (or none) is active
@@ -49,6 +53,7 @@ import { ErrorCallout } from "../../components/ui/error-callout.js";
 import { NEEDS_YOU_ALL_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
 import { VexInferenceNotice } from "./VexInferenceNotice.js";
+import { setWelcomeStartersSlot } from "./welcome-starters-slot.js";
 
 /** H3's greeting (Appendix A.4: same on desktop). */
 export const WELCOME_GREETING = "Ready when you are.";
@@ -93,6 +98,8 @@ export function SessionWelcomeHero(): JSX.Element {
           </li>
         ))}
       </ul>
+      {/* The suggestions stand right under the notes (D2, section 6.6). */}
+      <div ref={setWelcomeStartersSlot} data-vex-area="welcome-starters-slot" className="vex-welcome__starters" />
       {readFailure === null ? null : (
         <ErrorCallout
           role="alert"

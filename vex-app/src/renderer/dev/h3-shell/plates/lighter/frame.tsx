@@ -42,7 +42,6 @@ import { VEX_TOGGLE_CHORD } from "../../../../features/vex/vex-toggle-shortcut.j
 import {
   H3_COLUMNS_MIN,
   H3_RAIL_WIDTH,
-  H3_VEX_PERCENT,
   LIGHTER_CHAT_MAX,
   LIGHTER_CHAT_MIN,
   shellGridTemplateRows,
@@ -64,9 +63,13 @@ export function useWindowSize(): { readonly width: number; readonly height: numb
   return size;
 }
 
-/** Her column on the desk: 30% of the window, as H3's Vex column (section 1.2). */
+/**
+ * Her column on the desk: 30% of the window, the desk's default share
+ * (`desk.chatShare`), as the approved plate drew it from H3's Vex column.
+ */
+const DESK_VEX_PERCENT = 30;
 export function deskVexWidth(windowWidth: number): number {
-  return Math.round((windowWidth * H3_VEX_PERCENT) / 100);
+  return Math.round((windowWidth * DESK_VEX_PERCENT) / 100);
 }
 
 export type PlateVexState = "ready" | "awaiting";
@@ -162,7 +165,7 @@ export function DeskFrame({ vexOpen, vexState, desk, vex, reviewing = false, han
   const { width } = useWindowSize();
   const band = width < H3_COLUMNS_MIN;
   const vexWidth = deskVexWidth(width);
-  const headColumns = shellHeadTemplateColumns({ chats: H3_RAIL_WIDTH, vex: vexWidth, vexBetween: false });
+  const headColumns = shellHeadTemplateColumns({ chats: H3_RAIL_WIDTH, vex: vexWidth });
   return (
     <main
       className="relative isolate flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"

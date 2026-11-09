@@ -292,7 +292,10 @@ describe("SessionWelcomeHero - the database down", () => {
     expect(alert.textContent).toContain(NEEDS_YOU_UNKNOWN_COPY);
     expect(alert.querySelector("[data-vex-open-logs]")).not.toBeNull();
     // Under the greeting's notes, above the composer the panel seats next.
-    expect(container.querySelector("[data-vex-welcome-notes]")?.nextElementSibling).toBe(alert);
+    // Under the notes and the suggestions' slot (D2, section 6.6).
+    const slot = container.querySelector("[data-vex-welcome-notes]")?.nextElementSibling;
+    expect(slot?.getAttribute("data-vex-area")).toBe("welcome-starters-slot");
+    expect(slot?.nextElementSibling).toBe(alert);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchSessions).toHaveBeenCalledTimes(1);
     expect(retryNeedsYou).toHaveBeenCalledTimes(1);
@@ -341,7 +344,9 @@ describe("SessionWelcomeHero - the Vex Inference notice", () => {
     envData = openRouterEnv();
     const { container } = render(<SessionWelcomeHero />);
     const notice = screen.getByRole("region", { name: "AI is now paid in VEX" });
-    expect(container.querySelector("[data-vex-welcome-notes]")?.nextElementSibling).toBe(notice);
+    expect(
+      container.querySelector('[data-vex-area="welcome-starters-slot"]')?.nextElementSibling,
+    ).toBe(notice);
     expect(container.querySelector('[data-vex-area="welcome-opening"]')?.lastElementChild).toBe(notice);
   });
 
