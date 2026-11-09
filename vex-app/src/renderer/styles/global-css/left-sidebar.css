@@ -542,25 +542,36 @@ html[data-still] .vex-ls-msg__hatch {
   white-space: nowrap;
   color: var(--vex-alias-label-primary);
 }
-/* Pin and Remove (24 x 24) take the time's place on hover and focus. */
+/* Pin and Remove (24 x 24) take the trailing cell's place on hover and focus
+ * (VEX Cloud's `.vx-lc-rowmenu`): the time or the tag leaves the row
+ * (`display: none`) and the title's right padding narrows to 8, so the title
+ * gains the room; the keys stand in the row's flow, 8 from its right edge.
+ * At rest they take no width (max-width 0) but stay in the tab order, so Tab
+ * and Shift+Tab both reach them and focus opens them. */
 .vex-ls-row__actions {
-  position: absolute;
-  top: 50%;
-  right: 6px;
   display: flex;
+  flex: none;
+  align-items: center;
   gap: 2px;
+  max-width: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateY(-50%);
 }
 .vex-ls-row:hover .vex-ls-row__actions,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__actions {
+  max-width: 58px;
+  padding-right: 8px;
   opacity: 1;
+}
+.vex-ls-row:hover .vex-ls-row__select,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__select {
+  padding-right: 8px;
 }
 .vex-ls-row:hover .vex-ls-row__time,
 .vex-ls-row:hover .vex-ls-row__state,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__time,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__state {
-  visibility: hidden;
+  display: none;
 }
 .vex-ls-row[data-editing] {
   padding: 0 4px;

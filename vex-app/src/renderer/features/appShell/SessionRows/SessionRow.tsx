@@ -89,6 +89,8 @@ export function SessionRow({
   const isPinned = row.pinnedAt !== null;
   const sidebar = variant === "sidebar";
   const state = sessionRowState(row);
+  /** The sidebar row's trailing cell in words: the state, else the time. */
+  const trailingWord = state === null ? formatChatRowTime(row.startedAt) : state.word;
 
   const handlePinClick = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
@@ -182,13 +184,19 @@ export function SessionRow({
         {/* A bare space: no width in the flex row, a word break in the
           * select button's accessible name. */}
         {" "}
+        {/* The trailing cell leaves the row on hover and focus (its keys take
+          * its place, left-sidebar.css), so the name a screen reader hears
+          * keeps the time or the state in a hidden copy, and the drawn cell
+          * is decoration. */}
+        <span className="sr-only">{trailingWord}</span>
         {state === null ? (
-          <span className="vex-ls-row__time">{formatChatRowTime(row.startedAt)}</span>
+          <span aria-hidden className="vex-ls-row__time">
+            {trailingWord}
+          </span>
         ) : (
           // H3's tag: the status square (about 6px) beside the word, which the
-          // row's class sets in caps. The square is decoration; the word
-          // says the state.
-          <span className="vex-ls-row__state">
+          // row's class sets in caps.
+          <span aria-hidden className="vex-ls-row__state">
             <StateSquare state={state.square} size={6} />
             {state.word}
           </span>

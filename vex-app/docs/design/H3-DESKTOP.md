@@ -121,6 +121,8 @@ The three Vex key cells span the Vex column, so they narrow with it: at 1024 the
 
 Under 1024 the column is the 76px rail (section 1.10). The nav's entries on desktop are in section 4.6.
 
+A chat row's keys (Pin and Remove, desktop's) take its trailing cell's place on hover and keyboard focus, as Cloud's row menu does (`.vx-lc-rowmenu`): the time or the tag leaves the row, the title's right padding narrows to 8 so the title gains the room, and the keys stand in the row's flow 8 from its edge. At rest they take no width but stay in the tab order. The time or the state stays in the row's accessible name through a hidden copy.
+
 The list's states, VEX Cloud's (`shell/sidebar/chat-list.tsx`, `.vx-lc-msg` and `.vx-lc-error`), in the column and in the chats panel alike: one sentence at 14/1.4 in the muted ink, padding 6 24 10, its mark 10 before it. Loading is the stepping hatch (14 square, still under reduced motion and Save-Data) and "Loading chats", a status. A failed read is the cross and "Chats could not load." (an alert, main's own reason after it when it gave one), over an outline Retry key 40 high, 4 24 round it, which reads the list again and says "Retrying…" while the read runs, staying focusable. The empty and no-match lines stand alone. The Lighter desk's drawer keeps its placeholders until its own restyle.
 
 ### 1.5 The Vex column
