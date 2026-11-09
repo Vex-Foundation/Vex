@@ -20,6 +20,14 @@
  * refuses if its inventory changed in between. Nothing is signed before the
  * press; nothing moves funds.
  *
+ * THE LOOK IN SETTINGS IS VEX CLOUD'S BUILT ACCOUNT BODY (owner decision
+ * 2026-11-09, docs/design/H3-DESKTOP.md section 4.9, look only; Cloud's
+ * `AccountBodyView`, W5 239c202d): the balance and the linked wallets each a
+ * box with a 44 caps head, the balance's head saying "As of {time}" (hours
+ * and minutes), and Fund a full-size key. The boxes are drawn by
+ * `settings.css` under the Settings page; elsewhere (onboarding) the heads
+ * stand as caps labels over the same rows.
+ *
  * Money arrives raw (wei with decimals, integer micro-USD) and is formatted
  * here with integer arithmetic, rounded down. A missing figure reads
  * "Not available".
@@ -45,6 +53,7 @@ import {
   usdEstimateOf,
 } from "./vex-cloud-format.js";
 import { WithdrawalNotices } from "./funding/WithdrawalNotices.js";
+import { clockFromMs } from "../appShell/book/portfolio/portfolio-format.js";
 
 type Action =
   | { readonly kind: "idle" }
@@ -124,7 +133,8 @@ function SignedIn({
   const rateAge = formatRateAge(account.rate);
   const linked = new Set(account.wallets.map((wallet) => wallet.address.toLowerCase()));
   const unlinkedLocal = localWallets.filter((address) => !linked.has(address.toLowerCase()));
-  const readAt = new Date(account.readAt);
+  const readAtMs = Date.parse(account.readAt);
+  const asOf = clockFromMs(readAtMs);
   const { balances } = account;
   return (
     <div className="flex flex-col gap-4" data-vex-cloud-state="signed_in">
@@ -138,8 +148,21 @@ function SignedIn({
           Vex Inference paused this account for review. Requests are refused until it is cleared.
         </p>
       ) : null}
-      <section aria-label="VEX balance">
-        <dl className="m-0 flex flex-col">
+      <section aria-label="VEX balance" className="vex-acct-box">
+        <div className="vex-acct-box__h">
+          <h3 className="vex-acct-box__t">Balance</h3>
+          <span className="vex-acct-box__asof" data-vex-cloud-as-of="">
+            As of{" "}
+            {asOf === null ? (
+              NOT_AVAILABLE
+            ) : (
+              <time className="vex-num" dateTime={new Date(readAtMs).toISOString()}>
+                {asOf}
+              </time>
+            )}
+          </span>
+        </div>
+        <dl className="vex-acct-box__b m-0 flex flex-col">
           <BalanceRow name="Available" amount={balances.available} testId="available" />
           <BalanceRow name="Reserved for running requests" amount={balances.reserved} testId="reserved" />
           {hasValue(balances.provisional) ? (
@@ -164,7 +187,7 @@ function SignedIn({
             />
           ) : null}
         </dl>
-        <p className="m-0 mt-1 text-[12px] text-ink-tertiary" data-vex-cloud-rate-line="">
+        <p className="vex-acct-box__foot m-0 mt-1 text-[12px] text-ink-tertiary" data-vex-cloud-rate-line="">
           {usdPerVex === null || rateAge === null ? (
             `USD rate: ${NOT_AVAILABLE}`
           ) : (
@@ -172,16 +195,14 @@ function SignedIn({
               1 VEX = <span className="vex-num font-mono">{usdPerVex}</span>, {rateAge}
             </>
           )}
-          . Balances as of{" "}
-          <span className="vex-num font-mono">
-            {Number.isNaN(readAt.getTime()) ? NOT_AVAILABLE : readAt.toLocaleTimeString()}
-          </span>
           .
         </p>
       </section>
-      <section aria-label="Linked wallets">
-        <h3 className="m-0 text-[12px] font-medium text-ink-tertiary">Linked wallets</h3>
-        <ul className="m-0 mt-1 flex list-none flex-col p-0">
+      <section aria-label="Linked wallets" className="vex-acct-box">
+        <div className="vex-acct-box__h">
+          <h3 className="vex-acct-box__t">Linked wallets</h3>
+        </div>
+        <ul className="vex-acct-box__b m-0 mt-1 flex list-none flex-col p-0">
           {account.wallets.map((wallet) => (
             <li key={wallet.address} className={ROW} data-vex-cloud-wallet="linked">
               <span className="vex-num font-mono text-[13px] text-ink-primary">{wallet.address}</span>
@@ -197,7 +218,7 @@ function SignedIn({
         </ul>
       </section>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={busy} onClick={onFund} data-testid="vex-cloud-fund">
+        <Button type="button" disabled={busy} onClick={onFund} data-testid="vex-cloud-fund">
           Fund
         </Button>
         {unlinkedLocal.length > 0 ? (

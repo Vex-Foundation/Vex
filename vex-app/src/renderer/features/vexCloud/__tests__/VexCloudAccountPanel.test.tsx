@@ -250,7 +250,17 @@ describe("signed in", () => {
     for (const row of rows) expect(row.textContent).not.toMatch(/rate|old/);
     // 10^15 wei per micro-USD: one VEX is 1,000 micro-USD.
     const line = document.querySelector("[data-vex-cloud-rate-line]");
-    expect(line?.textContent).toBe("1 VEX = $0.001, rate 2 min old. Balances as of " + new Date("2026-10-20T12:01:00.000Z").toLocaleTimeString() + ".");
+    expect(line?.textContent).toBe("1 VEX = $0.001, rate 2 min old.");
+    // The read time stands in the Balance head, hours and minutes (Cloud's built account body).
+    const read = new Date("2026-10-20T12:01:00.000Z");
+    const clock = `${String(read.getHours()).padStart(2, "0")}:${String(read.getMinutes()).padStart(2, "0")}`;
+    const asOf = document.querySelector("[data-vex-cloud-as-of]");
+    expect(asOf?.textContent).toBe(`As of ${clock}`);
+    expect(asOf?.querySelector("time")?.getAttribute("datetime")).toBe("2026-10-20T12:01:00.000Z");
+    expect([...document.querySelectorAll(".vex-acct-box__t")].map((h) => h.textContent)).toEqual([
+      "Balance",
+      "Linked wallets",
+    ]);
     expect(document.body.textContent?.match(/rate 2 min old/g)).toHaveLength(1);
   });
 

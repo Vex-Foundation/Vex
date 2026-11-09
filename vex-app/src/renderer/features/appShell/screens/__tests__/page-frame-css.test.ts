@@ -160,3 +160,32 @@ describe("section head rhythm (C3-E-13, VEX Cloud's `.vx-psec-h`)", () => {
     );
   });
 });
+
+describe("Memory takes Cloud's built page as its plate (owner decision 2026-11-09)", () => {
+  it("goes to two columns from a 760 page, the side 300 wide", () => {
+    expect(rule(memory, ".vex-mem-page")).toContain("container: vex-mem-page / inline-size;");
+    expect(memory).toMatch(
+      /@container vex-mem-page \(width >= 760px\) \{\s*\.vex-mem-g \{\s*grid-template-columns: minmax\(0, 1fr\) 300px;/,
+    );
+  });
+  it("stands the guarantee box and the register lists on the card ground, rows 16 in, heads at 12", () => {
+    expect(rule(memory, ".vex-mem-card")).toMatch(/padding: 12px 16px;[\s\S]*background: var\(--vex-alias-card\);/);
+    expect(rule(memory, ".vex-mem-list")).toContain("background: var(--vex-alias-card);");
+    expect(rule(memory, ".vex-mem-row")).toContain("padding: 12px 16px;");
+    expect(rule(memory, ".vex-mem-sec__title")).toContain("font-size: 12px;");
+  });
+});
+
+describe("Vex Inference funds take Cloud's built page as the plate (owner decision 2026-11-09)", () => {
+  it("frames the Balance box on the card ground with a 44 head and 20 mono figures", () => {
+    expect(rule(book, ".vex-inf-bal")).toContain("background: var(--vex-alias-card);");
+    expect(rule(book, ".vex-inf-bal__h")).toContain("min-height: 44px;");
+    expect(rule(book, ".vex-inf-fig__v")).toMatch(/font-family: var\(--font-mono\);\s*font-size: 20px;/);
+    expect(rule(book, ".vex-inf-figs")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr)) auto;");
+  });
+  it("keeps the box's keys off the blue, and frames the forms at most 760 wide", () => {
+    expect(rule(book, ".vex-inf-key")).not.toMatch(/accent|blue/);
+    expect(rule(book, ".vex-inf-forms")).toContain("max-width: 760px;");
+    expect(rule(book, ".vex-inf-panel")).toContain("background: var(--vex-alias-card);");
+  });
+});

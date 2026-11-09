@@ -35,32 +35,52 @@ describe("settings.css", () => {
     expect(imports[overlayAt + 1]).toBe('@import "./global-css/settings.css";');
   });
 
-  it("is a nav of 264 (210 under 1180) beside the section", () => {
-    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 264px minmax(0, 1fr)");
+  it("is a nav of 248, Cloud's (210 under 1180), beside the section", () => {
+    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 248px minmax(0, 1fr)");
     const narrow = /@media \(max-width: 1179px\) \{([\s\S]*?)\n\}/.exec(settings)?.[1] ?? "";
     expect(narrow).toContain("grid-template-columns: 210px minmax(0, 1fr)");
-    expect(narrow).toContain("padding: 22px 28px 56px");
+    expect(narrow).toContain("padding: 24px 24px 56px");
     expect(rule(settings, ".vex-set__nav")).toContain("padding: 22px 0 24px");
-    expect(rule(settings, ".vex-set__body")).toContain("padding: 28px 44px 56px");
-    expect(rule(settings, ".vex-set__col")).toContain("max-width: 680px");
+    // The page kit: the body 24 in, its column at most 760.
+    expect(rule(settings, ".vex-set__body")).toContain("padding: 24px 24px 56px");
+    expect(rule(settings, ".vex-set__col")).toContain("max-width: 760px");
   });
 
   it("sizes the rows and heads as H3 fixes them", () => {
-    // The nav on H3's 40 pitch, its labels and group heads in caps.
+    // The nav is Cloud's built nav (owner decision 2026-11-09): 36 rows, the
+    // name in sentence case 14, the group words 11 caps at 12 24 6.
     const item = rule(settings, ".vex-set__item");
-    expect(item).toContain("height: 40px");
-    expect(item).toMatch(/font-size: 13px;[\s\S]*text-transform: uppercase/);
-    expect(rule(settings, ".vex-set__group")).toMatch(/font-size: 12px;[\s\S]*text-transform: uppercase/);
-    // A section's name is H3's card sentence; its blocks the 13 caps head.
-    expect(rule(settings, ".vex-set__title")).toMatch(/font-size: 20px;[\s\S]*font-weight: 400/);
+    expect(item).toContain("height: 36px");
+    expect(item).toContain("padding: 0 20px 0 24px");
+    expect(item).toContain("font-size: 14px");
+    expect(item).not.toContain("text-transform: uppercase");
+    const group = rule(settings, ".vex-set__group");
+    expect(group).toMatch(/padding: 12px 24px 6px;\s*font-size: 11px;[\s\S]*text-transform: uppercase/);
+    expect(rule(settings, ".vex-set__icon")).toContain("color: var(--vex-alias-label-tertiary)");
+    const hover = rule(settings, ".vex-set__item:hover");
+    expect(hover).toContain("background: var(--set-sel)");
+    expect(hover).toContain("color: var(--vex-alias-label-primary)");
+    // A block's head is Cloud's 12 caps (600), 12 above its content.
     expect(rule(settings, ".vex-set__sh-title")).toMatch(
-      /font-size: 13px;[\s\S]*font-weight: 600;[\s\S]*text-transform: uppercase/,
+      /font-size: 12px;[\s\S]*font-weight: 600;[\s\S]*text-transform: uppercase/,
     );
+    expect(rule(settings, ".vex-set__sh")).toContain("margin: 0 0 12px");
+    // A block is Cloud's PageBox: a frame on the card ground, 16 in, its head a 44 band.
+    const box = rule(settings, "section.vex-set__sec:not([data-vex-user-mcp])");
+    expect(box).toMatch(/padding: 0 16px 16px;\s*border: 1px solid var\(--vex-alias-rule\);\s*background: var\(--vex-alias-card\);/);
+    expect(
+      rule(settings, "section.vex-set__sec:not([data-vex-user-mcp]) > :is(.vex-set__sh, .vex-set__sh-title):first-child"),
+    ).toMatch(/min-height: 44px;[\s\S]*margin: 0 -16px 12px;[\s\S]*border-bottom: 1px solid var\(--vex-alias-rule\);/);
     // The lead is the page kit's (C3-E-05): 14 / 1.5 at most 760.
     expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 760px;[\s\S]*font-size: 14px;[\s\S]*line-height: 1.5;/);
     expect(rule(settings, ".vex-pref__title")).toMatch(/font-size: 15px;[\s\S]*font-weight: 400/);
     expect(rule(settings, ".vex-pref__help")).toContain("font-size: 13px");
-    expect(rule(settings, ".vex-pref")).toContain("padding: 16px 20px");
+    // Cloud's built preference row: at least 64, padding 12 16, the note at most 520.
+    expect(rule(settings, ".vex-pref")).toMatch(/min-height: 64px;\s*padding: 12px 16px;/);
+    expect(rule(settings, ".vex-pref__help")).toContain("max-width: 520px");
+    expect(rule(settings, ".vex-prefs__list")).toContain("background: var(--vex-alias-card)");
+    expect(rule(settings, ".vex-pref__title[data-vex-pref-row-press]::after")).toMatch(/position: absolute;\s*inset: 0;/);
+    expect(settings).toMatch(/\.vex-pref:has\(\[role="switch"\]\):hover \{\s*background: var\(--vex-alias-interactive-hover\);/);
     // The rows sit in one framed cell.
     expect(rule(settings, ".vex-prefs__list")).toContain("border: 1px solid var(--vex-alias-rule)");
     expect(rule(settings, ".vex-set__kvl")).toContain("border: 1px solid var(--vex-alias-rule)");
@@ -94,6 +114,13 @@ describe("settings.css", () => {
     expect(on).toContain("background: var(--vex-alias-label-primary)");
     // The blue is for primary keys only (section 2.4).
     expect(settings).not.toContain("button-accent");
+  });
+
+  it("boxes each MCP server on the card ground with a 44 head and 10 16 tool rows (Cloud's built MCP page)", () => {
+    expect(rule(settings, ".vex-mcp-box")).toContain("background: var(--vex-alias-card)");
+    expect(rule(settings, ".vex-mcp-box__h")).toContain("min-height: 44px");
+    expect(rule(settings, ".vex-mcp-tool")).toContain("padding: 10px 16px");
+    expect(rule(settings, ".vex-mcp-tools__h")).toMatch(/font-size: 11px;[\s\S]*text-transform: uppercase/);
   });
 
   it("draws the Lock Vex row's chord in mono 12 muted", () => {

@@ -1,24 +1,26 @@
 /* THE SETTINGS PAGE in H3 cells (docs/design/H3-DESKTOP.md sections 1.4, 1.9,
- * 2.3, 2.4 and 4.9; R3-MINIMAL.md section 9.6 before it). H3 draws no
- * Settings plate: the page follows the page frame, with its nav built from
- * the chats column's nav and its sections from the console's cells.
+ * 2.3, 2.4 and 4.9; R3-MINIMAL.md section 9.6 before it).
  *
- * One page sheet (overlay.css) with two panes: the nav (264 wide, 210 under
- * 1180, padding 22 12 0 14) in four groups, and the section (padding 28 44 0,
- * 22 28 under 1180, one column of at most 680). The nav and the section scroll
- * on their own, so the nav never leaves while a long section moves. Radius 0,
- * no shadow, no blur; every colour is an alias.
- *   - the nav: group heads are H3's group heads (12 caps tracked, muted, as
- *     TODAY); rows are 40 high on H3's nav pitch with the icon and the name in
- *     caps (13); the selected row takes H3's selected-row fill (the alias
- *     `--vex-alias-row-selected`, the one fill that fades, from the nav's left
- *     edge to the ground) and ink;
- *   - a section: its name as a 20 sentence (H3's card sentence), the lead in
- *     ink 2, its blocks headed by the 13 caps label (600), its rows in one
- *     framed cell, its links ink and underlined;
- *   - the switch is H3's: 36 x 20, a 1px light border, the thumb a light
- *     square at the right when on (section 2.4); never the blue, which is
- *     only for primary keys.
+ * One page sheet (overlay.css) with two panes: the nav (248 wide, 210 under
+ * 1180) in four groups, and the section (padding 24 24 56, one column of at
+ * most 760). The nav and the section scroll on their own, so the nav never
+ * leaves while a long section moves. Radius 0, no shadow, no blur; every
+ * colour is an alias. The switch is H3's: 36 x 20, a 1px light border, the
+ * thumb a light square at the right when on (section 2.4); never the blue,
+ * which is only for primary keys.
+ *
+ * THE PLATE IS VEX CLOUD'S BUILT SETTINGS (owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9, look only; Cloud's `settings.css` and the page kit,
+ * W5 9b6ec94c and e1083f44). The nav (Cloud's `.vx-setnav`): 248 wide,
+ * group words 11 caps muted at padding 12 24 6; rows 36 high, the name in
+ * sentence case 14, ink 2, the 16 icon muted (the line set has no 18); hover and the chosen row take
+ * the chosen row's fill and ink. The nav stays in the page (moving it into the
+ * left column is the owner's call); the sections, their words and their
+ * controls stay desktop's. A section (the page kit): no visible title (the
+ * nav's chosen row and the header name it; the h2 stays for assistive tech),
+ * the lead row with the section's status word first; the body 24 in, its
+ * column at most 760; each block a box on the card ground, its 44 head band
+ * the 12 caps name (600) with its link at the right.
  *
  * The sheet's own column gives way to the full width here: the nav sits
  * flush against the left sidebar's rule. The frame's padding rule in
@@ -39,16 +41,17 @@
   --set-sel: var(--vex-alias-row-selected);
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
 
-/* THE NAV: group heads 12 caps muted, rows 40 high (H3's nav pitch) with a 16
- * line icon, the name in caps 13 and the status word at the right (12 caps,
- * muted). Selected = H3's selected-row fill and ink. */
+/* THE NAV (Cloud's `.vx-setnav`): group words 11 caps muted, rows 36 high
+ * with a 16 line icon, the name in sentence case 14 and desktop's status word
+ * at the right (12, muted). Hover and the chosen row = the chosen row's fill and
+ * ink. */
 .vex-set__nav {
   min-height: 0;
   overflow-y: auto;
@@ -56,10 +59,10 @@
   border-right: 1px solid var(--vex-alias-rule);
 }
 .vex-set__group {
-  padding: 18px 24px 6px;
-  font-size: 12px;
+  padding: 12px 24px 6px;
+  font-size: 11px;
   font-weight: 400;
-  line-height: 18px;
+  line-height: 1;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -73,17 +76,20 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px 0 24px;
+  height: 36px;
+  padding: 0 20px 0 24px;
   text-align: left;
-  font-size: 13px;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  font-size: 14px;
+  line-height: 1.3;
   white-space: nowrap;
   color: var(--vex-alias-label-secondary);
 }
 .vex-set__item:hover {
-  background: var(--vex-alias-interactive-hover);
+  background: var(--set-sel);
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__item:hover .vex-set__icon {
+  color: var(--vex-alias-label-primary);
 }
 .vex-set__item:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -91,15 +97,14 @@
 }
 .vex-set__icon {
   flex: none;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-set__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The status word stays a short sentence beside the caps name, so the name
- * keeps its room: in caps both would not fit the nav. */
+/* The status word, a short muted sentence after the name. */
 .vex-set__word {
   display: inline-flex;
   flex: none;
@@ -126,12 +131,12 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 44px 56px;
+  padding: 24px 24px 56px;
   /* The rows answer to the section's own width, not the window's. */
   container-type: inline-size;
 }
 .vex-set__col {
-  max-width: 680px;
+  max-width: 760px;
 }
 
 /* Under 1180 the nav is 210 and the section pads 22 28. The status words
@@ -142,7 +147,7 @@
     grid-template-columns: 210px minmax(0, 1fr);
   }
   .vex-set__body {
-    padding: 22px 28px 56px;
+    padding: 24px 24px 56px;
   }
   .vex-set__word {
     position: absolute;
@@ -154,11 +159,11 @@
   }
 }
 
-/* The section head: the name as H3's card sentence (20 / 400) with its status
- * word (13 caps, ink 2), the lead VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2,
- * at most 760. */
+/* The section head (Cloud's `PageHeader`): the name is the visually hidden
+ * h2; the lead row shows the status word (11 caps, ink 2, its swatch first)
+ * and the lead, VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2, at most 760. */
 .vex-set__head {
-  margin: 0 0 24px;
+  margin: 0 0 8px;
 }
 .vex-set__title {
   display: flex;
@@ -175,7 +180,8 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  margin-right: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -189,9 +195,9 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* A block inside a section (Points, Trading setup): H3's section head (13
- * caps, 600) with a link at the right (13, ink, underlined), a note under it
- * (13, ink 2). */
+/* A block inside a section (Points, Trading setup): Cloud's section head (12
+ * caps, 600, 12 under it) with a link at the right (13, ink, underlined), a
+ * note under it (13, ink 2). */
 .vex-set__sec {
   margin: 0 0 28px;
 }
@@ -199,11 +205,11 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 .vex-set__sh-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 22px;
   letter-spacing: var(--tracking-label);
@@ -250,11 +256,33 @@
   color: var(--vex-alias-label-primary);
 }
 
+/* A block as Cloud's PageBox (`page.css`, `.vx-pbox`): one rule frame on the
+ * card ground, 16 in; its first head is a 44 band across the box with a rule
+ * under it. Tools (MCP) keeps its own per-server boxes. */
+section.vex-set__sec:not([data-vex-user-mcp]) {
+  margin: 0 0 16px;
+  padding: 0 16px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+section.vex-set__sec:not([data-vex-user-mcp]) > :is(.vex-set__sh, .vex-set__sh-title):first-child {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0 -16px 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):first-child {
+  margin-bottom: 0;
+}
+
 /* Label and value rows (the Lighter points): one framed cell, the label in
  * caps (13, muted) at the left, the value, an optional sub line, a rule
  * between rows. */
 .vex-set__kvl {
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 .vex-set__kv {
   display: grid;
@@ -311,19 +339,35 @@
   gap: 8px;
 }
 
-/* PREFERENCES: one framed cell, one row per setting, a rule between rows: the
- * name 15 / 400 (H3's row size) and the help 13 muted at the left, the
- * control at the right. */
+/* PREFERENCES (VEX Cloud's built preference rows, `controls.css`
+ * `.vx-field[data-layout=row]`): one framed cell on the card ground, one row
+ * per setting, at least 64 high, padding 12 16, a rule between rows: the name
+ * 15 / 400 and the help 13 muted (at most 520) at the left, the control at
+ * the right. A switch row's name is its label, whose press area spans the
+ * row; a hovering pointer washes it. */
 .vex-prefs__list {
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 .vex-pref {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 24px;
-  padding: 16px 20px;
+  column-gap: 16px;
+  min-height: 64px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-pref__title[data-vex-pref-row-press]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+@media (hover: hover) {
+  .vex-pref:has([role="switch"]):hover {
+    background: var(--vex-alias-interactive-hover);
+  }
 }
 .vex-prefs__list > .vex-pref:last-child {
   border-bottom: 0;
@@ -332,6 +376,7 @@
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-pref__title {
+  display: block;
   margin: 0;
   font-size: 15px;
   font-weight: 400;
@@ -339,7 +384,8 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-pref__help {
-  margin: 2px 0 0;
+  max-width: 520px;
+  margin: 3px 0 0;
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
@@ -349,6 +395,7 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-pref__control {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -436,4 +483,170 @@
   .vex-switch::after {
     transition: none;
   }
+}
+
+/* A switch that will not act is held: the rule's edge and the muted thumb. */
+.vex-switch:disabled {
+  cursor: not-allowed;
+  border-color: var(--vex-alias-rule-chosen);
+}
+
+/* TOOLS (MCP) (VEX Cloud's built `McpServerCard` and `McpToolRow`, its
+ * `settings.css` `.vx-mcp-*` and `.vx-toolrow`; owner decision 2026-11-09):
+ * each server a box on the card ground: a 44 head band with the name (12
+ * caps, 600) and its state word at the right; the endpoint 13 muted under a
+ * rule, padding 12 16; the server's note and keys 16 in; then "Tools" (11 caps
+ * muted) in a 44 band and the tool rows, padding 10 16, a rule above each.
+ * A tool's switches stand with their labels, 13 ink 2. The add form is a box
+ * of its own. */
+.vex-mcp-box {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-mcp-box__h {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-mcp-box__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mcp-box__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mcp-box__meta {
+  margin: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-box__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+.vex-mcp-box__none {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-tools__h {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0;
+  padding: 0 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-tools__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-mcp-tool {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mcp-tool__sw {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+.vex-mcp-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mcp-box--add {
+  padding: 0 16px 16px;
+}
+.vex-mcp-box--add .vex-set__sh-title {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0 -16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+/* THE VEX INFERENCE ACCOUNT (`VexCloudAccountPanel`; VEX Cloud's built
+ * `AccountBodyView`, owner decision 2026-11-09): each group's head is the 12
+ * caps name (600) with "As of {time}" 12 muted at its right. In Settings
+ * each group is a box on the card ground, its head a 44 band, its rows 16
+ * in; in onboarding the heads stand as labels over the same rows. */
+.vex-acct-box__h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vex-acct-box__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-acct-box__asof {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set .vex-acct-box {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-set .vex-acct-box__h {
+  min-height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-set .vex-acct-box__b {
+  margin: 0;
+  padding: 0 16px;
+}
+.vex-set .vex-acct-box__foot {
+  margin: 0;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--vex-alias-rule);
 }

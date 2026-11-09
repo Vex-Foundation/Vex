@@ -156,9 +156,6 @@ export function baseAnswers({ sessions, pendingAll }: BaseInputs): BridgeAnswers
     alerts: { getWatchlist: () => ok(WATCHLIST) },
     sessions: { list: () => ok(sessions) },
     approvals: { listPendingAll: () => ok(pendingAll) },
-    // Vex's plate reads the user's own image: none set. Every state's shell
-    // has her column now, the welcome's included (S2-10).
-    shellBackdrop: { read: () => ok({ backdrop: null }) },
     // Her console's recent activity reads the activity feed (S3-07).
     portfolio: { listAgentScan: () => ok(ACTIVITY_FEED) },
     vexCloud: {

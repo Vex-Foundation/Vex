@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PriceAlertDto, WatchlistSnapshotDto } from "@shared/schemas/alerts.js";
 import { WatchlistPage } from "../screens/WatchlistScreen.js";
@@ -90,13 +90,14 @@ const alerts = {
   onOpenWatchlist: vi.fn(() => () => undefined),
 };
 
-function renderPage(): void {
+function renderPage(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <WatchlistPage />
     </QueryClientProvider>,
   );
+  return client;
 }
 
 beforeEach(() => {
@@ -235,6 +236,52 @@ describe("WatchlistPage - H3 rows (H3-DESKTOP.md sections 2.2 and 4.9)", () => {
     expect(active.querySelector(".vex-status-mark")?.textContent).toBe("Waiting");
     const fired = screen.getByTestId("watchlist-fired-row");
     expect(fired.querySelector(".vex-status-mark")?.getAttribute("data-status")).toBe("filled");
+  });
+});
+
+describe("WatchlistPage - Cloud's built watchlist as the plate (owner decision 2026-11-09)", () => {
+  it("leads with what an alert is and carries each list's count in its head", async () => {
+    renderPage();
+    await screen.findByText("$3500.25");
+    expect(screen.getByText(/Follow tokens and get told when a price moves/)).toBeTruthy();
+    const following = screen.getByRole("region", { name: "Followed tokens" });
+    expect(within(following).getByTestId("watchlist-counts").textContent).toBe("1 of 30");
+    const active = screen.getByRole("region", { name: "Active alerts" });
+    expect(within(active).getByTestId("watchlist-alert-counts").textContent).toBe("1 of 20 waiting");
+  });
+
+  it("stands the follow form in Following, under the rows", async () => {
+    renderPage();
+    await screen.findByText("$3500.25");
+    const following = screen.getByRole("region", { name: "Followed tokens" });
+    const form = within(following).getByTestId("watchlist-add");
+    const row = within(following).getByTestId("watchlist-row");
+    expect(row.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the rows when a refresh fails, says so and Retry reads again", async () => {
+    const client = renderPage();
+    await screen.findByText("$3500.25");
+    alerts.getWatchlist.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "alerts",
+        message: "boom",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+        correlationId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't refresh your watchlist.");
+    expect(screen.getByText("$3500.25")).toBeTruthy();
+    alerts.getWatchlist.mockResolvedValue({ ok: true, data: SNAPSHOT });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
 

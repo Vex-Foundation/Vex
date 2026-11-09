@@ -1,8 +1,8 @@
 /**
  * SettingsPreferences - the Preferences section of the Settings page
  * (docs/design/R3-MINIMAL.md section 9.6): Show Vex, the Session permission
- * explainer, the Background row, the composer Enter-key row and the two
- * switches.
+ * explainer, the composer Enter-key row and the switches. The Background
+ * row is retired (owner decision, 2026-11-08).
  *
  * Pins:
  *   - there is no theme choice: H3 is dark only, so the Appearance row and
@@ -20,7 +20,7 @@
  *   - Show Vex's help names the chord that opens and closes her.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
@@ -33,11 +33,6 @@ import { studioPlatform } from "../../studio/keybindings-labels.js";
 import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
 import { SettingsPreferences } from "../SettingsScreen/SettingsPreferences.js";
 
-// The retired Background row read the backdrop through TanStack Query; the
-// group still renders under a QueryClient, and the bridge's read is kept as a
-// spy that proves nothing on this page reads the stored image any more.
-const shellBackdropReadMock = vi.fn();
-
 function renderGroup(ui: ReactElement): ReturnType<typeof render> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
@@ -47,13 +42,6 @@ beforeEach(async () => {
   window.localStorage.clear();
   await resetSubmitKeyBehaviorForTest();
   useUiStore.setState({ showAvatar: true, vexOpenChat: true, vexOpenPages: false });
-  shellBackdropReadMock.mockReset();
-  shellBackdropReadMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
-  Object.defineProperty(window, "vex", {
-    configurable: true,
-    writable: true,
-    value: { shellBackdrop: { read: shellBackdropReadMock } },
-  });
 });
 
 afterEach(() => {
@@ -82,7 +70,7 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
-  it("offers no Background row and reads no backdrop (owner decision, 2026-11-08)", async () => {
+  it("offers no Background row (owner decision, 2026-11-08)", () => {
     renderGroup(<SettingsPreferences />);
     expect(document.querySelector("[data-vex-settings-backdrop]")).toBeNull();
     expect(screen.queryByText("Background")).toBeNull();
@@ -93,8 +81,18 @@ describe("SettingsPreferences", () => {
       document.querySelectorAll("[data-vex-settings-permission], [data-vex-settings-enter]"),
     ).map((row) => row.getAttributeNames().find((name) => name.startsWith("data-vex-settings-")));
     expect(rows).toEqual(["data-vex-settings-permission", "data-vex-settings-enter"]);
-    await Promise.resolve();
-    expect(shellBackdropReadMock).not.toHaveBeenCalled();
+  });
+
+  it("names each switch by its row's label, and a press on the name flips it (Cloud's built row)", () => {
+    useUiStore.setState({ notificationsEnabled: true });
+    renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Notifications" });
+    const label = document.querySelector(`label[for="${toggle.id}"]`);
+    expect(label?.textContent).toBe("Notifications");
+    expect(label?.hasAttribute("data-vex-pref-row-press")).toBe(true);
+    fireEvent.click(label as HTMLElement);
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
   it("the notifications row reads the typed uiStore slot and a click round-trips through its setter", () => {

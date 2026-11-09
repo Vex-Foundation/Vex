@@ -41,10 +41,6 @@ vi.mock("../../../../lib/api/sessions.js", async (importOriginal) => ({
   // The missions row asks whether the sessions read failed.
   useSessionsList: () => ({ data: undefined, isError: false }),
 }));
-vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
-  useShellBackdrop: () => ({ data: undefined }),
-  currentShellBackdrop: () => null,
-}));
 
 const { VexSidebar } = await import("../../../vex/VexSidebar.js");
 const { useUiStore } = await import("../../../../stores/uiStore.js");

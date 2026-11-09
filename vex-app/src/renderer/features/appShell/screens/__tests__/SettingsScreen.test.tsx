@@ -449,13 +449,15 @@ describe("SettingsScreen", () => {
       expect(container.querySelector(inactive)).toBeNull();
       expect(container.querySelector("[data-vex-step-stub]")).toBeNull();
       expect(container.querySelector("[data-vex-settings-export]")).toBeNull();
-      // The section's head: the name, its status word beside a swatch, a lead.
+      // The section's head (Cloud's built PageHeader as the plate): the name
+      // a hidden h2, then the lead row: its status word beside a swatch, the lead.
       const head = container.querySelector("[data-vex-settings-head]");
-      expect(head?.querySelector("h2")?.firstChild?.textContent).toBe(name);
-      const status = head?.querySelector("[data-vex-settings-head-status]");
+      expect(head?.querySelector("h2")?.textContent).toBe(name);
+      expect(head?.querySelector("h2")?.classList.contains("sr-only")).toBe(true);
+      const status = head?.querySelector("p [data-vex-settings-head-status]");
       expect(status?.textContent).toBe(word);
       expect(status?.querySelector(".vex-swatch")).not.toBeNull();
-      expect(head?.querySelector("p")?.textContent).toBe(
+      expect(head?.querySelector("[data-vex-settings-head-lead]")?.textContent).toBe(
         section === "superboardKey"
           ? "One code, generated once. Paste it in Superboard."
           : "Robinhood Chain points, and the trading setup the agent reads: capital share and leverage per market",

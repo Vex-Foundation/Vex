@@ -96,6 +96,22 @@ describe("UserMcpSection", () => {
     expect((document.querySelector('[data-vex-user-mcp-autorun="lookup"]') as HTMLInputElement).disabled).toBe(true);
   });
 
+  it("draws each server as a box with its name and state in the head and its tools under a Tools head, with switches", async () => {
+    settings.listUserMcp.mockResolvedValue(ok(list([tool({})])));
+    renderSection();
+    await screen.findByText("Docs");
+    const box = requireValue(document.querySelector('[data-vex-user-mcp-server="Docs"]'));
+    expect(box.classList.contains("vex-mcp-box")).toBe(true);
+    const head = requireValue(box.querySelector(".vex-mcp-box__h"));
+    expect(head.querySelector("h3")?.textContent).toBe("Docs");
+    expect(head.querySelector("[data-vex-user-mcp-state]")?.textContent).toBe("Connected");
+    expect(box.querySelector(".vex-mcp-tools__h")?.textContent).toBe("Tools");
+    const enable = screen.getByRole("switch", { name: "Use in chats, lookup" });
+    expect(enable.getAttribute("aria-checked")).toBe("false");
+    expect(document.querySelector(`label[for="${enable.id}"]`)?.textContent).toBe("Use in chats");
+    expect(box.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
   it("turns a tool on with the answer main gives, and shows a refusal in the row", async () => {
     settings.listUserMcp.mockResolvedValue(ok(list([tool({})])));
     settings.setUserMcpToolEnabled.mockResolvedValueOnce(ok(list([tool({ enabled: true })])));
