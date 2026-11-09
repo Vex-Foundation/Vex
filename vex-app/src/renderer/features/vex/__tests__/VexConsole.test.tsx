@@ -75,12 +75,9 @@ vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
 }));
 
 const {
-  PERMISSION_ORIGIN,
-  PERMISSION_SENTENCE,
   VexConsoleActivity,
   VexConsoleMissions,
   VexConsoleNeedsYou,
-  VexConsolePermission,
   VexConsoleThisProject,
   VexConsoleTop,
   PROJECT_ACCESS_SENTENCE,
@@ -523,42 +520,6 @@ describe("the console's recent activity", () => {
     render(<VexConsoleActivity />);
     expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Vex has not acted yet.");
     expect(activity().querySelector("li")).toBeNull();
-  });
-});
-
-describe("the console's AI permission", () => {
-  it("states the open chat's own permission, in desktop's words, and where it comes from", () => {
-    chat.current = session({ id: SESSION, permission: "restricted" });
-    const view = render(<VexConsolePermission sessionId={SESSION} />);
-    const part = (): HTMLElement | null =>
-      document.querySelector<HTMLElement>("[data-vex-area='vex-permission']");
-    expect(part()?.getAttribute("data-permission")).toBe("restricted");
-    expect(within(part() ?? document.body).getByRole("heading", { level: 2 }).textContent).toBe(
-      "AI permission",
-    );
-    expect(part()?.textContent).toContain(
-      "Restricted: every mutating transaction requires your approval.",
-    );
-    expect(part()?.textContent).toContain("Set when this chat was created.");
-    // Settings cannot change a chat's permission: no such link, no key.
-    expect(part()?.textContent).not.toContain("Change in Settings");
-    expect(within(part() ?? document.body).queryByRole("button")).toBeNull();
-    view.unmount();
-
-    chat.current = session({ id: SESSION, permission: "full" });
-    render(<VexConsolePermission sessionId={SESSION} />);
-    expect(part()?.textContent).toContain(PERMISSION_SENTENCE.full);
-    expect(part()?.textContent).toContain(PERMISSION_ORIGIN);
-  });
-
-  it("is left out with no chat open, and before the chat's read answers", () => {
-    chat.current = session({ id: SESSION });
-    const view = render(<VexConsolePermission sessionId={null} />);
-    expect(document.querySelector("[data-vex-area='vex-permission']")).toBeNull();
-    view.unmount();
-    chat.current = null;
-    render(<VexConsolePermission sessionId={SESSION} />);
-    expect(document.querySelector("[data-vex-area='vex-permission']")).toBeNull();
   });
 });
 

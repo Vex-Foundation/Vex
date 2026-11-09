@@ -21,32 +21,24 @@
  * stays, so her box never moves when a mission starts or ends. Its key opens
  * the one mission, or the missions list (the nav's Missions).
  *
- * THE CONSOLE'S REST lies under her section and shows while she is closed:
+ * D2'S COLUMN (docs/design/H3-DESKTOP.md section 6.3; `VexColumn.tsx`) stands
+ * the top block under Kimm's portrait card, her state row and THIS CHAT, and
+ * OPEN ACTIVITY at its foot. The chat's AI permission left the column for
+ * the composer's strip (section 6.5); its block is retired. Studio keeps:
  *
- *   AI PERMISSION                                    a 44 head, in a chat
- *     the chat's permission as its sentence, then
- *     "Set when this chat was created."
  *   THIS PROJECT                                     a 44 head, in Studio
  *     the project's access as its sentence, then     (our approved Studio
  *     "Change in project settings", underlined;      plate, H3-DESKTOP.md
  *     Agents, Wallet and Folder on 40 rows;          section 4.9)
  *     PROJECT ASSETS and an arrow
- *   RECENT ACTIVITY                                  a 44 head
- *     the newest four entries of the activity        about 43 each
- *     feed, each a line, its status square and its
- *     status word (`vex-console-activity.ts`)
+ *   RECENT ACTIVITY                                  a 44 head; drawn by the
+ *     the newest four entries of the activity        approved Studio plate,
+ *     feed, each a line, its status square and its   no longer by D2's
+ *     status word (`vex-console-activity.ts`)        column
  *   OPEN ACTIVITY and an arrow: Agent Scan, the activity page
  *
- * THE PERMISSION is the open chat's own (`sessions.get`), in desktop's
- * words for its two modes (`ComposerPermissionSeat.tsx`'s), never H3's
- * "always asks before acting", which Restricted does not do for a read. H3's
- * "Change in Settings" would be false: a chat's permission is set when it is
- * created and locked (section 4.1), so the line says that instead. With no
- * chat open (the welcome, a page over none, Studio) there is no permission to
- * state, and the part is left out.
- *
- * THIS PROJECT stands where a chat's AI PERMISSION does, since a project's
- * access is its permission: the open project's own (`projects.get`), in the
+ * THIS PROJECT stands where a chat's THIS CHAT does in D2's column, since a
+ * project's access is its permission: the open project's own (`projects.get`), in the
  * project dialog's words for its two modes. Unlike a chat's, a project's
  * access can be changed, so the line says where: "Change in project
  * settings" opens that project's settings dialog. Its facts are the
@@ -104,7 +96,7 @@ import type { SessionPermission } from "@shared/schemas/sessions.js";
 import type { AvailableWalletsDto } from "@shared/schemas/wallets/session-available.js";
 import { useAgentScanInfinite } from "../../lib/api/portfolio.js";
 import { useProject } from "../../lib/api/projects.js";
-import { useSession, useSessionsList } from "../../lib/api/sessions.js";
+import { useSessionsList } from "../../lib/api/sessions.js";
 import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -586,49 +578,6 @@ export function VexConsoleActivity({
   );
 }
 
-// -- The console's rest: AI permission -------------------------------------
-
-/**
- * Each permission as the console states it: desktop's own sentences for its
- * two modes, the composer's permission seat's (Appendix A.3).
- */
-export const PERMISSION_SENTENCE: Readonly<Record<SessionPermission, string>> = {
-  restricted: "Restricted: every mutating transaction requires your approval.",
-  full: "Full access: auto-executes approved tools without prompting per call.",
-};
-
-/** Where the permission comes from: set at creation and locked (section 4.1). */
-export const PERMISSION_ORIGIN = "Set when this chat was created.";
-
-/** AI PERMISSION: the open chat's own permission, or nothing with no chat open. */
-export function VexConsolePermission({
-  sessionId,
-}: {
-  /** The chat open in the agent shell; `null` on the welcome, over none, and in Studio. */
-  readonly sessionId: string | null;
-}): JSX.Element | null {
-  const headId = useId();
-  const query = useSession(sessionId);
-  const data = query.data;
-  const session = sessionId !== null && data !== undefined && data.ok ? data.data : null;
-  if (session === null) return null;
-  return (
-    <section
-      aria-labelledby={headId}
-      data-vex-area="vex-permission"
-      data-permission={session.permission}
-      className="vex-console__section"
-    >
-      <h2 id={headId} className="vex-console__head vex-console__head--section">
-        <span className="vex-console__label">AI permission</span>
-      </h2>
-      <div className="vex-console__permission">
-        <p className="vex-console__permission-sentence">{PERMISSION_SENTENCE[session.permission]}</p>
-        <p className="vex-console__permission-origin">{PERMISSION_ORIGIN}</p>
-      </div>
-    </section>
-  );
-}
 
 // -- The console's rest in Studio: this project ----------------------------
 
