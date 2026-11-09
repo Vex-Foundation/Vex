@@ -146,12 +146,15 @@ async function playTheTurn(bridge: HarnessBridge): Promise<void> {
   // Settled once the preview is retired and the live turn's thinking row (the
   // last one; the history turn's comes first) reads the clock.
   await untilFrame(() => {
-    const heads = document.querySelectorAll("[data-vex-thinking-head] button");
+    // The turn's trace head is itself the key (or a plain row when stopped);
+    // its words are in its label.
+    const heads = document.querySelectorAll("[data-vex-thinking-head]");
     const last = heads.item(heads.length - 1);
+    const label = last?.querySelector("[data-vex-trace-label]") ?? last;
     return (
       document.querySelector('[data-vex-area="stream-preview"]') === null
       && heads.length > 0
-      && (last.textContent ?? "").startsWith("Thought for")
+      && (label?.textContent ?? "").startsWith("Thought for")
     );
   });
 }
