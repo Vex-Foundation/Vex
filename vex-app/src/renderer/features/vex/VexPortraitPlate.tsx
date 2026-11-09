@@ -89,6 +89,8 @@ export function useKimmFirstCloseHint(open: boolean): boolean {
  */
 export function VexPortraitPlate({ state, open, onHide }: VexPortraitPlateProps): JSX.Element {
   const setVexOpen = useUiStore((s) => s.setVexOpen);
+  // On a page her field holds its frame (VEX Cloud runs it only in a chat).
+  const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
   const onOpenChange = (next: boolean): void => {
     if (!next && onHide !== undefined) onHide();
     else setVexOpen(next);
@@ -103,6 +105,7 @@ export function VexPortraitPlate({ state, open, onHide }: VexPortraitPlateProps)
         open={open}
         onOpenChange={onOpenChange}
         shortcut={KIMM_SHORTCUT}
+        fieldHold={pageOpen}
         id={VEX_SECTION_ID}
       />
       {hint ? <KimmHint keys={KIMM_HINT_KEYS} /> : null}

@@ -44,6 +44,17 @@ export function announceVexSection(shown: boolean): void {
   speaker?.(shown ? VEX_SECTION_SAID.shown : VEX_SECTION_SAID.hidden);
 }
 
+/**
+ * A toggle pressed while her band rests (under 1024: a turn, a waiting card,
+ * the composer in use): the press acts on nothing, so it says why, once,
+ * politely, through the same announcer (VEX Cloud says the reason in its
+ * header's message slot, `header-message.tsx`).
+ */
+export function announceVexHeld(reason: string): void {
+  const speaker = listeners[listeners.length - 1];
+  speaker?.(reason);
+}
+
 /** An announcer listens while it is mounted; the disposer removes only it. */
 export function listenVexSection(listener: Listener): () => void {
   listeners.push(listener);

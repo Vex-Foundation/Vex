@@ -164,6 +164,32 @@ describe("revealApprovalCard", () => {
     vi.unstubAllGlobals();
   });
 
+  it("opens a Studio project's approval on its own card in the Needs you page", () => {
+    // With several waiting, the page must open the one Review named, not the
+    // first (the page focuses its Reject on `approvalId`).
+    useUiStore.setState({ shellRoute: { kind: "none" } });
+    openNeedsYouItem({
+      key: "approval:appr-studio",
+      kind: "approval",
+      title: "Send 1.5 ETH.",
+      metaLead: "Ethereum, real funds · since",
+      metaTime: "14:39 UTC",
+      go: "Review",
+      where: "vault-tools",
+      groupKey: "project:vault-tools",
+      sessionId: null,
+      projectId: "55555555-5555-4555-8555-555555555555",
+      approvalId: "appr-studio",
+      createdAt: null,
+      expiresAt: null,
+    });
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "needsYou",
+      origin: null,
+      approvalId: "appr-studio",
+    });
+  });
+
   it("presses nothing: focus is all it moves", () => {
     const target = card("appr-1");
     const reject = document.createElement("button");

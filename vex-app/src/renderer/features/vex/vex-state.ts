@@ -29,6 +29,7 @@
 
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
+import type { StateSquareState } from "../../components/ui/state-square.js";
 import type { SwatchState } from "../../components/ui/swatch.js";
 import type { RuntimeMode } from "../../stores/uiStore/runtime-mode.js";
 import type { TurnIslandState } from "../appShell/TurnIsland/islandTurnState.js";
@@ -94,6 +95,31 @@ export const VEX_STATE_FILL: Readonly<Record<VexState, VexFill>> = {
   concerned: "concerned",
   error: "error",
   sleeping: "sleeping",
+  waking: "ongoing",
+};
+
+/**
+ * HER STATE'S SQUARE (docs/design/H3-DESKTOP.md sections 1.6 and 2.2; VEX
+ * Cloud's `MOOD_STATE`, `components/vex/vex-mood.ts`): the H3 state square
+ * (`StateSquare`) every place that says her state draws beside the word, the
+ * Vex key, its waiting count and the console line, so they can never
+ * disagree. Ready and Listening the empty frame; a turn in flight the running
+ * square, which blinks; Waiting for approval the target; Done the empty frame
+ * too, a settled turn whatever its outcome, never the green of Filled;
+ * Concerned the framed hatch; Error the cross; Sleeping the dotted frame.
+ * Waking up is desktop's own state (Cloud's waking says Ready): the services
+ * are starting, so it takes the running square.
+ */
+export const VEX_STATE_SQUARE: Readonly<Record<VexState, StateSquareState>> = {
+  ready: "idle",
+  listening: "idle",
+  thinking: "ongoing",
+  working: "ongoing",
+  awaiting: "warning",
+  done: "idle",
+  concerned: "concerned",
+  error: "error",
+  sleeping: "paused",
   waking: "ongoing",
 };
 

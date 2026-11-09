@@ -226,6 +226,20 @@ describe("the field's mount", () => {
     expect(runningAttr()).toBe("false");
   });
 
+  it("holds its frame on a page though she is open, and runs again in a chat, never remounting", async () => {
+    // VEX Cloud runs the field only in a chat's section; a page paints one frame.
+    const view = render(<KimmField open hold />);
+    await settle();
+    expect(only().still).not.toContain(false);
+    expect(runningAttr()).toBe("false");
+    view.rerender(<KimmField open />);
+    expect(only().still.at(-1)).toBe(false);
+    expect(runningAttr()).toBe("true");
+    view.rerender(<KimmField open hold />);
+    expect(only().still.at(-1)).toBe(true);
+    expect(port.mounts).toHaveLength(1);
+  });
+
   it("draws one frame and never runs in the band", async () => {
     render(<KimmField open mode="frame" />);
     await settle();

@@ -797,59 +797,12 @@ html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *) {
   font-size: 13px;
   line-height: 1;
 }
-/* The key's square, 6px (sections 1.6 and 2.2; VEX Cloud's H3 key): Ready
- * the 1px muted frame, running the hud square blinking (PD-06), waiting
- * solid ink, done solid hud, concerned the framed ink hatch, error the ink
- * cross, sleeping the dotted frame. Under reduced motion and Save-Data the
- * running square holds still as half a square, never the solid Done. */
+/* Her state's square, 6px (sections 1.6 and 2.2): the H3 state square
+ * (`StateSquare`, `.vex-sq` in ui-primitives/marks.css) with her state's own
+ * drawing (`VEX_STATE_SQUARE`, VEX Cloud's `MOOD_STATE`), as the console line
+ * and the waiting count draw it. */
 .vex-key__square {
   flex: none;
-  box-sizing: border-box;
-  width: 6px;
-  height: 6px;
-  color: var(--vex-alias-state-running-mark);
-}
-.vex-key__square[data-key-square="ready"] {
-  box-shadow: inset 0 0 0 1px var(--vex-alias-label-tertiary);
-}
-.vex-key__square[data-key-square="running"] {
-  background-color: currentColor;
-  animation: vex-sq-blink var(--vex-duration-blink) steps(2, end) infinite;
-}
-.vex-key__square[data-key-square="waiting"] {
-  background-color: var(--vex-alias-label-primary);
-}
-.vex-key__square[data-key-square="done"] {
-  background-color: currentColor;
-}
-.vex-key__square[data-key-square="concerned"] {
-  box-shadow: inset 0 0 0 1px var(--vex-alias-label-primary);
-  background-image: repeating-linear-gradient(
-    135deg,
-    var(--vex-alias-label-primary) 0 1px,
-    transparent 1px 3px
-  );
-}
-.vex-key__square[data-key-square="error"] {
-  color: var(--vex-alias-label-primary);
-  background-image:
-    linear-gradient(45deg, transparent 40%, currentColor 40% 60%, transparent 60%),
-    linear-gradient(-45deg, transparent 40%, currentColor 40% 60%, transparent 60%);
-}
-.vex-key__square[data-key-square="sleeping"] {
-  border: 1px dotted var(--vex-alias-label-secondary);
-}
-@media (prefers-reduced-motion: reduce) {
-  .vex-key__square[data-key-square="running"] {
-    animation: none;
-    background-color: transparent;
-    background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
-  }
-}
-html[data-still] .vex-key__square[data-key-square="running"] {
-  animation: none;
-  background-color: transparent;
-  background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
 }
 .vex-key__word {
   min-width: 0;
@@ -906,6 +859,12 @@ html[data-still] .vex-key__square[data-key-square="running"] {
 .vex-key[aria-disabled="true"] {
   cursor: not-allowed;
 }
+/* Held (her band resting under 1024), the key keeps her face and her state
+ * and drops the action words and the chevron, so nothing reads as pressable
+ * that is not; a press says why (VEX Cloud's `.vx-vk[data-held]`). */
+.vex-key[data-vex-key-held] :is(.vex-key__action, .vex-key__chevron > svg) {
+  visibility: hidden;
+}
 /* The chevron cell, 60 then the column's rule (the head cell's own right
  * edge): muted, ink under the pointer, as Cloud's `.vk-dir`. */
 .vex-key__chevron {
@@ -919,6 +878,24 @@ html[data-still] .vex-key__square[data-key-square="running"] {
 }
 .vex-key:hover .vex-key__chevron {
   color: var(--vex-alias-label-primary);
+}
+/* One up chevron, turned down while she is closed and up as she opens (VEX
+ * Cloud's `.vx-vk-dir > svg`, 300ms): it turns, never swaps; at once under
+ * reduced motion and the still frame (MOTION-POLICY.md names it). */
+.vex-key__chevron > svg {
+  transform: rotate(180deg);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-key__chevron[data-open] > svg {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key__chevron > svg {
+    transition: none;
+  }
+}
+html[data-still] .vex-key__chevron > svg {
+  transition: none;
 }
 /* The short word ("Waiting") waits for the narrow window (below). */
 .vex-key__short {
