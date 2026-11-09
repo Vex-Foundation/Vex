@@ -283,8 +283,10 @@
 .vex-steps {
   margin-top: 12px;
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
-.vex-reply > .vex-steps:first-child {
+.vex-reply > .vex-steps:first-child,
+.vex-reply > [data-vex-trace-group]:first-child > [data-vex-trace-body] > .vex-steps:first-child {
   margin-top: 0;
 }
 .vex-think + .vex-steps {
@@ -741,10 +743,11 @@ html[data-still] .vex-step-node[data-step-node="running"] {
  *  row (`ReasonedBlock`) are the same cell.                     *
  * ============================================================ */
 
-/* The live turn's frame (the island primitive's shell). */
+/* The live turn's frame (the island primitive's shell), on the card ground
+ * as every trace card (VEX Cloud's `.vx-trace`). */
 .vex-island {
   border: 1px solid var(--vex-alias-rule);
-  background: transparent;
+  background: var(--vex-alias-card);
 }
 .vex-live-row {
   gap: 14px;
@@ -893,14 +896,15 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 }
 
 /* ── The thinking row (a persisted Thought row) ──────────────────────────
- * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
- * for 2.8 s" in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then
- * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
- * whole row is the key: the label is the button, and its hit area stretches
- * over the row. Opened, the trace sits under the head's rule in the frame. */
+ * One thought of the turn, a step under the turn's head (`.vex-trace-head`),
+ * on the card ground: the dot-grid glyph, "Thought" in caps 11 tracked ink
+ * (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then the
+ * chevron. The whole row is the key: the label is the button, and its hit
+ * area stretches over the row. Opened, the trace sits under the row's rule. */
 .vex-think {
   margin-bottom: 12px;
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 /* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label.
  * It takes the figures' 0.04em (VEX Cloud's `.rz-ms`). */
@@ -964,12 +968,6 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-reasoned__steps {
-  flex: none;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: var(--vex-alias-label-tertiary);
-}
 .vex-reasoned__chev {
   display: inline-flex;
   flex: none;
@@ -1008,6 +1006,101 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   font-size: 14px;
   letter-spacing: normal;
   text-transform: none;
+}
+
+/* ── The turn's trace head (`SessionTranscript/TurnTrace.tsx`) ───────────
+ * VEX Cloud's built trace (`styles/thread.css`, `.vx-trace-head`): one head
+ * per turn over every step of it, a cell 40 high on the card ground in the
+ * 1px rule, 16 in. The glyph in its 10 slot, the label in caps 11 tracked in
+ * ink 2 (muted while the turn runs), the steps at the right in 11 muted at
+ * the figures' tracking, then the chevron, which turns (300 ms) while the
+ * steps go at once. No summary of the trace. The first step part under it
+ * shares its rule, so the head and the steps read as one card; folded, the
+ * head stands alone, 12 over what follows it. A stopped or failed turn's
+ * head is a label: no key, no chevron. */
+.vex-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  color: var(--vex-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-align: start;
+  text-transform: uppercase;
+}
+button.vex-trace-head {
+  cursor: pointer;
+}
+.vex-trace-head:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-trace-head .vex-step__fill {
+  color: var(--vex-alias-label-primary);
+}
+.vex-trace-head__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-trace-head[data-tone="run"] .vex-trace-head__label {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-trace-head[data-tone="stopped"] [data-vex-think-glyph] {
+  opacity: 0.5;
+}
+.vex-trace-head__end {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-figure);
+  text-transform: none;
+  white-space: nowrap;
+}
+.vex-trace-head__chev {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  transform: rotate(180deg);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-trace-head[aria-expanded="false"] .vex-trace-head__chev {
+  transform: none;
+}
+@media (hover: hover) {
+  button.vex-trace-head:hover :is(.vex-trace-head__end, .vex-trace-head__chev) {
+    color: var(--vex-alias-label-primary);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-trace-head__chev {
+    transition: none;
+  }
+}
+html[data-still] .vex-trace-head__chev {
+  transition: none;
+}
+/* The first step part under the head shares the head's rule. */
+.vex-trace-head + [data-vex-trace-body] > :first-child {
+  margin-top: -1px;
+}
+/* Folded, the head stands alone, 12 over the answer or what follows it. */
+[data-vex-trace-group][data-shut]:has(> .vex-trace-head):not(:last-child) {
+  margin-bottom: 12px;
+}
+/* A row of nothing but steps, in a folded turn, takes its gap back. */
+[data-vex-trace-shut] {
+  margin-top: -18px;
 }
 
 /* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */

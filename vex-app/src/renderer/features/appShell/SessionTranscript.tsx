@@ -295,6 +295,7 @@ export function SessionTranscript({
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
           forkActions={forkActions}
+          live={preview !== null}
         />
         {/* A17 — the settled turn's tail wears its usage stats. Mounted only
             between turns; a user-tail (message sent, reply not begun) or a

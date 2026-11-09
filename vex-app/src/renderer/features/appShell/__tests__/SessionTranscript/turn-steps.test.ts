@@ -1,12 +1,18 @@
 /**
- * THE TURN'S THINKING ROW AND ITS STEPS (`turnSteps.ts`,
- * docs/design/H3-DESKTOP.md Appendix A.7: "{n} steps" on a turn reopened
- * from history). Pure: the count is what a reader can count in the turn's
- * rows, and only whole turns get one.
+ * THE TURN'S TRACE HEAD AND ITS STEPS (`turnSteps.ts`,
+ * docs/design/H3-DESKTOP.md section 1.7 and Appendix A.7: "{n} steps" on a
+ * turn reopened from history). Pure: the count is what a reader can count in
+ * the turn's rows, the head stands on the turn's first step, and only whole
+ * turns get one.
  */
 
 import { describe, expect, it } from "vitest";
-import { entrySteps, turnThinkingHeads } from "../../SessionTranscript/turnSteps.js";
+import {
+  entrySteps,
+  foldsWhole,
+  turnThinkingHeads,
+  turnTraces,
+} from "../../SessionTranscript/turnSteps.js";
 import type { TranscriptEntry } from "../../transcriptRowModel.js";
 
 const ISO = "2026-11-03T14:29:00.000Z";
@@ -67,7 +73,7 @@ describe("entrySteps", () => {
 });
 
 describe("turnThinkingHeads", () => {
-  it("puts the whole turn's count on its first row that carries a trace", () => {
+  it("puts the whole turn's count on its first row that carries a step", () => {
     const heads = turnThinkingHeads([
       user(10),
       call(11, null, 1),
@@ -76,12 +82,13 @@ describe("turnThinkingHeads", () => {
       user(20),
       assistant(21, null),
     ]);
-    // Turn one: 2 tool calls and 2 traces; its thinking row is the first row
-    // with a trace (12), not the prose-less row without one (11).
-    expect(heads.get("t-12")).toEqual({ steps: 4, anchorId: 10 });
-    expect(heads.has("t-11")).toBe(false);
+    // Turn one: 2 tool calls and 2 traces; its head stands on its first step,
+    // the prose-less call row (11), though that row has no trace: a turn that
+    // only called tools still has its head (VEX Cloud's trace).
+    expect(heads.get("t-11")).toEqual({ steps: 4, anchorId: 10, outcome: "completed" });
+    expect(heads.has("t-12")).toBe(false);
     expect(heads.has("13")).toBe(false);
-    // Turn two has no trace, so it has no thinking row at all.
+    // Turn two has no step at all, so it has no head.
     expect(heads.has("21")).toBe(false);
     expect(heads.size).toBe(1);
   });
@@ -93,6 +100,75 @@ describe("turnThinkingHeads", () => {
       assistant(11, "this turn"),
     ]);
     expect(heads.has("5")).toBe(false);
-    expect(heads.get("11")).toEqual({ steps: 1, anchorId: 10 });
+    expect(heads.get("11")).toEqual({ steps: 1, anchorId: 10, outcome: "completed" });
+  });
+
+  it("says a stopped turn and a failed turn, which never fold", () => {
+    const stopped: TranscriptEntry = {
+      id: 13,
+      variant: "assistant_stopped",
+      label: null,
+      content: "half",
+      createdAt: ISO,
+      reasoning: null,
+    };
+    const error: TranscriptEntry = {
+      id: 23,
+      variant: "notice",
+      noticeTone: "error",
+      label: null,
+      content: "provider failed",
+      createdAt: ISO,
+    };
+    const heads = turnThinkingHeads([
+      user(10),
+      call(11, "why", 1),
+      stopped,
+      user(20),
+      call(21, null, 2),
+      error,
+    ]);
+    expect(heads.get("t-11")?.outcome).toBe("stopped");
+    expect(heads.get("t-21")?.outcome).toBe("failed");
+  });
+});
+
+describe("turnTraces", () => {
+  it("knows the turn of every row of a whole turn, and the newest turn", () => {
+    const traces = turnTraces([
+      assistant(5, "older"),
+      user(10),
+      call(11, null, 1),
+      assistant(12, "x"),
+      user(20),
+    ]);
+    expect(traces.turnOf.has("5")).toBe(false);
+    expect(traces.turnOf.get("t-11")).toBe(10);
+    expect(traces.turnOf.get("12")).toBe(10);
+    expect(traces.lastAnchorId).toBe(20);
+  });
+});
+
+describe("foldsWhole", () => {
+  it("is a row of nothing but steps: a prose-less call row, an orphan result, a fold", () => {
+    expect(foldsWhole(call(11, "why", 2))).toBe(true);
+    expect(
+      foldsWhole({ id: 3, variant: "tool", toolKind: "result", label: null, content: "x", createdAt: ISO }),
+    ).toBe(true);
+    expect(
+      foldsWhole({
+        variant: "tool_group",
+        id: 4,
+        createdAt: ISO,
+        distinctToolNames: ["a"],
+        calls: [{ toolCallId: "a", toolName: "a", toolArgs: null, output: null }],
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a row with prose, or one whose act carries a mission result", () => {
+    expect(foldsWhole({ ...call(11, null, 1), content: "Checking." } as TranscriptEntry)).toBe(false);
+    expect(foldsWhole(assistant(12, "t"))).toBe(false);
+    expect(foldsWhole(user(13))).toBe(false);
   });
 });

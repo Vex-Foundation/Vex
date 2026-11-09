@@ -30,6 +30,8 @@ import { CompactionMarker } from "./CompactionMarker.js";
 import { deskMessageForDisplay } from "./lighterTrading/desk-context.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
+import { TraceGroup, type TraceHeadFacts } from "./SessionTranscript/TurnTrace.js";
+import type { TurnOutcome } from "./SessionTranscript/turnSteps.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
 import type { BoardArrival } from "./Board/board-surface-contracts.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
@@ -237,7 +239,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   pendingApprovals,
   agentWorking = false,
   turnMark = true,
+  turnAnchorId,
   turnSteps,
+  turnOutcome,
   thoughtMs,
   sessionId,
   boardArrival = "settled",
@@ -262,14 +266,22 @@ export const TranscriptMessage = memo(function TranscriptMessage({
    */
   readonly turnMark?: boolean;
   /**
-   * Set only on the turn's thinking row (`turnSteps.ts`): the whole turn's
-   * steps, which its first Reasoned row says at its right. Two PRIMITIVES, so
-   * the memo boundary's shallow comparison keeps holding.
+   * The person's message that opened this row's turn (`turnSteps.ts`), set
+   * on every row of a whole turn: its step parts fold with the turn
+   * (`SessionTranscript/TurnTrace.tsx`). Omitted = the steps never fold.
+   */
+  readonly turnAnchorId?: number;
+  /**
+   * Set only on the row the turn's head stands on (`turnSteps.ts`): the whole
+   * turn's steps and how it ended, said by the head over the row's first
+   * step part. PRIMITIVES, so the memo boundary's shallow comparison keeps
+   * holding.
    */
   readonly turnSteps?: number;
+  readonly turnOutcome?: TurnOutcome;
   /**
    * The live turn clock's reading for this turn (`TurnIsland/turnClock.ts`),
-   * set only on the thinking row of a turn watched live.
+   * set only on the head's row of a turn watched live.
    */
   readonly thoughtMs?: number;
   /**
@@ -308,10 +320,13 @@ export const TranscriptMessage = memo(function TranscriptMessage({
     feedbackSessionId !== undefined && feedbackMessageKey !== undefined
       ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
       : undefined;
-  // The turn's thinking row is this row's FIRST Reasoned row; every other
-  // one stays a plain "Thought".
-  const headSteps = turnSteps ?? null;
-  const headThoughtMs = turnSteps === undefined ? null : (thoughtMs ?? null);
+  // The turn's head stands over this row's FIRST step part (a thought, else
+  // its tool steps); every other part is a headless group of the same turn.
+  const head: TraceHeadFacts | null =
+    turnSteps === undefined || turnOutcome === undefined
+      ? null
+      : { steps: turnSteps, outcome: turnOutcome, thoughtMs: thoughtMs ?? null };
+  const thought = (row.reasoning ?? "").length > 0;
   switch (row.variant) {
     case "user": {
       // A desk message carries the market scope, the desk's values and the
@@ -385,11 +400,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {...turnSeams(turnMark, agentWorking)}
         >
           <AssistantSpeakerLabel />
-          <ReasonedBlock
-            reasoning={row.reasoning}
-            steps={headSteps}
-            thoughtMs={headThoughtMs}
-          />
+          {thought ? (
+            <TraceGroup anchorId={turnAnchorId} head={head}>
+              <ReasonedBlock reasoning={row.reasoning} />
+            </TraceGroup>
+          ) : null}
           <AssistantBody content={row.content} />
           {row.board != null ? (
             <BoardRowCard
@@ -420,11 +435,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {...turnSeams(turnMark, agentWorking)}
         >
           <AssistantSpeakerLabel />
-          <ReasonedBlock
-            reasoning={row.reasoning}
-            steps={headSteps}
-            thoughtMs={headThoughtMs}
-          />
+          {thought ? (
+            <TraceGroup anchorId={turnAnchorId} head={head}>
+              <ReasonedBlock reasoning={row.reasoning} />
+            </TraceGroup>
+          ) : null}
           <AssistantBody content={row.content} />
           <AssistantActionsTail
             createdAt={row.createdAt}
@@ -457,17 +472,19 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             className="vex-reply"
             {...turnSeams(turnMark, false)}
           >
-            <div className="vex-steps">
-              <ToolDisclosure
-                label={row.label ?? "tool_output"}
-                body={row.content}
-                emptyHint="(no output)"
-              />
-              {/* Orphan result (call scrolled out of the page): its validated
-                  explorer refs still surface here - grouped/paired acts get
-                  theirs via ToolActRow instead. Inert when nothing resolves. */}
-              <ExplorerRefLinks refs={row.explorerRefs} />
-            </div>
+            <TraceGroup anchorId={turnAnchorId} head={head}>
+              <div className="vex-steps">
+                <ToolDisclosure
+                  label={row.label ?? "tool_output"}
+                  body={row.content}
+                  emptyHint="(no output)"
+                />
+                {/* Orphan result (call scrolled out of the page): its validated
+                    explorer refs still surface here - grouped/paired acts get
+                    theirs via ToolActRow instead. Inert when nothing resolves. */}
+                <ExplorerRefLinks refs={row.explorerRefs} />
+              </div>
+            </TraceGroup>
           </div>
         );
       }
@@ -481,29 +498,26 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {row.content.length > 0 ? (
             <div data-time-hover-root="">
               <AssistantSpeakerLabel />
-              <ReasonedBlock
-                reasoning={row.reasoning}
-                steps={headSteps}
-                thoughtMs={headThoughtMs}
-              />
+              {thought ? (
+                <TraceGroup anchorId={turnAnchorId} head={head}>
+                  <ReasonedBlock reasoning={row.reasoning} />
+                </TraceGroup>
+              ) : null}
               <AssistantBody content={row.content} />
               <AssistantActionsTail createdAt={row.createdAt} />
             </div>
           ) : null}
           {/* A prose-less tool row carries the turn's reasoning itself - the
               split rows share `dto.id`, and `splitToolCallProse` guarantees
-              only ONE of them ever holds it, so this can never double-render. */}
-          {row.content.length === 0 ? (
-            <ReasonedBlock
-              reasoning={row.reasoning}
-              steps={headSteps}
-              thoughtMs={headThoughtMs}
-            />
-          ) : null}
+              only ONE of them ever holds it, so this can never double-render.
+              Its thought and its steps are one group. */}
           <ToolSteps
             row={row}
             pendingApprovals={pendingApprovals}
             sessionId={sessionId}
+            turnAnchorId={turnAnchorId}
+            head={row.content.length > 0 && thought ? null : head}
+            reasoning={row.content.length === 0 ? row.reasoning : null}
           />
         </div>
       );
@@ -517,20 +531,12 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // reordered or spliced.
       return (
         <div className="vex-reply" {...turnSeams(turnMark, false)}>
-          {(row.reasonings ?? []).map((trace, index, traces) => {
-            // The group's first non-empty trace is the one a thinking row
-            // can open, so it carries the turn's head (`turnSteps.ts`).
-            const head = index === traces.findIndex((t) => (t ?? "").length > 0);
-            return (
-              <ReasonedBlock
-                key={`${row.id}-${index}`}
-                reasoning={trace}
-                steps={head ? headSteps : null}
-                thoughtMs={head ? headThoughtMs : null}
-              />
-            );
-          })}
-          <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+          <TraceGroup anchorId={turnAnchorId} head={head}>
+            {(row.reasonings ?? []).map((trace, index) => (
+              <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
+            ))}
+            <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+          </TraceGroup>
           <ActReceipts acts={row.calls ?? []} sessionId={sessionId} />
           {/* A group folds its acts; a mission result must not fold with them. */}
           {(row.calls ?? []).map((call) => {
@@ -577,13 +583,28 @@ function ToolSteps({
   row,
   pendingApprovals,
   sessionId,
+  turnAnchorId,
+  head,
+  reasoning,
 }: {
   readonly row: TranscriptRowModel;
   readonly pendingApprovals?: ReadonlyMap<string, string>;
   readonly sessionId?: string;
+  /** The row's turn, so its steps fold with it; omitted = never folds. */
+  readonly turnAnchorId: number | undefined;
+  /** The turn's head, when it stands over these steps. */
+  readonly head: TraceHeadFacts | null;
+  /** The prose-less row's own thought, the group's first step. */
+  readonly reasoning: string | null | undefined;
 }): JSX.Element | null {
   const acts = resolveActs(row);
-  if (acts.length === 0) return null;
+  if (acts.length === 0) {
+    return (reasoning ?? "").length > 0 ? (
+      <TraceGroup anchorId={turnAnchorId} head={head}>
+        <ReasonedBlock reasoning={reasoning} />
+      </TraceGroup>
+    ) : null;
+  }
   const stopResults = acts.map((act) => ({
     key: act.toolCallId,
     result: readMissionStopResult(act),
@@ -594,19 +615,22 @@ function ToolSteps({
   }));
   return (
     <>
-      {acts.length > 1 ? (
-        <ToolGroupRow group={foldOf(row, acts)} pendingApprovals={pendingApprovals} />
-      ) : (
-        <div data-vex-tool-ledger="" className="vex-steps">
-          {acts.map((act) => (
-            <ToolActRow
-              key={act.toolCallId}
-              act={act}
-              pendingApprovalId={pendingApprovals?.get(act.toolCallId) ?? null}
-            />
-          ))}
-        </div>
-      )}
+      <TraceGroup anchorId={turnAnchorId} head={head}>
+        <ReasonedBlock reasoning={reasoning} />
+        {acts.length > 1 ? (
+          <ToolGroupRow group={foldOf(row, acts)} pendingApprovals={pendingApprovals} />
+        ) : (
+          <div data-vex-tool-ledger="" className="vex-steps">
+            {acts.map((act) => (
+              <ToolActRow
+                key={act.toolCallId}
+                act={act}
+                pendingApprovalId={pendingApprovals?.get(act.toolCallId) ?? null}
+              />
+            ))}
+          </div>
+        )}
+      </TraceGroup>
       <ActReceipts acts={acts} sessionId={sessionId} />
       {stopResults.map(({ key, result }) =>
         result !== null ? <MissionStopResult key={key} result={result} /> : null,

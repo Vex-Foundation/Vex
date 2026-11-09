@@ -70,33 +70,13 @@ describe("ReasonedBlock", () => {
     ).toContain("Thought · 1.2K tokens");
   });
 
-  it("heads a turn: its steps at the right, and the live clock's reading only when there is one", () => {
-    // docs/design/H3-DESKTOP.md Appendix A.7 (VEX Cloud's EC-07): "Thought
-    // for Ns" after a live turn; a turn reopened from history says "Thought"
-    // with no total, and its steps.
-    const history = render(
-      createElement(ReasonedBlock, { reasoning: "t", steps: 3 }),
-    );
+  it("is one step of the turn: it says no count and no time of the turn", () => {
+    // The turn's head (`SessionTranscript/TurnTrace.tsx`) says the steps and
+    // "Thought for Ns"; a thought row is one of those steps.
+    const { container } = render(createElement(ReasonedBlock, { reasoning: "t" }));
     expect(screen.getByRole("button", { name: /Thought/ }).textContent).toBe("Thought");
-    expect(
-      history.container.querySelector("[data-vex-turn-steps]")?.textContent,
-    ).toBe("3 steps");
-    expect(history.container.querySelector("[data-vex-thinking-head]")).not.toBeNull();
-    history.unmount();
-
-    const live = render(
-      createElement(ReasonedBlock, { reasoning: "t", steps: 1, thoughtMs: 2_800 }),
-    );
-    expect(
-      screen.getByRole("button", { name: /Thought for/ }).textContent,
-    ).toBe("Thought for 2.8s");
-    expect(live.container.querySelector("[data-vex-turn-steps]")?.textContent).toBe("1 step");
-    live.unmount();
-
-    // Any other Reasoned row of the turn: no count, no head.
-    const plain = render(createElement(ReasonedBlock, { reasoning: "t" }));
-    expect(plain.container.querySelector("[data-vex-turn-steps]")).toBeNull();
-    expect(plain.container.querySelector("[data-vex-thinking-head]")).toBeNull();
+    expect(container.querySelector("[data-vex-turn-steps]")).toBeNull();
+    expect(container.querySelector("[data-vex-thinking-head]")).toBeNull();
   });
 
   it("draws H3's dot-grid glyph once settled and the running node while streaming", () => {
