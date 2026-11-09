@@ -350,19 +350,35 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
   gap: 8px;
 }
 
-/* PREFERENCES: one framed cell, one row per setting, a rule between rows: the
- * name 15 / 400 (H3's row size) and the help 13 muted at the left, the
- * control at the right. */
+/* PREFERENCES (VEX Cloud's built preference rows, `controls.css`
+ * `.vx-field[data-layout=row]`): one framed cell on the card ground, one row
+ * per setting, at least 64 high, padding 12 16, a rule between rows: the name
+ * 15 / 400 and the help 13 muted (at most 520) at the left, the control at
+ * the right. A switch row's name is its label, whose press area spans the
+ * row; a hovering pointer washes it. */
 .vex-prefs__list {
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 .vex-pref {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 24px;
-  padding: 16px 20px;
+  column-gap: 16px;
+  min-height: 64px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-pref__title[data-vex-pref-row-press]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+@media (hover: hover) {
+  .vex-pref:has([role="switch"]):hover {
+    background: var(--vex-alias-interactive-hover);
+  }
 }
 .vex-prefs__list > .vex-pref:last-child {
   border-bottom: 0;
@@ -371,6 +387,7 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-pref__title {
+  display: block;
   margin: 0;
   font-size: 15px;
   font-weight: 400;
@@ -378,7 +395,8 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
   color: var(--vex-alias-label-primary);
 }
 .vex-pref__help {
-  margin: 2px 0 0;
+  max-width: 520px;
+  margin: 3px 0 0;
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
@@ -388,6 +406,7 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
   color: var(--vex-alias-label-primary);
 }
 .vex-pref__control {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;

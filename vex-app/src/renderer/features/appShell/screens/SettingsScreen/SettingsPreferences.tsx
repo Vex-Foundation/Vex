@@ -21,7 +21,7 @@
  * and this page is a table page (`vexOpenPages`).
  */
 
-import { type JSX, type ReactNode } from "react";
+import { useId, type JSX, type ReactNode } from "react";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
@@ -44,22 +44,37 @@ const SUBMIT_CHOICES: ReadonlyArray<SubmitChoice> = [
   { id: "mod-enter", label: "Ctrl/Cmd+Enter sends" },
 ];
 
-/** One setting row: the name and help at the left, its control at the right. */
+/**
+ * One setting row: the name and help at the left, its control at the right.
+ * VEX Cloud's built preference row (`controls.css`, `.vx-field[data-layout=row]`;
+ * owner decision 2026-11-09): with `controlId` the name is the control's
+ * `<label>`, and its press area spans the whole row, so a press anywhere on a
+ * switch row flips the switch.
+ */
 function PrefRow({
   title,
   help,
   seam,
+  controlId,
   children,
 }: {
   readonly title: string;
   readonly help: ReactNode;
   readonly seam: string;
+  /** The id of the one control the whole row presses. */
+  readonly controlId?: string;
   readonly children: ReactNode;
 }): JSX.Element {
   return (
     <div className="vex-pref" {...{ [seam]: "" }}>
       <div>
-        <div className="vex-pref__title">{title}</div>
+        {controlId === undefined ? (
+          <div className="vex-pref__title">{title}</div>
+        ) : (
+          <label htmlFor={controlId} className="vex-pref__title" data-vex-pref-row-press="">
+            {title}
+          </label>
+        )}
         <p className="vex-pref__help">{help}</p>
       </div>
       <div className="vex-pref__control">{children}</div>
@@ -106,9 +121,11 @@ function SwitchRow({
   readonly onToggle: () => void;
   readonly seam: string;
 }): JSX.Element {
+  const id = useId();
   return (
-    <PrefRow title={title} help={help} seam={seam}>
+    <PrefRow title={title} help={help} seam={seam} controlId={id}>
       <button
+        id={id}
         type="button"
         role="switch"
         aria-checked={enabled}

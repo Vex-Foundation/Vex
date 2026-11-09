@@ -83,6 +83,18 @@ describe("SettingsPreferences", () => {
     expect(rows).toEqual(["data-vex-settings-permission", "data-vex-settings-enter"]);
   });
 
+  it("names each switch by its row's label, and a press on the name flips it (Cloud's built row)", () => {
+    useUiStore.setState({ notificationsEnabled: true });
+    renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Notifications" });
+    const label = document.querySelector(`label[for="${toggle.id}"]`);
+    expect(label?.textContent).toBe("Notifications");
+    expect(label?.hasAttribute("data-vex-pref-row-press")).toBe(true);
+    fireEvent.click(label as HTMLElement);
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
   it("the notifications row reads the typed uiStore slot and a click round-trips through its setter", () => {
     useUiStore.setState({ notificationsEnabled: true });
 

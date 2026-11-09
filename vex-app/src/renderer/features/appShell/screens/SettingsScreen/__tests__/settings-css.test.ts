@@ -75,7 +75,12 @@ describe("settings.css", () => {
     expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 760px;[\s\S]*font-size: 14px;[\s\S]*line-height: 1.5;/);
     expect(rule(settings, ".vex-pref__title")).toMatch(/font-size: 15px;[\s\S]*font-weight: 400/);
     expect(rule(settings, ".vex-pref__help")).toContain("font-size: 13px");
-    expect(rule(settings, ".vex-pref")).toContain("padding: 16px 20px");
+    // Cloud's built preference row: at least 64, padding 12 16, the note at most 520.
+    expect(rule(settings, ".vex-pref")).toMatch(/min-height: 64px;\s*padding: 12px 16px;/);
+    expect(rule(settings, ".vex-pref__help")).toContain("max-width: 520px");
+    expect(rule(settings, ".vex-prefs__list")).toContain("background: var(--vex-alias-card)");
+    expect(rule(settings, ".vex-pref__title[data-vex-pref-row-press]::after")).toMatch(/position: absolute;\s*inset: 0;/);
+    expect(settings).toMatch(/\.vex-pref:has\(\[role="switch"\]\):hover \{\s*background: var\(--vex-alias-interactive-hover\);/);
     // The rows sit in one framed cell.
     expect(rule(settings, ".vex-prefs__list")).toContain("border: 1px solid var(--vex-alias-rule)");
     expect(rule(settings, ".vex-set__kvl")).toContain("border: 1px solid var(--vex-alias-rule)");
