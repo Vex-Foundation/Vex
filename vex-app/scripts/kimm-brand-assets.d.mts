@@ -6,10 +6,13 @@ export const KIMM_MOODS: readonly KimmMoodName[];
 export const KIMM_ART_DIR: "art/kimm";
 
 export const KIMM_BUDGETS: Readonly<{
-  keyMoods: number;
-  section: number;
-  strip: number;
+  chip: number;
+  still: number;
+  fieldStill: number;
+  fieldStillWide: number;
 }>;
+
+export const KIMM_STILL_HEIGHTS: Readonly<Record<KimmMoodName, number>>;
 
 /** One `BRAND_ASSETS` entry of `check-build-artifacts.mjs`. */
 export interface BrandAssetEntry {

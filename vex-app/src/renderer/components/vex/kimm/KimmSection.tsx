@@ -1,6 +1,6 @@
 /**
  * KIMM'S SECTION (docs/design/H3-DESKTOP.md sections 1.5, 3 and 3.6; plan rows
- * S4-04 to S4-11): her figure on its blue ground, a fixed box laid OVER Vex's
+ * S4-04 to S4-11): her figure on the glyph field, a fixed box laid OVER Vex's
  * column, with her corner key in its top right.
  *
  * THE BOX. Not a row of the column: a box over it, whose size is a function
@@ -14,14 +14,17 @@
  * stands where it stands and she covers its rest. That is the second leg of
  * the money rule (section 3.6): a waiting card beside her never moves.
  *
- * WHAT IS IN IT, back to front: her ground (Kimm's blue gradient, one of the
- * two gradients H3 allows, section 2), the falling V, X and E of her glyph
- * field (`KimmField`, running only while she is open and on screen), her
- * figure for her mood, and the corner key. The figure is her art for the mood (`KimmArtSet.sections`); a
- * mood whose art is `missing` shows the ground alone, never another mood's
- * figure and never a placeholder. Her art comes from the nearest
- * `KimmArtProvider` (the shipped art in the app, the stand-ins in the H3
- * harness).
+ * WHAT IS IN IT, back to front: her ground (the glyph field's baked frame
+ * under a fall to the page, VEX Cloud's; `KimmArtSet.field`, its URLs set on
+ * her box as `--vex-kimm-baked` and `--vex-kimm-baked-wide` for kimm.css,
+ * until the live field has painted: then `data-kimm-field` and the page),
+ * her glyph field (`KimmField`, VEX Cloud's Gradient ASCII field, running
+ * only while she is open and on screen), her figure for her mood (framed as Cloud frames her still: 48
+ * from her top, 88% of her width, centred), and the corner key. The figure
+ * is her art for the mood (`KimmArtSet.sections`); a mood whose art is
+ * `missing` shows the ground alone, never another mood's figure and never a
+ * placeholder. Her art comes from the nearest `KimmArtProvider` (the shipped
+ * art in the app, the stand-ins in the H3 harness).
  *
  * CLOSED COSTS LITTLE (section 3.5; plan row S4-05). Her figure is her large
  * art (the sheet: 415 KB closed against 15 MB open), so its element is not
@@ -32,14 +35,14 @@
  * file then.
  *
  * CLOSED, SHE IS THE STRIP (section 1.5; plan row S4-06): her section folds
- * to its top 56, the glyph field's frame at the left and the same corner key
- * at the right. The fold is her clip-path alone (inset from the foot by the
- * box less the strip, section 3.2): her box never changes, so neither the
- * column nor the card beside it reflows, and what the clip leaves out takes
- * no pointer, so the console's rest under her is the person's again. In the
- * strip her figure gives way to the field's frame (`KimmArtSet.strip`, a
- * small file that loads with the strip; missing today, the ground's own top
- * then).
+ * to its own top 56, her ground and the glyph field holding its frame, with
+ * the same corner key at the right; the strip has no file of its own (VEX
+ * Cloud dropped `strip.webp`). The fold is her clip-path alone (inset from
+ * the foot by the box less the strip, section 3.2): her box never changes,
+ * so neither the column nor the card beside it reflows, and what the clip
+ * leaves out takes no pointer, so the console's rest under her is the
+ * person's again. In the strip her figure is hidden once the close has
+ * ended.
  *
  * THE CORNER KEY is the same control as the Vex key in the header, in the
  * same corner whatever her state (section 3.3): HIDE VEX and a cross while
@@ -144,7 +147,7 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type JSX } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
 import {
   DURATION_VEX_CLOSE_MS,
@@ -153,7 +156,7 @@ import {
 } from "../../../lib/motion/index.js";
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isWindowResizing } from "../../../lib/wide-zoom.js";
-import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
+import { isKimmArtReady, type KimmArt, type KimmArtSet, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { handFocusToVexKey, vexKeyElement } from "./kimm-focus.js";
 import { KimmField } from "./KimmField.js";
@@ -183,6 +186,26 @@ export function legOf(open: boolean): KimmLeg {
   return open
     ? { moving: "opening", rest: "open", ms: DURATION_VEX_OPEN_MS }
     : { moving: "closing", rest: "closed", ms: DURATION_VEX_CLOSE_MS };
+}
+
+/** A piece of her art as a CSS image, or nothing where its file is missing. */
+function cssImage(art: KimmArt): string | undefined {
+  return isKimmArtReady(art) ? `url("${art.src}")` : undefined;
+}
+
+/**
+ * Her ground's two frames as the custom properties kimm.css paints them from
+ * (VEX Cloud's `--vx-kimm-baked`, `--vx-kimm-baked-wide`). A CSSOM property
+ * set by React, which the strict CSP allows (MOTION-POLICY.md, "CSP precise
+ * semantics"); a missing frame sets nothing, and the ground is the page.
+ */
+export function kimmGroundStyle(field: KimmArtSet["field"]): CSSProperties {
+  const style: Record<string, string> = {};
+  const still = cssImage(field.still);
+  const wide = cssImage(field.wide);
+  if (still !== undefined) style["--vex-kimm-baked"] = still;
+  if (wide !== undefined) style["--vex-kimm-baked-wide"] = wide;
+  return style as CSSProperties;
 }
 
 /** The Vex toggle's chord on this platform, as the corner key spells it. */
@@ -239,7 +262,6 @@ export function KimmSection({
   // for state derived from a prop, so the opening frame already carries it.
   const [asked, setAsked] = useState(open);
   if (open && !asked) setAsked(true);
-  const strip = art.strip;
   // The words change at the press (section 3.3): the key says what a press
   // does now.
   const action = open ? "Hide Vex" : "Show Vex";
@@ -372,6 +394,10 @@ export function KimmSection({
     [reportsPhase],
   );
   const moving = phase === "opening" || phase === "closing";
+  // Her live field: in her section it runs, in the band it holds one frame.
+  // Once it has painted, her ground gives up the baked frame (kimm.css).
+  const fieldMode = band === undefined ? "live" : "frame";
+  const [fieldDrawn, setFieldDrawn] = useState(false);
 
   return (
     <div
@@ -384,7 +410,9 @@ export function KimmSection({
       data-kimm-guard={guard === null ? undefined : ""}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       data-kimm-seat={band === undefined ? undefined : "band"}
+      data-kimm-field={fieldDrawn ? fieldMode : undefined}
       className={band === undefined ? "vex-kimm" : "vex-kimm vex-kimm--band"}
+      style={kimmGroundStyle(art.field)}
     >
       {/* Inert while she moves: nothing in her body takes a click or focus
         * (see "WHILE SHE MOVES"). Her corner key is outside it and stays
@@ -392,8 +420,9 @@ export function KimmSection({
       <div aria-hidden="true" inert={moving} className="vex-kimm__body">
         <div className="vex-kimm__ground" />
         {/* The glyph field, behind her figure: it runs while she is open and
-          * holds its frame in the strip (`KimmField.tsx`, S4-17). */}
-        <KimmField running={open} />
+          * holds its frame in the strip; the band draws one frame
+          * (`KimmField.tsx`, S4-17). */}
+        <KimmField open={open} mode={fieldMode} onDrawn={setFieldDrawn} />
         {/* Her drop rides this layer, which stands from the first frame,
           * so her first open drops her too: her figure is only asked for at
           * that press, and a new element has no closed place to drop from. */}
@@ -410,17 +439,6 @@ export function KimmSection({
             />
           ) : null}
         </div>
-        {isKimmArtReady(strip) ? (
-          <img
-            src={strip.src}
-            alt=""
-            width={strip.width}
-            height={strip.height}
-            draggable={false}
-            decoding="async"
-            className="vex-kimm__strip"
-          />
-        ) : null}
         <div className="vex-kimm__scan" />
       </div>
       {band === undefined ? (

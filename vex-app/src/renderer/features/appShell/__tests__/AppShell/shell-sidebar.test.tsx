@@ -663,9 +663,12 @@ describe("AppShell", () => {
     );
     expect(section).not.toBeNull();
     expect(view.container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
-    // Her art is missing until her files arrive: no figure, never a stand-in.
-    expect(section?.getAttribute("data-kimm-art")).toBe("missing");
-    expect(section?.querySelector("img")).toBeNull();
+    // Her art is the app's own (VEX Cloud's renders in public/art/kimm/), never a stand-in.
+    expect(section?.getAttribute("data-kimm-art")).toBe("ready");
+    expect(section?.querySelector("img.vex-kimm__figure")?.getAttribute("src")).toMatch(
+      /^\/art\/kimm\/still-[a-z]+\.webp$/,
+    );
+    expect(section?.innerHTML).not.toMatch(/kimm-standin-/);
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {

@@ -7,7 +7,7 @@ This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`.
 The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 November 2026. Cloud builds the same design in `Jcaster99/Vex` (`apps/web`). No H3 branch was on that remote on 3 November 2026, so both apps start from the same mockup; wherever this document derives a number the mockup does not print, the number is reconciled with Cloud once Cloud's branch exists.
 
 ## Rules
-- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0 (save the chat bubbles and the avatar circle, section 2.4), no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the chosen row's fill (a chosen row and the row under the pointer in the chats column).
+- The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0 (save the chat bubbles and the avatar circle, section 2.4), no shadow, no blur, no glass. The only gradients are Kimm's ground (the glyph field's own blue and its fall to the page) and the chosen row's fill (a chosen row and the row under the pointer in the chats column).
 - Labels are uppercase and tracked; sentences, names and values are in sentence case. Words are written in sentence case in code and uppercased by the label style, so a screen reader reads words, not letters.
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
 - A status is a small square beside a word, and every status has its own drawing (solid, blink, target, cross, frame, dotted frame, hatch), so a colour never stands alone (section 2.2). Gains and losses in trading values take green and red type.
@@ -134,9 +134,9 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Kimm's section | 264, 563 | a fixed box over the rest of the console |
 | the console's rest | under her section | seen while she is closed: strategy rows (62 each, with a MAINNET tag and a switch), AI PERMISSION (a 44 head, then its sentence and "Change in Settings"), RECENT ACTIVITY (a 44 head, rows about 43 high, each with a status square and word), OPEN ACTIVITY with an arrow, ending at 826 |
 
-**Her section, open:** her figure on a blue gradient behind the falling V, X and E glyph field. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured). Desktop draws it as VEX Cloud's mockup source does (`.kz-cell`, settled 2026-11-05): opaque on the header's ground without its alpha (`--vex-alias-header-solid`, #010102, Cloud's `--vx-header-solid`), no blur, a 1px rule on its left and its foot (the foot clear on the strip), padding 0 18 0 20, a 12 gap, 13px caps, an 18px glyph, the raised fill under a hovering pointer; its width is its words', 137 open and 148 in the strip at 1440.
+**Her section, open:** her figure over the glyph field (` VEX` on its blue horizon, falling to the page). Desktop draws her as VEX Cloud's built stage does (`kimm.css`, settled 2026-11-08): the ground is the field's baked frame (`field-still.webp`, from 1600 `field-still-wide.webp`, which holds its own fall to the page) set from her top centre to cover the box, under `linear-gradient(to bottom, transparent 48%, page)` below 1600, until the live field has painted; her figure is her mood's still, 48 from her top (x zoom from 1760, as the column zooms), 88% of her width, centred, cut by her foot. In the band (1000 to 1023) the same still stands 12 from the band's top at 720 / 1040 of the width Cloud gives its phone still, so the foot row cuts it at the chest. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured). Desktop draws it as VEX Cloud's mockup source does (`.kz-cell`, settled 2026-11-05): opaque on the header's ground without its alpha (`--vex-alias-header-solid`, #010102, Cloud's `--vx-header-solid`), no blur, a 1px rule on its left and its foot (the foot clear on the strip), padding 0 18 0 20, a 12 gap, 13px caps, an 18px glyph, the raised fill under a hovering pointer; its width is its words', 137 open and 148 in the strip at 1440.
 
-**Closed:** the section folds to its top 56, the strip, 264 to 320: the glyph field's frame at the left and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
+**Closed:** the section folds to its top 56, the strip, 264 to 320: her section's own top, the ground and the glyph field holding its frame (VEX Cloud dropped its `strip.webp`; the strip has no file of its own), and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
 
 **The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is the bottom row's top rule (Cloud's foot line, section 1.11). Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less the foot row (73 at a zoom of 1) less its top; from 1760 up its top is 148 x zoom (section 1.11).
 
@@ -147,11 +147,11 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 - **Loading** holds the rows' height with parked covers (`Cover`: a 12 high bar on the raised fill, its 1px head at the left, never a pulse): the decision row a 70% cover, the missions row a 16 square cover and a 62% cover. The head has no count while it is unknown. The covers are one `role="status"` named Loading.
 - **A failed read** says so where the fact would be: the cross and "Not available", no count, no Retry (the reads are polled). The detailed statement stays on the line's title. One source failed out of several: the list it has, then "Could not load every decision." beside the cross. A failed sessions read makes the missions row "Missions · Not available", never a zero.
 - **The page strip** (section 1.9) follows: covers while loading, the cross and "Not available" when the read failed, no count and no Retry.
-- How her figure fills a box of another size (anchor, scale, crop): desktop's box is 40 taller than the plate's, and the box narrows with the column. Settled by the mockup source and Kimm's files from the designer.
+- How her figure fills a box of another size: settled 2026-11-08 by VEX Cloud's built stage (above): 48 from her top, 88% of the box's width, centred, cut by her foot, whatever the box's height.
 
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
-- **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, VEX Cloud's portrait glyph (DG-1 `portrait`, a framed bust: the frame she left; the direction is the chevron cell's, never the glyph's) at 20 in ink 2, ink under the pointer, on the open ground (`--vx-cell-open`, #0C0D0F). The two stand in the cell together and crossfade over 200ms, opacity only (MOTION-POLICY.md names it); reduced motion and Save-Data change it at once. The open ground fades in with the glyph, so a face that has not arrived leaves the header's own ground. The plates' fold glyph (an up chevron under a bar) on a raised fill is replaced.
+- **Portrait cell, 76 x 76.** Closed, her face: her mood's chip, VEX Cloud's header portrait (`chip-{mood}.webp`, 150 x 150, 5.4 to 6.2 KB each, `public/art/kimm/`), the whole chip filling the cell. Cloud's `key-moods.webp` sprite is its home page's, not the header's, and is not taken. Open, VEX Cloud's portrait glyph (DG-1 `portrait`, a framed bust: the frame she left; the direction is the chevron cell's, never the glyph's) at 20 in ink 2, ink under the pointer, on the open ground (`--vx-cell-open`, #0C0D0F). The two stand in the cell together and crossfade over 200ms, opacity only (MOTION-POLICY.md names it); reduced motion and Save-Data change it at once. The open ground fades in with the glyph, so a face that has not arrived leaves the header's own ground. The plates' fold glyph (an up chevron under a bar) on a raised fill is replaced.
 - **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut. At VEX Cloud's measures (the H3 mockup's `.vk`, 2026-11-05): the text 20 in and 12 from the right, the two lines 10 apart; the state word 13 in caps in ink, the timer after it 10 on, in the sans, muted, at 0.04em with tabular figures; the action 12 in caps in ink, its keycaps 12 after it (section 2.4).
 - **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
 - **Width rules** (VEX Cloud's, on the window's width): under 1440 no keycaps (the chord stays in the key's name, `aria-keyshortcuts`, its tooltip and the first-close hint), the state line 12 at 0.06em with its parts 8 apart, the text 16 in, the chevron cell 48, and the console's decision 14 with its Review cell 14 in from each side; under 1280 the state line says the chat row's short word ("Waiting" for Waiting for approval; every other word is already short), the long word staying the key's description; from 1920 the state line is 14 and the keycaps 20 high at 11.
@@ -166,25 +166,27 @@ Her moods, printed on `landing-r3__plate-key-moods`, with the still VEX Cloud dr
 | think | the hand at her mouth, with the running square | Vex works (THINKING) |
 | offer | the open palm | waiting in the app (WAITING FOR APPROVAL) |
 | offer, held | the open palm, dimmed | held for sign-in (Cloud); a locked vault (desktop) |
-| signed | after a fill | DONE after a fill |
-| refused | the whole anger mark | DONE after a refusal |
-| rest | resting | after the answer (DONE), and after a failure |
+| signed | after a fill | DONE after a fill, for 2.8 s |
+| refused | the whole anger mark | the money call refused or ended in an error, for 3.4 s; ERROR on a status panel |
+| rest | resting | after the answer (DONE), and after a failure with no money call |
 
-**Held is offer, dimmed.** It has no file of its own: the seam draws it from offer's cell and file (`KIMM_ART_MOOD`, `kimm-assets.ts`) and the sheet dims it to half its light (opacity 0.5, `kimm.css`), as Cloud lays its 50% scrim over her; the mood plate's held cell measures 0.50 of the offer cell's. **Signed** is in the list and the mood-to-file map (`section-signed.webp`, a cell of the sprite) with no file yet; until one arrives her section shows its ground and the key its fallback, as for any missing piece.
+**Held is offer, dimmed.** It has no file of its own: the seam draws it from offer's chip and still (`KIMM_ART_MOOD`, `kimm-assets.ts`) and the sheet dims it to half its light (opacity 0.5, `kimm.css`), as Cloud lays its 50% scrim over her; the mood plate's held cell measures 0.50 of the offer cell's.
 
-**Desktop's states take Cloud's seats** (its `js/data.js`, and `h3-shell-gaps` decision 15, "she is not the failure"), in `features/vex/kimm-mood.ts`:
+**Her files** (S4-18, settled 2026-11-08) are VEX Cloud's ready-made renders, byte copies of its `apps/web/public/kimm/v1/stills/` in `src/renderer/public/art/kimm/` (`NOTICE.md` there; 561,760 bytes in all): a chip (150 x 150) and a section still (720 wide, 1032 to 1104 tall by pose) per drawn mood, signed included, and the glyph field's two baked frames (`field-still.webp` 780 x 652, `field-still-wide.webp` 1536 x 1972). Each is registered in the build check's `BRAND_ASSETS` (`scripts/kimm-brand-assets.mjs`) with its size and byte budget. Cloud's phone stills are not taken: the window floor is 1000, and the band (1000 to 1023) frames the section still. A file that leaves the folder turns its piece `missing`, drawn as no art at all. The Live2D model and Cubism Core are not in the desktop app.
+
+**Desktop's states take Cloud's seats** (its `js/data.js`, `h3-shell-gaps` decision 15, "she is not the failure", and Cloud's built mood clock and status panel, verified 2026-11-08: `use-kimm-events.ts`, `kimm-moods.ts`, `kimm-provider.tsx`, `StatusPanel.tsx`), in `features/vex/kimm-mood.ts`:
 
 | State | Mood |
 |---|---|
 | Ready, Listening | hi |
-| Thinking, Working | think |
+| Thinking, Working | think; offer while the approved money call runs (`approved`: Cloud's `sign` mood, drawn with the offer still) |
 | Waiting for approval | offer |
-| Done | rest; signed after a fill; refused after a refusal; rest after a failure |
+| Done | rest; after the money call (`outcome`): signed after a fill for 2.8 s, refused after a refusal or an error for 3.4 s, then rest |
 | Concerned | rest in a chat; think on a status panel (`seat: "panel"`) |
-| Error | rest |
+| Error | rest in a chat; refused for 3.4 s when the money call ended in it (`outcome`), then rest; refused on a status panel |
 | Sleeping, Waking up | rest; held while the vault is locked |
 
-Refused shows only for a refusal: never for an error, a failure or a stop. Open: nothing in desktop's presence reports a settled turn's outcome yet (`useVexPresence` says only that a turn finished), so Done rests until a caller passes `outcome`; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`.
+The holds are Cloud's (`KIMM_EVENT_MOOD`: `done` 2800, `refused` 3400; its clock then returns to rest), kept by `useKimmMood`. Refused shows only for the money call's own end and for an Error status panel: never for a failure with no money call, nor for a stop. Open: nothing in desktop's presence reports that the running call is an approved money call or how it ended (`useVexPresence` says only that a turn is live or finished; the decision is the approvals region's), so no caller passes `approved` or `outcome` yet, and she thinks, then rests, as before; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`. Cloud also holds the welcome's hi for 1.8 s and then rests (its `hi` event); desktop keeps hi while Ready, as the H3 plates draw it.
 
 ### 1.7 The chat column
 Header cells as in section 1.3. The transcript and the welcome sit 24 in from both edges (704 to 1416 at 1440).
@@ -511,8 +513,8 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
   Every saved choice survives the migrations: v22 seeded the two persisted slots only where a payload lacked them, and v24 touched only the chat's.
 - **First launch: open** in chats, closed on pages, closed under 1024. The sheet's drawn answer for computers, and Cloud's PD-12.
 - **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
-- **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint shows the same, since it never fades.
-- **Closed costs little.** Closed, only the key's mood sprite loads (the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
+- **Reduced motion and Save-Data** open and close her at once; the glyph field holds one still frame. The first-close hint shows the same, since it never fades.
+- **Closed costs little.** Closed, only the chip of her mood loads (about 6 KB; the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17): VEX Cloud's Gradient ASCII field (` VEX`, cell 20, density 0.5, glyphs 0.6, gradient 0.8, the palette #1E3FD8 #F6F8FF #A5D8FF #38BDF8 on the horizon shape, no intro), ported as plain canvas code (`gradient-ascii.ts`, MIT + Commons Clause, its licence beside it), reached by a dynamic import; closed it holds its frame, the band draws one frame, and its ground gives up the baked frame for the page once it has painted.
 
 ### 3.6 The money card never moves
 Opening or closing her section never moves, resizes or covers a waiting money card, on any frame. It holds because of three things, and needs all three:

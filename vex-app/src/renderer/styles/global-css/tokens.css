@@ -290,7 +290,7 @@
   /* The chosen row and the row under the pointer (Cloud's
    * --vx-chosen-row-rail): its fill fades from #1A1B1C at the row's left
    * edge to transparent at its right, over whatever column it crosses. One
-   * of H3's two gradients (the other is Kimm's blue ground). */
+   * of H3's two gradients (the other is Kimm's ground). */
   --vex-alias-row-selected: linear-gradient(
     90deg,
     var(--color-h3-row),
@@ -447,7 +447,7 @@
   --vex-alias-tooltip-bg: var(--color-h3-tooltip);
   --vex-alias-toast-bg: var(--color-h3-tooltip);
   /* The header's ground made opaque (Cloud's --vx-header-solid): her corner
-   * key over her blue ground, a solid cell with no blur. */
+   * key over her ground, a solid cell with no blur. */
   --vex-alias-header-solid: var(--color-h3-header-solid);
   --vex-alias-label-on-plate: var(--color-h3-ink);
   --vex-alias-card: var(--color-h3-card);

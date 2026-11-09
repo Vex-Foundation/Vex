@@ -8,7 +8,7 @@
  * through every layer between them.
  *
  * The app mounts no provider, so every surface reads the default: the art as
- * the app ships it, every piece `missing` until her files arrive (S4-18). The
+ * the app ships it (S4-18, VEX Cloud's renders in `public/art/kimm/`). The
  * H3 harness wraps the shell in a provider holding its own set, built from
  * its dev-only stand-ins (`dev/h3-shell/kimm-standin-art.ts`); this module
  * never names them, and the build check refuses a production module that

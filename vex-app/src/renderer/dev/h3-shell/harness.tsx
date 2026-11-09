@@ -46,8 +46,8 @@
  *   ?os=mac|win|linux        the window chrome (mac)
  *   ?kimm=standins|shipped   Kimm's art: the dev stand-ins cropped from the
  *                            mockup (`kimm-standin-art.ts`, the default), or
- *                            the art as the app ships it, every piece missing
- *                            until her files arrive
+ *                            the art as the app ships it (VEX Cloud's
+ *                            renders in public/art/kimm/)
  *   ?plate=<id>              one of our own H3 plates (`plates/index.ts`)
  *                            instead of a state: a design proposal for a
  *                            surface H3 does not draw, never the product

@@ -215,33 +215,33 @@ and where each part is stated:
 
 ### Kimm's glyph field
 
-The falling V, X and E behind Kimm's figure on her blue ground
-(`src/renderer/components/vex/kimm/KimmField.tsx` over the pure model
-`kimm-field.ts`; `docs/design/H3-DESKTOP.md` sections 1.5, 3.2 and 3.5) is
-the named loop. It is part of how she is drawn, not an idle
-decoration, and it is bound four ways:
+VEX Cloud's live field behind Kimm's figure, ' VEX' on its blue horizon
+(`src/renderer/components/vex/kimm/KimmField.tsx` over the recipe and gate in
+`kimm-field.ts`, drawn by the Gradient ASCII port `gradient-ascii.ts`;
+`docs/design/H3-DESKTOP.md` sections 1.5, 3.2 and 3.5) is the named loop. It
+is part of how she is drawn, not an idle decoration, and it is bound four
+ways:
 
 - **Only while her section is open.** Closed, the field holds its frame in
-  the strip ("the field holds its frame", section 3.2) and paints nothing;
-  opening starts it again from that frame. Her section's open choice is the
-  switch, never her agent's state.
-- **The run gate.** `lib/motion/run-gate.ts` runs it only while its canvas is
+  the strip (section 3.2) and draws nothing; opening starts it again from
+  that frame. Her section's open choice is the switch, never her agent's
+  state. Under 1024 her band draws one frame and never runs.
+- **The run gate.** `lib/motion/run-gate.ts` runs it only while the field is
   on screen and the window is shown; a hidden window, a column folded or
-  scrolled away, or the inspect view over her paints no frame.
-- **A fixed step and a clock cap.** The model steps 10 times a second
-  (`KIMM_FIELD_STEP_MS`), so a frame whose step has not come
-  repaints nothing, and one animation frame never advances it more than
-  250ms (`KIMM_FIELD_CLOCK_CAP_MS`), so a stalled window resumes where it
-  stopped. Its draws come from one seeded sequence: the same step is the
-  same field.
+  scrolled away, or the inspect view over her paints no frame. The port also
+  stops its own ticker when hidden or off screen.
+- **A clamped step.** The port advances at most 50ms in one animation frame,
+  so a stalled window resumes where it stopped, and it draws at most twice
+  the CSS pixel. Its pointer trail and click ripple play only while it runs.
 - **The still frame.** Reduced motion and Save-Data
-  (`lib/motion/use-still-frame.ts`) paint one composed frame
-  (`KIMM_FIELD_STILL_STEP`) and repaint only when its box changes; no loop
-  starts.
+  (`lib/motion/use-still-frame.ts`) hold it at one frame (the port's
+  `setStill`); no ticker starts.
 
-It draws on a canvas, so it moves nothing in the layout and no transition or
-keyframe of it exists to collapse; the bounds above are the whole of its
-motion.
+Running or holding is the port's `setStill`, never a remount. It draws on a
+canvas (WebGL2, plain script: no eval, no wasm, the CSP untouched), so it
+moves nothing in the layout and no transition or keyframe of it exists to
+collapse; the bounds above are the whole of its motion. Where WebGL2 is
+missing it draws nothing and her ground keeps the field's baked frame.
 
 ### Vex's bars
 

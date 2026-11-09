@@ -2,17 +2,18 @@
  * HER PORTRAIT IN THE VEX KEY (docs/design/H3-DESKTOP.md section 1.6; plan
  * row S4-03): what the Vex key's portrait cell shows.
  *
- *   - CLOSED, her face: one cell of the key's mood sprite, scaled so the cell
- *     fills the box edge to edge, for her mood. The key maps her presence
- *     state to the mood (`kimmMoodOf`, `features/vex/kimm-mood.ts`) and
- *     passes it in, so this component stays below the features it serves. A
- *     change of state is a change of cell on the same sheet, so it never
- *     waits on a request.
+ *   - CLOSED, her face: her mood's portrait, a cell of a sheet scaled so the
+ *     cell fills the box edge to edge. Her shipped portrait is VEX Cloud's
+ *     150 x 150 chip for the mood (`kimm-assets.ts`), a sheet whose one cell
+ *     is the whole file, as Cloud's header draws it. The key maps her
+ *     presence state to the mood (`kimmMoodOf`, `features/vex/kimm-mood.ts`)
+ *     and passes it in, so this component stays below the features it
+ *     serves. A chip is a few KB, so a change of mood shows at once.
  *   - OPEN, the fold glyph (a bar over an up chevron) on the raised fill: she
  *     has stepped down into her section, and the glyph says a press folds
  *     her back up. The glyph is drawn, not art, so it shows whether her art
  *     has arrived or not.
- *   - CLOSED WITH NO ART: her sprite is `missing` until her files arrive
+ *   - CLOSED WITH NO ART: a portrait whose file is absent is `missing`
  *     (`kimm-assets.ts`), and a missing piece is drawn as no art at all,
  *     never a placeholder face. The cell then shows `fallback`, which the key
  *     sets to the small token it already carries, or nothing.
@@ -48,7 +49,7 @@ export interface KimmPortraitKeyProps {
   readonly open: boolean;
   /** The cell's edge in CSS px; the Vex key's 76 by default. */
   readonly size?: number;
-  /** What the closed cell shows while her sprite is missing: nothing by default. */
+  /** What the closed cell shows while her portrait is missing: nothing by default. */
   readonly fallback?: ReactNode;
   readonly className?: string;
 }

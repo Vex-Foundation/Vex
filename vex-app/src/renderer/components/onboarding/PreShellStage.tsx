@@ -81,8 +81,8 @@ function setStageVexOpen(open: boolean): void {
  * Her column on H3's stage: the Vex key over her, her section from the header to the bottom row,
  * and the tagline cell under her. What she shows is the stage's (`stageVexView`): the Vex key says
  * its state and word, with a timer or a countdown as a figure, and her section its mood. Her art is
- * the nearest `KimmArtProvider`'s: the app's shipped art (every piece missing until it arrives, so
- * her ground and glyph field alone), the stand-ins in the H3 harness.
+ * the nearest `KimmArtProvider`'s: the app's shipped art (VEX Cloud's renders in
+ * `public/art/kimm/`, through `kimm-assets.ts`), the stand-ins in the H3 harness.
  */
 function StageVexColumn(): JSX.Element {
   const view = stageVexView(useStageVex());

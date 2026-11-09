@@ -66,12 +66,6 @@
  * is, under her, for the strip to uncover. */
 .vex-kimm {
   --vex-kimm-top: var(--vex-console-top-h, 148px);
-  /* Kimm's blue ground, one of the two gradients H3 allows (section 2): sky
-   * at her head to the saturated blue at her waist and the ground at her
-   * feet, as the captures read it. Mixed from the palette's own blue, ink
-   * and ground, so no colour is spelled here. Open: its exact stops, settled
-   * by her art and the mockup source. */
-  --vex-kimm-blue: var(--vex-alias-button-accent-fill);
   position: absolute;
   z-index: 2;
   top: var(--vex-kimm-top);
@@ -90,41 +84,61 @@
   position: absolute;
   inset: 0;
 }
+/* Her ground (section 1.5; VEX Cloud's `.vx-kimm`): the glyph field's baked
+ * frame, VEX Cloud's `field-still.webp`, set from her top centre to cover
+ * the box, under a fall to the page from 48% down. The field draws its own
+ * blue, so this is the one gradient H3 allows her (section 2). The frame's
+ * URL is the seam's (`KimmArtSet.field`), set on her box by
+ * `KimmSection.tsx` as `--vex-kimm-baked`; missing, the ground is the page.
+ * In the strip it is her section's own top 56. */
 .vex-kimm__ground {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklch, var(--vex-kimm-blue) 32%, var(--vex-alias-label-primary)) 0%,
-    color-mix(in oklch, var(--vex-kimm-blue) 72%, var(--vex-alias-label-primary)) 32%,
-    color-mix(in oklch, var(--vex-kimm-blue) 62%, var(--vex-alias-bg-base)) 56%,
-    var(--vex-alias-bg-base) 82%
-  );
+  background:
+    linear-gradient(to bottom, transparent 48%, var(--vex-alias-bg-base)),
+    var(--vex-kimm-baked, none) 50% 0 / cover no-repeat var(--vex-alias-bg-base);
 }
-/* Her glyph field (S4-17): a canvas over her ground and under her figure,
- * the size of her box. Its glyphs are drawn in this ink and this face, read
- * from the canvas's own computed style (`KimmField.tsx`), at the strength the
- * model gives each one. */
+/* From a 1600 window her box is 480 and up: the frame baked at 768 x 985
+ * (`field-still-wide.webp`) keeps the field's cell, and it holds its own
+ * fall to the page, so no gradient over it (VEX Cloud, DG-3 decision 12). */
+@media (min-width: 1600px) {
+  .vex-kimm__ground {
+    background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
+  }
+}
+/* The live field has painted (`data-kimm-field`, KimmSection.tsx): the
+ * page under it, as VEX Cloud's stage gives up its baked frame; the field
+ * draws its own fall to the page. */
+.vex-kimm[data-kimm-field] .vex-kimm__ground {
+  background: var(--vex-alias-bg-base);
+}
+/* Her glyph field (S4-17): VEX Cloud's Gradient ASCII field, a canvas the
+ * port adds to this box (`KimmField.tsx`), over her ground and under her
+ * figure, the size of her box. Decorative: it takes no pointer (the port
+ * reads the window's pointer for its trail). */
 .vex-kimm__field {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-mono);
   pointer-events: none;
 }
-/* Her figure for her mood, the width of her box and anchored at its top, so
- * the corner of her art stays under her corner key at every width. Open: how
- * her figure fills a box of another size (anchor, scale, crop; section 1.5),
- * settled by her files from the designer. */
+.vex-kimm__field canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Her figure for her mood, framed as VEX Cloud frames her still in a
+ * desktop section (`.vx-kimm[data-vx-kimm-layout="desktop"] .vx-kimm-still`):
+ * 48 from her top over her hair, 88% of her box's width, centred, cut by
+ * her foot. The column zooms from 1760 up (`--vex-zoom`, vex-sidebar.css),
+ * so the 48 is 48 x zoom there, as Cloud's. */
 .vex-kimm__figure {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  top: 48px;
+  left: 50%;
+  width: 88%;
   max-width: none;
   height: auto;
+  transform: translateX(-50%);
   user-select: none;
 }
 /* Her drop (S4-08), on the layer that holds her figure: in place while she
@@ -168,25 +182,15 @@
  * Her section folds to its top 56 by its clip alone: inset from the foot by
  * her box less the strip (547 at 1440 x 900), so her box, the column and the
  * card beside it never change. What the clip leaves out takes no pointer:
- * the console's rest under her is live again. In the strip the field's frame
- * stands at the left (her strip art, the strip's height) and her figure
- * gives way to it once the close has ended (`data-kimm-phase`).
+ * the console's rest under her is live again. The strip is her section's own
+ * top 56, her ground and the field holding its frame, with no file of its
+ * own; her figure is hidden once the close has ended (`data-kimm-phase`).
  *
  * HIDE VEX (section 3.1; S4-07): the wipe rises to the strip's edge in 420ms
  * on the push curve, a Web Animation that lands on this inset
  * (`kimm-wipe.ts`). Only clip-path moves. */
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
-}
-.vex-kimm__strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: none;
-  width: auto;
-  max-width: none;
-  height: var(--vex-h3-strip-h);
-  user-select: none;
 }
 /* The strip's room (section 1.5): "the console's rest starts under the
  * strip". Her strip stands over the first 56 of the console's rest in every
@@ -202,9 +206,6 @@
  * pointer has left the pressed key's box. */
 .vex-kimm[data-kimm-guard] ~ .vex-vs__rest {
   pointer-events: none;
-}
-.vex-kimm[data-kimm-phase="closed"] .vex-kimm__strip {
-  display: block;
 }
 .vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
   visibility: hidden;
@@ -288,12 +289,12 @@
 }
 .vex-kimm--band .vex-kimm__figure {
   top: 12px;
-  left: 50%;
-  width: min(100%, calc((var(--vex-band-h) - 68px) / 0.566));
-  transform: translateX(-50%);
-}
-.vex-kimm--band .vex-kimm__strip {
-  display: none;
+  /* Cloud's band draws its head-to-chest phone still (1040 x 589) at
+   * min(100%, (band - 68) / 0.566) wide. Desktop draws the section still
+   * (720 wide), whose top 589 rows are that crop without its side margins,
+   * so it stands at 720 / 1040 of that width and the foot row cuts it at
+   * the chest. */
+  width: calc(min(100%, calc((var(--vex-band-h) - 68px) / 0.566)) * 0.6923);
 }
 .vex-kimm__foot {
   position: absolute;

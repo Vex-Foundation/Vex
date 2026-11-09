@@ -5,8 +5,8 @@
  * Lock Vex, a concern, a screen's face), her choice is the shell's stored one, the chord is bound
  * once, and the stage holds under the shell until its exit.
  *
- * jsdom paints no canvas, so her glyph field draws nothing here; her art is the app's shipped art,
- * every piece missing until it arrives.
+ * jsdom paints no canvas, so her glyph field draws nothing here; her art is the app's shipped art
+ * (VEX Cloud's renders in `public/art/kimm/`), so her section draws her real still.
  */
 
 import { act, cleanup, render } from "@testing-library/react";
@@ -78,9 +78,11 @@ describe("StagePlate", () => {
     const root = container.querySelector("[data-vex-stage-plate]");
     expect(root?.getAttribute("data-vex-stage-plate")).toBe("stage");
     expect(root?.hasAttribute("data-vex-motion-opacity")).toBe(true);
-    // No K2, no print, no plate.
+    // No K2, no print, no plate: the only pictures are Kimm's own, from her seam.
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    for (const img of container.querySelectorAll("img")) {
+      expect(img.getAttribute("src")).toMatch(/^\/art\/kimm\/(?:chip|still)-[a-z]+\.webp$/);
+    }
     expect(keyOf(container)?.textContent).toContain("Waking up");
     expect(sectionOf(container)?.getAttribute("data-kimm-mood")).toBe("rest");
     // She has no wake episode: her stage calls her awake as it stands, so the
@@ -125,9 +127,11 @@ describe("StagePlate", () => {
     expect(key?.getAttribute("aria-label")).toBe("Hide Vex");
     const section = sectionOf(container);
     expect(section?.getAttribute("data-kimm-open")).toBe("true");
-    // Her art is the app's shipped art: missing until it arrives, so her ground alone.
-    expect(section?.getAttribute("data-kimm-art")).toBe("missing");
-    expect(section?.querySelector("img")).toBeNull();
+    // Her art is the app's shipped art: her real still for her mood.
+    expect(section?.getAttribute("data-kimm-art")).toBe("ready");
+    expect(section?.querySelector("img.vex-kimm__figure")?.getAttribute("src")).toBe(
+      `/art/kimm/still-${section?.getAttribute("data-kimm-mood") ?? ""}.webp`,
+    );
     // The tagline, on every stage screen.
     expect(container.querySelector("[data-vex-tagline]")?.textContent).toBe(
       "An AI trading agent, on your computer.",
@@ -138,6 +142,25 @@ describe("StagePlate", () => {
     expect(key?.textContent).toContain("0:14");
     expect(key?.getAttribute("data-vex-state")).toBe("working");
     expect(section?.getAttribute("data-kimm-mood")).toBe("think");
+  });
+
+  it("draws her real art on every stage before the shell: the wake, the checks, the wizard and the unlock", () => {
+    for (const view of ["splash", "systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations", "wizard", "unlock"] as const) {
+      stand(view);
+      const { container, unmount } = render(<StagePlate />);
+      const section = sectionOf(container);
+      const mood = section?.getAttribute("data-kimm-mood") ?? "";
+      const drawn = mood === "held" ? "offer" : mood;
+      // Her section is open on the stage: her still for her mood, on the field's baked frame.
+      expect({ view, art: section?.getAttribute("data-kimm-art") }).toEqual({ view, art: "ready" });
+      expect(section?.querySelector("img.vex-kimm__figure")?.getAttribute("src"), view).toBe(
+        `/art/kimm/still-${drawn}.webp`,
+      );
+      expect(section?.style.getPropertyValue("--vex-kimm-baked"), view).toBe('url("/art/kimm/field-still.webp")');
+      expect(container.innerHTML, view).not.toMatch(/kimm-standin-/);
+      unmount();
+      resetStageVex();
+    }
   });
 
   it("hides and shows her through the shell's own stored choice, from the key and from her corner", () => {

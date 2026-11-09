@@ -1,9 +1,10 @@
 /**
  * Her portrait in the Vex key (`KimmPortraitKey`, docs/design/H3-DESKTOP.md
- * section 1.6, plan row S4-03): closed, her mood's cell of the key's sprite,
- * scaled so the cell fills the box; open, the fold glyph whatever her art;
- * with no art, the fallback the key passes and never a placeholder face; it
- * follows her mood, and every Vex state reaches a mood her sprite draws.
+ * section 1.6, plan row S4-03): closed, her mood's cell of a sheet, scaled so
+ * the cell fills the box (her shipped chip is a one-cell sheet); open, the
+ * fold glyph whatever her art; with no art, the fallback the key passes and
+ * never a placeholder face; it follows her mood, and every Vex state reaches
+ * a mood her art draws.
  */
 
 import { cleanup, render } from "@testing-library/react";
@@ -15,6 +16,8 @@ import { KimmArtProvider } from "../kimm-art-context.js";
 import {
   KIMM_ART_MOOD,
   KIMM_DRAWN_MOODS,
+  KIMM_FILES,
+  KIMM_MOODS,
   KIMM_SHIPPED_ART,
   type KimmArtSet,
   type KimmMood,
@@ -45,6 +48,20 @@ const READY: KimmArtSet = {
     signed: { state: "ready", sheet: SHEET, cell: cellOf("signed") },
     refused: { state: "ready", sheet: SHEET, cell: cellOf("refused") },
     rest: { state: "ready", sheet: SHEET, cell: cellOf("rest") },
+  },
+};
+
+/** No portrait at all: every mood's file absent. */
+const NO_ART: KimmArtSet = {
+  ...KIMM_SHIPPED_ART,
+  portraits: {
+    hi: { state: "missing", file: "art/kimm/absent.webp" },
+    think: { state: "missing", file: "art/kimm/absent.webp" },
+    offer: { state: "missing", file: "art/kimm/absent.webp" },
+    held: { state: "missing", file: "art/kimm/absent.webp" },
+    signed: { state: "missing", file: "art/kimm/absent.webp" },
+    refused: { state: "missing", file: "art/kimm/absent.webp" },
+    rest: { state: "missing", file: "art/kimm/absent.webp" },
   },
 };
 
@@ -112,7 +129,7 @@ describe("KimmPortraitKey", () => {
   });
 
   it("open, shows the fold glyph whatever her art, and none of her face", () => {
-    for (const art of [READY, KIMM_SHIPPED_ART]) {
+    for (const art of [READY, KIMM_SHIPPED_ART, NO_ART]) {
       const { container, unmount } = render(
         withArt(art, <KimmPortraitKey mood="hi" open fallback={<i data-token="" />} />),
       );
@@ -125,9 +142,23 @@ describe("KimmPortraitKey", () => {
     }
   });
 
+  it("closed, draws her mood's chip as the app ships it, the whole file filling the box", () => {
+    for (const mood of KIMM_MOODS) {
+      const { container, unmount } = render(<KimmPortraitKey mood={mood} open={false} />);
+      const img = cell(container).querySelector("img");
+      expect(img?.getAttribute("src"), mood).toBe(`/${KIMM_FILES.chips[KIMM_ART_MOOD[mood]]}`);
+      // 150 x 150 scaled to 76: the whole chip, from its corner.
+      expect(parseFloat(img?.style.width ?? "")).toBeCloseTo(76);
+      expect(parseFloat(img?.style.height ?? "")).toBeCloseTo(76);
+      expect(parseFloat(img?.style.left ?? "")).toBeCloseTo(0);
+      expect(parseFloat(img?.style.top ?? "")).toBeCloseTo(0);
+      unmount();
+    }
+  });
+
   it("closed with no art, shows the key's fallback and never a placeholder face", () => {
     const { container } = render(
-      <KimmPortraitKey mood="hi" open={false} fallback={<i data-token="" />} />,
+      withArt(NO_ART, <KimmPortraitKey mood="hi" open={false} fallback={<i data-token="" />} />),
     );
     const el = cell(container);
     expect(el.getAttribute("data-kimm-art")).toBe("missing");
@@ -136,14 +167,14 @@ describe("KimmPortraitKey", () => {
   });
 
   it("closed with no art and no fallback, draws nothing", () => {
-    const { container } = render(<KimmPortraitKey mood="refused" open={false} />);
+    const { container } = render(withArt(NO_ART, <KimmPortraitKey mood="refused" open={false} />));
     expect(cell(container).childElementCount).toBe(0);
   });
 
   it("reaches a drawn cell for every Vex state", () => {
     for (const state of VEX_STATES) {
       const { container, unmount } = render(
-        withArt(READY, <KimmPortraitKey mood={kimmMoodOf(state)} open={false} />),
+        <KimmPortraitKey mood={kimmMoodOf(state)} open={false} />,
       );
       expect(cell(container).getAttribute("data-kimm-art"), state).toBe("ready");
       unmount();

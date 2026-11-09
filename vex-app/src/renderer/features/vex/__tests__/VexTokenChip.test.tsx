@@ -76,8 +76,11 @@ describe("VexTokenChip: the state", () => {
     arrange({ state: "working", word: "Working", fill: "done" });
     render(<VexTokenChip open={false} onToggle={() => undefined} />);
     const el = chip();
-    // Her portrait cell holds the token while her art is missing.
-    expect(el.querySelector("[data-vex-area='kimm-portrait-key'] [data-vex-vx-token]")).not.toBeNull();
+    // Her portrait cell holds her chip for her mood (the token only stands in while her art is missing).
+    expect(el.querySelector("[data-vex-area='kimm-portrait-key'] img")?.getAttribute("src")).toBe(
+      "/art/kimm/chip-think.webp",
+    );
+    expect(el.querySelector("[data-vex-area='kimm-portrait-key'] [data-vex-vx-token]")).toBeNull();
     expect(el.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
     expect(el.querySelector(".vex-state-word__scope")).toBeNull();
     expect(el.textContent).not.toContain("This chat:");
