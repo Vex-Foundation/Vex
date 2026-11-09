@@ -70,6 +70,11 @@ export default defineConfig({
   // The renderer's OWN public dir: the fonts, the pixel art and the protocol
   // marks are served from it exactly as the packaged app serves them.
   publicDir: path.resolve(dirname, "src/renderer/public"),
+  // Its own dependency cache. The board layout harness starts beside it on
+  // every Playwright run, and with one shared `node_modules/.vite` each
+  // server threw the other's optimized deps away on start ("vite config has
+  // changed"), which can leave a first load answered with 504s.
+  cacheDir: path.resolve(dirname, "node_modules/.vite-h3-shell"),
 
   define: {
     __VEX_APP_VERSION__: JSON.stringify("h3-shell-harness"),
