@@ -851,6 +851,56 @@
   background: var(--vex-alias-bg-layer-3);
 }
 
+/* THE SEND BAND (Cloud's `sendMode`, C3-D-27; H3-DESKTOP.md section 4.3):
+ * while the reason holds words, Clear takes Reject's cell, quiet (no fill,
+ * the word in ink), and "Reject and send" takes the approve key's cell and
+ * its blue, its hover rising from its foot as the approve key's does. The
+ * armed send key takes the reversed ink fill and a held one the held look,
+ * by the rules above and below; Approve is not drawn. */
+.vex-appr__foot[data-docked] > [data-vex-key="clear"] {
+  grid-area: reject;
+  color: var(--vex-alias-label-primary);
+  background: transparent;
+  border-right: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="clear"] {
+  min-width: 120px;
+  color: var(--vex-alias-label-primary);
+  background: transparent;
+}
+.vex-appr__foot > [data-vex-key="clear"]:enabled:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-appr__foot[data-docked] > [data-vex-key="send"] {
+  grid-area: approve;
+  position: relative;
+  isolation: isolate;
+  padding: 0 32px;
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="send"] {
+  position: relative;
+  isolation: isolate;
+  min-width: 200px;
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-appr__foot > [data-vex-key="send"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--vex-alias-button-accent-hover);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
+  pointer-events: none;
+}
+.vex-appr__foot > [data-vex-key="send"]:enabled:not([data-armed]):hover::before {
+  transform: scaleY(1);
+}
+
 /* HELD KEYS (Cloud's kit, h3-kit-gaps "Held / pending"; H3-DESKTOP.md
  * section 2.4). A decision key that cannot act, in the card's own footer as
  * in the docked row above: the cell ground, the muted word, the 7% edge, no
@@ -867,7 +917,8 @@
   outline: none;
   cursor: not-allowed;
 }
-.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled {
+.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled,
+.vex-appr__foot > button[data-vex-key="send"][aria-busy="true"]:disabled {
   color: var(--vex-alias-label-primary);
   cursor: progress;
 }
@@ -902,7 +953,8 @@
   .vex-appr__foot[data-docked] {
     grid-template-columns: 128px minmax(0, 1fr) 168px;
   }
-  .vex-appr__foot[data-docked] > [data-vex-key="approve"] {
+  .vex-appr__foot[data-docked] > [data-vex-key="approve"],
+  .vex-appr__foot[data-docked] > [data-vex-key="send"] {
     padding: 0 20px;
   }
   .vex-appr__gate {

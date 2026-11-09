@@ -463,7 +463,8 @@ describe("ApprovalCard", () => {
     fireEvent.keyDown(field, { key: "Enter", code: "Enter" });
     expect(mockRejectMutate).not.toHaveBeenCalled();
     expect(mockApproveMutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    // With words typed the reject key is "Reject and send" (C3-D-27).
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Use USDC on Base instead" },
       expect.any(Object),
@@ -479,7 +480,7 @@ describe("ApprovalCard", () => {
       screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
       { target: { value: "Slippage too high" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
 
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Slippage too high" },
@@ -511,10 +512,11 @@ describe("ApprovalCard", () => {
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),
       false,
     );
-    fireEvent.change(
-      screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
-      { target: { value: "not this one" } },
-    );
+    const field = screen.getByRole("textbox", { name: REJECT_REASON_LABEL });
+    fireEvent.change(field, { target: { value: "not this one" } });
+    // While words are typed there is no approve key at all (C3-D-27).
+    expect(screen.queryByRole("button", { name: /^approve transfer$/i })).toBeNull();
+    fireEvent.change(field, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
 
     expect(mockApproveMutate).toHaveBeenCalledWith(
@@ -764,7 +766,11 @@ describe("ApprovalCard", () => {
     expect(held).not.toMatch(/accent|opacity|dotted/);
     // A running rejection keeps the held ground with its word in ink; the
     // working approve key is pending, not held, and keeps its blue.
-    expect(rule('.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled')).toContain(
+    expect(
+      rule(
+        '.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled,\n.vex-appr__foot > button[data-vex-key="send"][aria-busy="true"]:disabled',
+      ),
+    ).toContain(
       "color: var(--vex-alias-label-primary)",
     );
     expect(rule(".vex-appr-row__go > button:disabled")).toContain("background: var(--vex-alias-bg-layer-3)");
@@ -2114,11 +2120,13 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
 
   it("keeps the two-press Reject, and the reason travels with Reject", () => {
     renderDocked(makeSummary());
-    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
+    // Armed first, then words: the armed reject is the send key now, still armed.
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     expect(mockRejectMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /confirm reject/i }).textContent).toBe("Click again to confirm reject");
+    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
     const armed = screen.getByRole("button", { name: /confirm reject/i });
-    expect(armed.textContent).toBe("Click again to confirm reject");
+    expect(armed.textContent).toBe("Click again to reject and send");
     fireEvent.click(armed);
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Use 100 USDC instead" },
@@ -2154,7 +2162,7 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     field.dispatchEvent(enter);
     expect(enter.defaultPrevented).toBe(true);
     expect(mockRejectMutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
     expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
   });
 
@@ -2167,9 +2175,101 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(dock.querySelector('[data-vex-area="approval-reason-count"]')?.textContent).toBe("450 / 500");
   });
 
+  describe("the send band (C3-D-27, owner decision 2026-11-09)", () => {
+    const keysOf = (): (string | null)[] =>
+      Array.from(foot().querySelectorAll("button")).map((key) => key.getAttribute("data-vex-key"));
+
+    it("takes Approve out of the band while a reason is typed: Clear, the gate line, Reject and send", () => {
+      renderDocked(makeSummary());
+      expect(keysOf()).toEqual(["reject", "approve"]);
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
+      expect(keysOf()).toEqual(["clear", "send"]);
+      expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+      const send = screen.getByRole("button", { name: "Reject and send" });
+      expect(dock.contains(send)).toBe(true);
+      // Words alone keep Approve: a reason of spaces is no reason.
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "   " } });
+      expect(keysOf()).toEqual(["reject", "approve"]);
+    });
+
+    it("brings Approve back when the reason is cleared, by Clear or by deleting the words", () => {
+      renderDocked(makeSummary());
+      const field = screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: "Wait" } });
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      expect(field.value).toBe("");
+      expect(document.activeElement).toBe(field);
+      expect(keysOf()).toEqual(["reject", "approve"]);
+      fireEvent.change(field, { target: { value: "Wait" } });
+      fireEvent.change(field, { target: { value: "" } });
+      expect(screen.getByRole("button", { name: "Approve transfer" })).toBeTruthy();
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+      expect(mockRejectMutate).not.toHaveBeenCalled();
+    });
+
+    it("sends the trimmed one-line reason with Reject and send, on two presses on a high-risk card", () => {
+      renderDocked(makeSummary());
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), {
+        target: { value: "  Use 100 USDC\ninstead  " },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).not.toHaveBeenCalled();
+      const armed = screen.getByRole("button", { name: "Confirm reject and send" });
+      expect(armed.textContent).toBe("Click again to reject and send");
+      fireEvent.click(armed);
+      expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("sends on one press on a card that decides on one press", () => {
+      renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "No" } });
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "No" }, expect.any(Object));
+    });
+
+    it("never lets an approve armed before the words come back armed after Clear", () => {
+      renderDocked(makeSummary());
+      fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+      expect(screen.getByRole("button", { name: /confirm approve/i })).toBeTruthy();
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Wait" } });
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      // Back at rest: the next press arms again, it does not send.
+      fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("changes nothing while the decision runs: the field, Clear and the send key are held, Approve stays out", () => {
+      renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "No" } });
+      // The mutation never answers: the decision stays in flight.
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+      expect(keysOf()).toEqual(["clear", "send"]);
+      for (const key of Array.from(foot().querySelectorAll("button"))) expect(key.disabled).toBe(true);
+      expect((screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement).disabled).toBe(true);
+      const send = foot().querySelector('[data-vex-key="send"]');
+      expect(send?.textContent).toBe("Sending…");
+      expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe("Sending…");
+      fireEvent.click(send as Element);
+      expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("draws the same band in the card's own footer outside the dock", () => {
+      renderCard(makeSummary(), false);
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Wait" } });
+      expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+      expect(screen.getByRole("button", { name: "Reject and send" })).toBeTruthy();
+    });
+  });
+
   it("never lets the reason ride along with an approve", () => {
     renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
     fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "ignored" } });
+    expect(screen.queryByRole("button", { name: "Approve transfer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
     expect(mockApproveMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
   });
@@ -2306,7 +2406,7 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     it("steps the keys down on a narrow column as Cloud does: Reject 128, approve 168 at 20 a side, the middle 18 in", () => {
       const narrow = /@container \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
       expect(narrow).toMatch(/\.vex-appr__foot\[data-docked\] \{\s*grid-template-columns: 128px minmax\(0, 1fr\) 168px;\s*\}/);
-      expect(narrow).toMatch(/\[data-vex-key="approve"\] \{\s*padding: 0 20px;\s*\}/);
+      expect(narrow).toMatch(/\[data-vex-key="approve"\],\s*\.vex-appr__foot\[data-docked\] > \[data-vex-key="send"\] \{\s*padding: 0 20px;\s*\}/);
       expect(narrow).toMatch(/\.vex-appr__gate \{\s*padding: 0 18px;\s*\}/);
       // The 560 step comes after it, so the narrowest chat still stacks its keys.
       expect(sheet.indexOf("@container (max-width: 720px)")).toBeLessThan(sheet.indexOf("@container (max-width: 560px)"));

@@ -26,6 +26,7 @@
  * label, handler and guard below is the one the card draws inside itself.
  */
 
+import { useRef } from "react";
 import type { JSX, ReactNode, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
 import { useInitialFocusRef } from "../../../components/ui/dialog.js";
@@ -215,6 +216,27 @@ export function ApprovalFailureLine({
   );
 }
 
+/**
+ * THE SEND BAND'S WORDS (Cloud's `TakeoverCard`, C3-D-27; H3-DESKTOP.md
+ * section 4.3). While a reason is typed the band is Clear | the gate line |
+ * "Reject and send": the reject key under Cloud's name for what it now does.
+ */
+export const CLEAR_WORD = "Clear";
+export const REJECT_AND_SEND_WORD = "Reject and send";
+export const SENDING_WORD = "Sending…";
+
+/** The send key's words in each of its states, as `rejectKeyWords` gives Reject's. */
+export function sendKeyWords(input: {
+  readonly armed: boolean;
+  readonly pending: boolean;
+  readonly settled: "approved" | "rejected" | null;
+}): { readonly text: string; readonly aria: string } {
+  if (input.pending) return { text: SENDING_WORD, aria: `${spokenWord(SENDING_WORD)}, please wait` };
+  if (input.settled === "rejected") return { text: "Rejected", aria: "Rejected" };
+  if (input.armed) return { text: "Click again to reject and send", aria: "Confirm reject and send" };
+  return { text: REJECT_AND_SEND_WORD, aria: REJECT_AND_SEND_WORD };
+}
+
 export function ApprovalDecisionActions({
   isHighRisk,
   armedAction,
@@ -246,6 +268,21 @@ export function ApprovalDecisionActions({
     pending: rejectPending,
     settled: settledDecision,
   });
+  // THE SEND BAND (Cloud's `sendMode`, C3-D-27, owner decision 2026-11-09):
+  // while the reason holds words, Approve leaves the band, so a typed
+  // instruction is never thrown away by an approve. The band reads Clear |
+  // the gate line | "Reject and send"; the send key is the reject key under
+  // its Cloud name, with the same handler, the same two presses on a
+  // high-risk card and the same first focus. Clearing the words brings
+  // Approve back. Only the keys drawn change; while a decision runs the
+  // field is held, so the band holds too.
+  const sendMode = rejectReasonInput && rejectReason.trim() !== "";
+  const reasonRef = useRef<HTMLTextAreaElement | null>(null);
+  const clearReason = (): void => {
+    onRejectReasonChange("");
+    reasonRef.current?.focus();
+  };
+  const send = sendKeyWords({ armed: rejectArmed, pending: rejectPending, settled: settledDecision });
   const approveIdleText = settledDecision === "approved"
     ? "Approved"
     : approveArmed ? confirmApproveLabel : approveLabel;
@@ -260,7 +297,9 @@ export function ApprovalDecisionActions({
   const statusWords = approvePending
     ? pendingApproveLabel
     : rejectPending
-      ? REJECTING_WORD
+      ? sendMode
+        ? SENDING_WORD
+        : REJECTING_WORD
       : settledDecision === "approved"
         ? "Approved."
         : settledDecision === "rejected"
@@ -301,6 +340,7 @@ export function ApprovalDecisionActions({
             className={`vex-appr__reason-row${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
           >
             <textarea
+              ref={reasonRef}
               rows={1}
               value={rejectReason}
               onChange={(e) => onRejectReasonChange(oneLineReason(e.target.value))}
@@ -336,23 +376,39 @@ export function ApprovalDecisionActions({
             defect this closes: the panel moved focus to its own container, so a
             keyboard user landed on nothing and the "least destructive default"
             existed only in the inline card's mount effect. */}
-        <button
-          ref={rejectKeyRef}
-          type="button"
-          onClick={onReject}
-          disabled={inFlight}
-          aria-busy={rejectPending}
-          aria-label={rejectAria}
-          // Presentation hooks for the docked row's sheet; the classes below
-          // keep drawing the key inside the card.
-          data-vex-key="reject"
-          data-armed={rejectArmed ? "" : undefined}
-          className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
-            rejectArmed ? ` ${ARMED_RING}` : ""
-          }`}
-        >
-          {rejectText}
-        </button>
+        {sendMode ? (
+          // CLEAR, in Reject's cell: empties the reason and gives the field
+          // the focus; Approve comes back. It decides nothing.
+          <button
+            key="clear"
+            type="button"
+            onClick={clearReason}
+            disabled={inFlight}
+            data-vex-key="clear"
+            className={`${KEY_BASE} border-rule bg-transparent text-ink-primary enabled:hover:bg-interactive-hover`}
+          >
+            {CLEAR_WORD}
+          </button>
+        ) : (
+          <button
+            key="reject"
+            ref={rejectKeyRef}
+            type="button"
+            onClick={onReject}
+            disabled={inFlight}
+            aria-busy={rejectPending}
+            aria-label={rejectAria}
+            // Presentation hooks for the docked row's sheet; the classes below
+            // keep drawing the key inside the card.
+            data-vex-key="reject"
+            data-armed={rejectArmed ? "" : undefined}
+            className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
+              rejectArmed ? ` ${ARMED_RING}` : ""
+            }`}
+          >
+            {rejectText}
+          </button>
+        )}
         {/* THE MIDDLE CELL, docked only: the line for the card's gate, where H3
             draws its tick box and key hints (section 4.3), and the card's
             status while a decision runs or has landed. Words, no control. */}
@@ -373,46 +429,72 @@ export function ApprovalDecisionActions({
             `aria-busy` and the swapped label carry the same fact without the
             motion, which is what a screen reader and a reduced-motion viewer
             each get. */}
-        <button
-          type="button"
-          onClick={onApprove}
-          disabled={inFlight}
-          aria-busy={approvePending}
-          aria-label={
-            approvePending
-              ? `${spokenWord(pendingApproveLabel)}, please wait`
-              : approveIdleAria
-          }
-          data-vex-approve-working={approvePending ? "" : undefined}
-          data-vex-key="approve"
-          data-armed={approveArmed ? "" : undefined}
-          className={`${KEY_BASE} gap-[14px] ${
-            approveArmed
-              ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
-              : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
-          }`}
-        >
-          {approvePending ? (
-            // Cloud's busy mark (`.vx-busy-mark`): an 8 square in the key's
-            // own ink, blinking, 14 from the word (approval.css).
-            <StateSquare state="ongoing" size={8} className="vex-appr__busy" />
-          ) : null}
-          {/* ONE WIDTH, TWO LABELS (Cloud's `.vx-key-stack`). Both sit in the
-              same grid cell, so the key is always sized to the longer of them
-              and never narrows under the pointer that just pressed it; the
-              words swap at once, the other kept hidden. The resting width is
-              unchanged: the idle label is the longer one. The button's
-              `aria-label` is what names it, so the hidden copy is never
-              announced. */}
-          <span className="grid grid-cols-1 grid-rows-1 place-items-center">
-            <span className={`col-start-1 row-start-1 ${approvePending ? "visible" : "invisible"}`}>
-              {pendingApproveLabel}
+        {sendMode ? (
+          // REJECT AND SEND, in the approve key's cell and its blue: the
+          // reject key's own handler (`onReject`), so the reason travels with
+          // it, a high-risk card still takes two presses, and it keeps the
+          // first focus Reject had.
+          <button
+            key="send"
+            ref={rejectKeyRef}
+            type="button"
+            onClick={onReject}
+            disabled={inFlight}
+            aria-busy={rejectPending}
+            aria-label={send.aria}
+            data-vex-key="send"
+            data-armed={rejectArmed ? "" : undefined}
+            className={`${KEY_BASE} ${
+              rejectArmed
+                ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
+                : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
+            }`}
+          >
+            {send.text}
+          </button>
+        ) : (
+          <button
+            key="approve"
+            type="button"
+            onClick={onApprove}
+            disabled={inFlight}
+            aria-busy={approvePending}
+            aria-label={
+              approvePending
+                ? `${spokenWord(pendingApproveLabel)}, please wait`
+                : approveIdleAria
+            }
+            data-vex-approve-working={approvePending ? "" : undefined}
+            data-vex-key="approve"
+            data-armed={approveArmed ? "" : undefined}
+            className={`${KEY_BASE} gap-[14px] ${
+              approveArmed
+                ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
+                : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
+            }`}
+          >
+            {approvePending ? (
+              // Cloud's busy mark (`.vx-busy-mark`): an 8 square in the key's
+              // own ink, blinking, 14 from the word (approval.css).
+              <StateSquare state="ongoing" size={8} className="vex-appr__busy" />
+            ) : null}
+            {/* ONE WIDTH, TWO LABELS (Cloud's `.vx-key-stack`). Both sit in the
+                same grid cell, so the key is always sized to the longer of them
+                and never narrows under the pointer that just pressed it; the
+                words swap at once, the other kept hidden. The resting width is
+                unchanged: the idle label is the longer one. The button's
+                `aria-label` is what names it, so the hidden copy is never
+                announced. */}
+            <span className="grid grid-cols-1 grid-rows-1 place-items-center">
+              <span className={`col-start-1 row-start-1 ${approvePending ? "visible" : "invisible"}`}>
+                {pendingApproveLabel}
+              </span>
+              <span className={`col-start-1 row-start-1 ${approvePending ? "invisible" : "visible"}`}>
+                {approveIdleText}
+              </span>
             </span>
-            <span className={`col-start-1 row-start-1 ${approvePending ? "invisible" : "visible"}`}>
-              {approveIdleText}
-            </span>
-          </span>
-        </button>
+          </button>
+        )}
       </footer>
     </>
   );

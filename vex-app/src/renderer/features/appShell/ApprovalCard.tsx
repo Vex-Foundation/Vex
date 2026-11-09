@@ -308,6 +308,15 @@ export function ApprovalCard({
     );
   };
 
+  // THE SEND BAND (C3-D-27): words in the reason take Approve out of the
+  // band. An approve armed by a first press must not survive that and come
+  // back armed when the words are cleared, so typing words disarms it; an
+  // armed Reject stays armed, since the send key is the same reject.
+  const onRejectReasonChange = (value: string): void => {
+    setRejectReason(value);
+    if (value.trim() !== "") setArmedAction((armed) => (armed === "approve" ? null : armed));
+  };
+
   const onApproveClick = (): void => {
     if (inFlight || decisionRef.current !== null) return;
     if (isHighRisk && armedAction !== "approve") {
@@ -392,7 +401,7 @@ export function ApprovalCard({
       onReject={onRejectClick}
       onApprove={onApproveClick}
       rejectReason={rejectReason}
-      onRejectReasonChange={setRejectReason}
+      onRejectReasonChange={onRejectReasonChange}
       approveLabel={approveLabel}
       confirmApproveLabel={confirmApproveLabel}
       pendingApproveLabel={pendingApproveLabel}
