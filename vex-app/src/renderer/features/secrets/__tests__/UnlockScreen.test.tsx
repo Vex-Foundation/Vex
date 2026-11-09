@@ -39,6 +39,7 @@ const mockSetCurrentView = vi.fn();
 const mockBeginUnlockCurtain = vi.fn();
 const mockOpenLogsFolder = vi.fn();
 let mockUnlockReturnView: UnlockReturnView = "appShell";
+let mockVexOpenChat = true;
 
 vi.mock("../../../stores/uiStore.js", () => ({
   useUiStore: (
@@ -46,12 +47,14 @@ vi.mock("../../../stores/uiStore.js", () => ({
       unlockReturnView: UnlockReturnView;
       setCurrentView: typeof mockSetCurrentView;
       beginUnlockCurtain: typeof mockBeginUnlockCurtain;
+      vexOpenChat: boolean;
     }) => unknown,
   ) =>
     selector({
       unlockReturnView: mockUnlockReturnView,
       setCurrentView: mockSetCurrentView,
       beginUnlockCurtain: mockBeginUnlockCurtain,
+      vexOpenChat: mockVexOpenChat,
     }),
 }));
 
@@ -59,6 +62,10 @@ const { UnlockScreen } = await import("../UnlockScreen.js");
 const { getStageVex, resetStageVex, stageVexEnd, stageVexView } = await import(
   "../../../components/onboarding/stage-vex.js"
 );
+
+function panelOf(view: ReturnType<typeof render>): HTMLElement | null {
+  return view.container.querySelector<HTMLElement>("[data-vex-area='kimm-panel']");
+}
 
 function renderUnlockScreen(): ReturnType<typeof render> {
   return render(<UnlockScreen />);
@@ -94,6 +101,7 @@ beforeEach(() => {
     data: { opened: true },
   });
   mockUnlockReturnView = "appShell";
+  mockVexOpenChat = true;
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
@@ -199,52 +207,129 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
-  it("stands on H3's stage: the title cell, the wake's steps done, the greeting, the field in the bottom row", () => {
-    // Regression guard: the lock screen must stay one piece with the rest of
-    // the pre-shell (docs/design/H3-DESKTOP.md section 4.9; the plate
-    // `stage-unlock`). Without this assertion, a future edit that strips the
-    // composition would slip past the suite because the form-level tests
-    // don't care about the wrapper.
+  it("stands on no stage: the split, Kimm's panel at the left and the one column at the right", () => {
+    // docs/design/H3-DESKTOP.md section 4.13 (owner decision 2026-11-09): the
+    // lock screen is its own split, never the three-column stage.
     const view = renderUnlockScreen();
     const root = view.container.querySelector('[data-vex-screen="unlock"]');
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
-    expect(root?.classList.contains("vex-pre")).toBe(true);
-    // The title cell: the screen over where it is.
-    expect(root?.querySelector(".vex-pre__title")?.textContent).toContain("Unlock");
-    expect(root?.querySelector(".vex-pre__sub")?.textContent).toBe("Local vault · Locked");
-    // The left column: the wake's five steps, every one done.
-    const steps = [...view.getByRole("navigation", { name: "Waking the desk" }).querySelectorAll("li")];
-    expect(steps).toHaveLength(5);
-    expect(steps.every((li) => li.getAttribute("data-state") === "done")).toBe(true);
-    // The version is the running build (the test build is 0.0.0-test), in the bottom-left cell.
-    const stamp = view.container.querySelector(".vex-pre__foot [data-vex-version-stamp]");
-    expect(stamp?.textContent).toBe("v0.0.0-test");
-    // The greeting bubble and its two notes.
-    expect(view.getByRole("heading", { name: "Welcome back." })).toBeTruthy();
-    expect(view.getByText("Your master password decrypts the local vault on this machine.")).toBeTruthy();
-    expect(view.getByText("Your keys stay on this computer.")).toBeTruthy();
-    // The forgot link is a row of the body, outside the form.
+    expect(root?.classList.contains("vex-lock")).toBe(true);
+    // None of the stage's cells: no frame, no title cell, no steps, no Vex key, no tagline, no bottom row.
+    expect(root?.classList.contains("vex-pre")).toBe(false);
+    expect(view.container.querySelector(".vex-pre__title")).toBeNull();
+    expect(view.queryByRole("navigation")).toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-key']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-tagline]")).toBeNull();
+    expect(view.container.querySelector(".vex-pre-acts, .vex-pre-strip")).toBeNull();
+    // The left half: Kimm's panel, decorative, with nothing in it to focus.
+    const panel = panelOf(view);
+    expect(panel?.parentElement).toBe(root);
+    expect(panel?.getAttribute("aria-hidden")).toBe("true");
+    expect(panel?.querySelector("button, a, input, [tabindex]")).toBeNull();
+    // The window's top strip is a drag region with nothing in it; the column is not.
+    const head = root?.querySelector(".vex-lock__head");
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    expect(head?.childElementCount).toBe(0);
+    const column = root?.querySelector(".vex-lock__side .vex-lock__col");
+    expect(column?.classList.contains("vex-no-drag")).toBe(true);
+    // The right column, in reading order: the mark and the vault's state, the
+    // headline, the muted line, the field, Unlock, the forgot row.
+    expect(column?.querySelector(".vex-lock__brand svg")).not.toBeNull();
+    expect(column?.querySelector(".vex-lock__label")?.textContent).toBe("Local vault · Locked");
+    const heading = view.getByRole("heading", { level: 1, name: "Welcome back." });
+    expect(column?.contains(heading)).toBe(true);
+    expect(
+      view.getByText(
+        "Your master password decrypts the local vault on this machine. Your keys stay on this computer.",
+      ).className,
+    ).toBe("vex-lock__lead");
+    const input = view.getByLabelText(/Master password/i);
+    const unlock = view.getByRole("button", { name: /Unlock/i });
     const forgot = view.getByRole("button", { name: /I forgot my password/i });
+    const order: readonly HTMLElement[] = [heading, input, unlock, forgot];
+    for (let i = 1; i < order.length; i += 1) {
+      const before = order[i - 1];
+      const after = order[i];
+      if (before === undefined || after === undefined) throw new Error("order");
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // The field is a cell of its own with Show inside it; Unlock is the key under it.
+    expect(input.closest(".vex-unl__field")?.querySelector(".vex-password__show")).not.toBeNull();
+    expect(unlock.closest(".vex-unl__field")).toBeNull();
+    // The forgot row is outside the form, in the form's section.
     expect(forgot.closest(".vex-unl__form")).not.toBeNull();
     expect(forgot.closest("form")).toBeNull();
-    // The field sits in the bottom row with Unlock at its right, "Master password" in the strip above.
-    const input = view.getByLabelText(/Master password/i);
-    const row = input.closest(".vex-pre-acts");
-    expect(row).not.toBeNull();
-    expect(row?.contains(view.getByRole("button", { name: /Unlock/i }))).toBe(true);
-    expect(view.container.querySelector(".vex-pre-strip label")?.textContent).toBe("Master password");
+    // The version, quiet, at the foot of the right half (the test build is 0.0.0-test).
+    expect(root?.querySelector(".vex-lock__foot [data-vex-version-stamp]")?.textContent).toBe(
+      "v0.0.0-test",
+    );
     // No R3 stage composition.
     expect(view.container.querySelector(".vex-stage-side")).toBeNull();
     expect(view.container.querySelector(".vex-stage-counter")).toBeNull();
   });
 
-  it("says the password stays in memory only on a locked desk, not on a launch", () => {
+  it("says Welcome back. after a launch and Vex is locked. after Lock Vex", () => {
     const launch = renderUnlockScreen();
-    expect(launch.queryByText(/lives only in the app's memory/i)).toBeNull();
+    expect(launch.getByRole("heading", { level: 1 }).textContent).toBe("Welcome back.");
+    expect(launch.container.querySelector("[data-vex-lock]")?.getAttribute("data-vex-lock")).toBe("launch");
     launch.unmount();
     stageVexEnd();
     const locked = renderUnlockScreen();
-    expect(locked.getByText(/lives only in the app's memory/i)).toBeTruthy();
+    expect(locked.getByRole("heading", { level: 1 }).textContent).toBe("Vex is locked.");
+    expect(locked.container.querySelector("[data-vex-lock]")?.getAttribute("data-vex-lock")).toBe("locked");
+    // The same label, line and field: only the headline says which unlock it is.
+    expect(locked.container.querySelector(".vex-lock__label")?.textContent).toBe("Local vault · Locked");
+    expect(locked.getByLabelText(/Master password/i)).toBeTruthy();
+  });
+
+  it("draws Kimm's figure on her field, resting while the screen waits", () => {
+    const view = renderUnlockScreen();
+    const panel = panelOf(view);
+    expect(panel?.getAttribute("data-kimm-figure")).toBe("shown");
+    expect(panel?.getAttribute("data-kimm-mood")).toBe("rest");
+    expect(panel?.querySelector("img.vex-kimm-panel__figure")?.getAttribute("src")).toBe(
+      "/art/kimm/still-rest.webp",
+    );
+    // Her field: the live field's box over the tall baked frame.
+    expect(panel?.querySelector("[data-vex-area='kimm-field']")).not.toBeNull();
+    expect(panel?.style.getPropertyValue("--vex-kimm-baked-wide")).toBe(
+      'url("/art/kimm/field-still-wide.webp")',
+    );
+  });
+
+  it("keeps her field without her figure while her stored choice hides her", () => {
+    mockVexOpenChat = false;
+    const view = renderUnlockScreen();
+    const panel = panelOf(view);
+    expect(panel?.getAttribute("data-kimm-figure")).toBe("hidden");
+    expect(panel?.querySelector("img")).toBeNull();
+    expect(panel?.querySelector("[data-vex-area='kimm-field']")).not.toBeNull();
+    expect(panel?.style.getPropertyValue("--vex-kimm-baked-wide")).toBe(
+      'url("/art/kimm/field-still-wide.webp")',
+    );
+    // The field holds its frame: it runs only while her figure stands.
+    expect(
+      panel?.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-running"),
+    ).toBe("false");
+  });
+
+  it("focuses the master password on arrival", () => {
+    const view = renderUnlockScreen();
+    expect(document.activeElement).toBe(view.getByLabelText(/Master password/i));
+  });
+
+  it("unlocks on Enter through the form's own submit: the field and Unlock share one form", async () => {
+    const view = renderUnlockScreen();
+    const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
+    const unlock = view.getByRole("button", { name: /Unlock/i }) as HTMLButtonElement;
+    // Implicit submission: Enter in the field submits its form through its submit key.
+    expect(unlock.type).toBe("submit");
+    expect(input.form).not.toBeNull();
+    expect(unlock.form).toBe(input.form);
+    fireEvent.input(input, { target: { value: "valid-password-12" } });
+    fireEvent.submit(input.form as HTMLFormElement);
+    await waitFor(() => expect(mockUnlock).toHaveBeenCalledTimes(1));
+    expect(mockUnlock).toHaveBeenCalledWith({ password: "valid-password-12" });
   });
 
   it("shows a wrong password as a row with the red square, and Vex concerned", async () => {
@@ -264,6 +349,9 @@ describe("UnlockScreen", () => {
     // so it can land just after the alert does.
     await waitFor(() => expect(getStageVex().concerned).toBe(true));
     expect(stageVexView(getStageVex()).word).toBe("Concerned");
+    // One line under the field, and her panel concerned as the stage maps it (she rests).
+    expect(row?.previousElementSibling?.classList.contains("vex-unl__field")).toBe(true);
+    expect(panelOf(view)?.getAttribute("data-kimm-mood")).toBe("rest");
   });
 
   it("marks the unlock concerned with the seconds left while it is throttled", async () => {
@@ -293,6 +381,7 @@ describe("UnlockScreen", () => {
       ?.closest("[data-vex-unlock-alert]");
     expect(row?.getAttribute("data-vex-unlock-alert")).toBe("throttle");
     expect(row?.querySelector(".vex-pre-sq")?.getAttribute("data-sq")).toBe("ink");
+    expect(row?.previousElementSibling?.classList.contains("vex-unl__field")).toBe(true);
   });
 
   it("is concerned while the reset panel is open and calm again after Cancel", () => {
@@ -314,6 +403,8 @@ describe("UnlockScreen", () => {
     fireEvent.click(view.getByRole("button", { name: /Unlock/i }));
     await waitFor(() => expect(mockBeginUnlockCurtain).toHaveBeenCalledTimes(1));
     expect(stageVexView(getStageVex()).word).toBe("Ready");
+    // Her panel says hi once the vault has opened.
+    await waitFor(() => expect(panelOf(view)?.getAttribute("data-kimm-mood")).toBe("hi"));
   });
 
   it("rejects a password shorter than PASSWORD_MIN_LENGTH without calling unlock", async () => {
@@ -621,5 +712,57 @@ describe("UnlockScreen key on the stage", () => {
     const key = unlockKey(empty);
     expect(key.getAttribute("data-armed") === "true").toBe(false);
     expect(window.getComputedStyle(key).getPropertyValue("background-color")).toBe(KEY);
+  });
+});
+
+/**
+ * THE ONE BLUE (docs/design/H3-DESKTOP.md sections 2.1 and 4.13): on the lock
+ * screen only Unlock may take the blue fill. Read from the sheets themselves:
+ * the lock screen's section of `stage.css`, the keys its reset panel borrows,
+ * and her panel's rules in `kimm.css` (her glyph field's palette is the
+ * field's own drawing, a canvas, not a rule).
+ */
+describe("the lock screen's one blue", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const sheet = (name: string): string =>
+    readFileSync(path.join(here, "..", "..", "..", "styles", "global-css", name), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+  const between = (css: string, from: string, to: string): string => {
+    const start = css.indexOf(from);
+    const end = css.indexOf(to, start + 1);
+    expect(start, from).toBeGreaterThanOrEqual(0);
+    expect(end, to).toBeGreaterThan(start);
+    return css.slice(start, end);
+  };
+  const rules = (css: string): ReadonlyArray<readonly [string, string]> =>
+    [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [(m[1] ?? "").trim(), m[2] ?? ""] as const);
+  const BLUE = /var\(--vex-alias-button-accent-(?:fill|hover|edge)\)/;
+
+  const stageCss = sheet("stage.css");
+  const lock = between(stageCss, ".vex-lock {", ".vex-pre-stand {");
+  const panel = between(sheet("kimm.css"), ".vex-kimm-panel {", "@media (prefers-reduced-motion");
+
+  it("fills only Unlock with the blue", () => {
+    const blue = rules(lock)
+      .filter(([, body]) => BLUE.test(body))
+      .map(([selector]) => selector);
+    expect(blue.length).toBeGreaterThan(0);
+    for (const selector of blue) {
+      for (const part of selector.split(",")) expect(part.trim()).toMatch(/^\.vex-unl__go\b/);
+    }
+  });
+
+  it("borrows keys for the reset panel that are never the blue, and paints her panel without it", () => {
+    for (const [selector, body] of rules(stageCss)) {
+      if (/\.vex-pre-(?:key|danger)\b/.test(selector)) expect(body, selector).not.toMatch(BLUE);
+    }
+    expect(panel).toContain(".vex-kimm-panel__figure");
+    expect(panel).not.toMatch(/button-accent|--color-|#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
+
+  it("paints the lock screen through the alias tier only", () => {
+    expect(lock).not.toMatch(/--color-|#[0-9a-f]{3,8}\b|rgba?\(|gradient\(/i);
   });
 });

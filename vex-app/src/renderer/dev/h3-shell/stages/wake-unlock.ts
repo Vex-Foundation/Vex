@@ -1,10 +1,16 @@
 /**
- * The real wake and unlock on the stage, beside the plates `stage-wake`,
- * `stage-unlock` and `stage-unlock-locked`: the gate's own content at the
- * launch's third stage, the unlock the launch hands to, and the unlock after
- * Lock Vex. The unlock's bridge refuses every password as wrong, so a capture
- * that types one and presses Unlock shows the failure row; it never holds a
- * vault, a key or a password of its own.
+ * The real wake on the stage, beside the plate `stage-wake`, and the real
+ * lock screen (docs/design/H3-DESKTOP.md section 4.13; owner decision
+ * 2026-11-09): the gate's own content at the launch's third stage, the
+ * unlock the launch hands to ("Welcome back.") and the unlock after Lock Vex
+ * ("Vex is locked."). The lock screen stands on no stage, so the harness's
+ * `StagePlate` draws nothing beside it and the screen is the whole window:
+ * Kimm's panel at the left (`?vex=closed` keeps her field without her
+ * figure), the password's column at the right. It supersedes the plates
+ * `stage-unlock` and `stage-unlock-locked`. The unlock's bridge refuses every
+ * password as wrong, so a capture that types one and presses Unlock (or
+ * Enter) shows the failure line; it never holds a vault, a key or a password
+ * of its own.
  */
 
 import { createElement, type JSX } from "react";
@@ -59,7 +65,7 @@ export const wake: HarnessStage = {
 
 export const unlockAfterLaunch: HarnessStage = {
   id: "unlock",
-  title: "Unlock after a launch: the master password, Kimm ready",
+  title: "The lock screen after a launch: Welcome back., Kimm resting on her field",
   view: "unlock",
   Screen: UnlockScreen,
   answers: () => WRONG_PASSWORD,
@@ -70,7 +76,7 @@ export const unlockAfterLaunch: HarnessStage = {
 
 export const unlockAfterLock: HarnessStage = {
   id: "unlock-locked",
-  title: "Unlock after Lock Vex: Kimm asleep, where the password lives",
+  title: "The lock screen after Lock Vex: Vex is locked., Kimm resting on her field",
   view: "unlock",
   Screen: UnlockScreen,
   answers: () => WRONG_PASSWORD,

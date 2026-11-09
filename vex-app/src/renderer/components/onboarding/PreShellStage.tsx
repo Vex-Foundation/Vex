@@ -3,8 +3,11 @@
  * 4.9, the plates `?plate=stage-*`, approved as drawn on 2026-11-04).
  *
  * `App` mounts ONE `StagePlate` with the pre-shell, so she holds still while the screens change
- * beside her: the wake (the gate), the unlock, the first run screens (system check, the local
- * runtime and the move of a previous release's data, database) and the setup wizard. It is her
+ * beside her: the wake (the gate), the first run screens (system check, the local runtime and the
+ * move of a previous release's data, database) and the setup wizard. The unlock is not one of them
+ * (owner decision, 2026-11-09; section 4.13): the lock screen is its own split, Kimm's panel
+ * beside the password (`UnlockScreen.tsx`), so the stage stands over it only while the gate lifts
+ * away, and lifts away with the gate. It is her
  * column on the shell's seams, laid over the empty middle column of every screen's frame
  * (`StageFrame.tsx`): the Vex key in the header cell, Kimm's section from the header to the bottom
  * row, and the tagline cell under her. Her section, the key and the chord are the shell's own
@@ -13,8 +16,8 @@
  * the shell is the one the shell opens with.
  *
  * The layer stands above the screens (z 40) and below the wake (z 50), whose frame leaves her
- * column open. It renders nothing while the shell stands, except under the crossfade to it, which
- * lifts it away (`data-vex-stage-exit`).
+ * column open. It renders nothing while the shell or the unlock stands, except under the gate's
+ * crossfade to either, which lifts it away (`data-vex-stage-exit`).
  *
  * Layout and paint live in `styles/global-css/stage.css`; the crossfade in `chronos-gate.css`.
  */
@@ -40,6 +43,7 @@ import { KimmSection, kimmGroundStyle } from "../vex/kimm/KimmSection.js";
 import {
   getStageVex,
   stageVexEnd,
+  stageVexSettle,
   stageVexView,
   stageVexWoken,
   useStageVex,
@@ -50,7 +54,6 @@ export type StageLayout = "stage";
 
 const STAGE_VIEWS: ReadonlySet<View> = new Set<View>([
   "splash",
-  "unlock",
   "systemCheck",
   "runtimeMigration",
   "runtimeBootstrap",
@@ -62,8 +65,9 @@ const STAGE_VIEWS: ReadonlySet<View> = new Set<View>([
 const LAUNCH_VIEWS: ReadonlySet<View> = new Set<View>(["splash", "unlock"]);
 
 /**
- * The plate's layout for a view, or null when nothing stands on a stage. The shell holds the stage
- * only while the gate or the page turn lifts it away (`holding`).
+ * The plate's layout for a view, or null when nothing stands on a stage. The shell and the unlock
+ * (the lock screen draws Kimm in its own panel, section 4.13) hold the stage only while the gate
+ * lifts it away (`holding`).
  */
 export function stageLayoutFor(view: View, holding: boolean): StageLayout | null {
   if (STAGE_VIEWS.has(view)) return "stage";
@@ -148,7 +152,9 @@ function StageVexColumn(): JSX.Element {
  */
 export function StagePlate({ className }: { readonly className?: string }): JSX.Element | null {
   const view = useUiStore((s) => s.currentView);
-  const holding = useUiStore((s) => s.setupGateActive || s.unlockCurtainActive);
+  // Only the gate holds her stage: the unlock's handoff starts from the lock screen, where no
+  // stage stands, so the shell (or the wizard, which stands on its own) comes up without one.
+  const holding = useUiStore((s) => s.setupGateActive);
   const exit = useStageVex().exit;
   const layout = stageLayoutFor(view, holding);
 
@@ -160,11 +166,15 @@ export function StagePlate({ className }: { readonly className?: string }): JSX.
 
   // Leaving the launch (the first run, the wizard, the shell once her stage has gone) ends it: the
   // next unlock, after Lock Vex, starts with her asleep. Under the crossfade to the shell the stage
-  // still stands, and its exit with it, until the layer is gone.
-  const ends = layout === null || (view !== "appShell" && !LAUNCH_VIEWS.has(view));
+  // still stands, and its exit with it, until the layer is gone. The unlock keeps the launch though
+  // no stage stands beside it ("Welcome back." against "Vex is locked."); once the gate has lifted
+  // her stage away over it, the spent crossfade is settled.
+  const gone = layout === null;
+  const ends = (gone && view !== "unlock") || (view !== "appShell" && !LAUNCH_VIEWS.has(view));
   useEffect(() => {
     if (ends) stageVexEnd();
-  }, [ends]);
+    else if (gone) stageVexSettle();
+  }, [ends, gone]);
 
   // The chord (Cmd or Ctrl + Shift + B, docs/design/H3-DESKTOP.md section 4.4), bound here once
   // while her stage stands and no shell does: the shell binds its own (`AppShell`), so while the

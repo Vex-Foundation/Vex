@@ -1,9 +1,10 @@
 /**
  * Her stage before the shell (`PreShellStage.tsx`, docs/design/H3-DESKTOP.md section 4.9): every
- * pre-shell view stands beside her H3 column (the shell's own Vex key, Kimm's section and the
- * tagline), what she shows follows the stage store (the wake, the unlock after a launch and after
- * Lock Vex, a concern, a screen's face), her choice is the shell's stored one, the chord is bound
- * once, and the stage holds under the shell until its exit.
+ * pre-shell view but the unlock stands beside her H3 column (the shell's own Vex key, Kimm's
+ * section and the tagline); the unlock is the lock screen's own split (section 4.13), so her stage
+ * stands over it only while the gate lifts away. What she shows follows the stage store (the wake,
+ * a concern, a screen's face), her choice is the shell's stored one, the chord is bound once, and
+ * the stage holds under the shell until its exit.
  *
  * jsdom paints no canvas, so her glyph field draws nothing here; her art is the app's shipped art
  * (VEX Cloud's renders in `public/art/kimm/`), so her section draws her real still.
@@ -51,10 +52,9 @@ afterEach(() => {
 });
 
 describe("stageLayoutFor", () => {
-  it("stands every pre-shell view on H3's stage, and the shell on nothing", () => {
+  it("stands every pre-shell view but the unlock on H3's stage, and the shell on nothing", () => {
     for (const view of [
       "splash",
-      "unlock",
       "systemCheck",
       "runtimeMigration",
       "runtimeBootstrap",
@@ -63,11 +63,14 @@ describe("stageLayoutFor", () => {
     ] as const) {
       expect(stageLayoutFor(view, false)).toBe("stage");
     }
+    // The lock screen is its own split (section 4.13): no stage beside it.
+    expect(stageLayoutFor("unlock", false)).toBeNull();
     expect(stageLayoutFor("appShell", false)).toBeNull();
   });
 
-  it("holds the stage under the shell while the gate or the handoff lifts it away", () => {
+  it("holds the stage over the shell or the unlock only while the gate lifts it away", () => {
     expect(stageLayoutFor("appShell", true)).toBe("stage");
+    expect(stageLayoutFor("unlock", true)).toBe("stage");
   });
 });
 
@@ -96,20 +99,44 @@ describe("StagePlate", () => {
     expect(getStageVex().launching).toBe(true);
   });
 
-  it("sleeps and rests beside the unlock after Lock Vex; the lock is the title cell's word", () => {
+  it("stands nothing beside the unlock after Lock Vex, and keeps the desk locked", () => {
     stageVexEnd();
     stand("unlock");
     const { container } = render(<StagePlate />);
-    const key = keyOf(container);
-    expect(key?.textContent).toContain("Sleeping");
-    expect(key?.textContent).not.toContain("Locked");
-    expect(key?.getAttribute("data-vex-state")).toBe("sleeping");
-    expect(sectionOf(container)?.getAttribute("data-kimm-mood")).toBe("rest");
+    expect(container.querySelector("[data-vex-stage-plate]")).toBeNull();
+    expect(getStageVex().launching).toBe(false);
+  });
+
+  it("stands nothing beside the launch's own unlock, and keeps the launch", () => {
+    stand("unlock");
+    const { container } = render(<StagePlate />);
+    expect(container.querySelector("[data-vex-stage-plate]")).toBeNull();
+    // "Welcome back.", not "Vex is locked.": the unlock still belongs to the launch.
+    expect(getStageVex().launching).toBe(true);
+  });
+
+  it("lifts away with the gate over the unlock, then settles the spent crossfade and keeps the launch", () => {
+    stand("splash");
+    const view = render(<StagePlate />);
+    // The gate hands off to the unlock beneath itself and lifts away: her stage goes with it.
+    act(() => useUiStore.setState({ currentView: "unlock" }));
+    const root = view.container.querySelector("[data-vex-stage-plate]");
+    expect(root?.getAttribute("data-vex-stage-plate")).toBe("stage");
+    act(() => stageVexExit());
+    expect(
+      view.container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-exit"),
+    ).toBe("reveal");
+    act(() => useUiStore.setState({ setupGateActive: false }));
+    expect(view.container.querySelector("[data-vex-stage-plate]")).toBeNull();
+    expect(getStageVex().exit).toBe("idle");
+    expect(getStageVex().launching).toBe(true);
+    expect(getStageVex().woken).toBe(true);
   });
 
   it("is concerned over a wrong password or a throttle, the seconds beside the word", () => {
+    // Only while the gate still lifts her stage away over the unlock does the concern reach her column.
     stageVexEnd();
-    stand("unlock");
+    stand("unlock", true);
     const { container } = render(<StagePlate />);
     act(() => stageVexConcerned(true, 28));
     expect(keyOf(container)?.textContent).toContain("Concerned");
@@ -144,8 +171,8 @@ describe("StagePlate", () => {
     expect(section?.getAttribute("data-kimm-mood")).toBe("think");
   });
 
-  it("draws her real art on every stage before the shell: the wake, the checks, the wizard and the unlock", () => {
-    for (const view of ["splash", "systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations", "wizard", "unlock"] as const) {
+  it("draws her real art on every stage before the shell: the wake, the checks and the wizard", () => {
+    for (const view of ["splash", "systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations", "wizard"] as const) {
       stand(view);
       const { container, unmount } = render(<StagePlate />);
       const section = sectionOf(container);
@@ -178,7 +205,7 @@ describe("StagePlate", () => {
 
   it("keeps her glyph field under her strip while she is closed: the stage's column is never empty", () => {
     useUiStore.setState({ vexOpenChat: false });
-    stand("unlock");
+    stand("migrations");
     const { container } = render(<StagePlate />);
     expect(sectionOf(container)?.getAttribute("data-kimm-open")).toBe("false");
     const ground = container.querySelector<HTMLElement>("[data-vex-area='vex-stage-ground']");
@@ -208,7 +235,7 @@ describe("StagePlate", () => {
     // Exactly one of the two spellings is this platform's: she closed once.
     expect(useUiStore.getState().vexOpenChat).toBe(false);
     // The shell takes over under the crossfade: the stage binds nothing then.
-    act(() => useUiStore.setState({ currentView: "appShell", unlockCurtainActive: true }));
+    act(() => useUiStore.setState({ currentView: "appShell", setupGateActive: true }));
     press({ ctrlKey: true, metaKey: false });
     press({ ctrlKey: false, metaKey: true });
     expect(useUiStore.getState().vexOpenChat).toBe(false);
@@ -220,6 +247,15 @@ describe("StagePlate", () => {
     expect(getStageVex().launching).toBe(true);
     act(() => stand("appShell"));
     expect(view.container.querySelector("[data-vex-stage-plate]")).toBeNull();
+    expect(getStageVex().launching).toBe(false);
+  });
+
+  it("does not stand under the unlock's handoff to the shell: the lock screen had no stage to lift", () => {
+    stand("unlock");
+    const view = render(<StagePlate />);
+    act(() => useUiStore.setState({ currentView: "appShell", unlockCurtainActive: true }));
+    expect(view.container.querySelector("[data-vex-stage-plate]")).toBeNull();
+    // The shell ends the launch: the next unlock, after Lock Vex, is the locked one.
     expect(getStageVex().launching).toBe(false);
   });
 

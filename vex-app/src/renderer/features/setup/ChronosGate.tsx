@@ -8,9 +8,11 @@
  *
  * The reveal: once BOTH the pipeline handoff and the short minimum hold have resolved, the gate
  * applies the handoff to the view machine BENEATH itself, waits one frame for the screen to
- * mount, and lifts away over 240ms. A handoff to the shell lifts her stage away with it (the
- * stage to shell crossfade); every other handoff stands on the same seams, so only the gate's
- * own cells fade and she never moves. Reduced motion: no hold, and the gate leaves at once.
+ * mount, and lifts away over 240ms. A handoff to the shell or to the unlock lifts her stage away
+ * with it (the stage to shell crossfade; the lock screen draws her in its own panel,
+ * docs/design/H3-DESKTOP.md section 4.13); every other handoff stands on the same seams, so only
+ * the gate's own cells fade and she never moves. Reduced motion: no hold, and the gate leaves at
+ * once.
  *
  * Layering: `z-50`, over her column (z 40) and below the floating update card
  * (`.vex-upd[data-floating]`, z 60, projected by `UpdateLayer`) so a critical
@@ -69,11 +71,12 @@ export function ChronosGate(): JSX.Element | null {
     return () => cancelAnimationFrame(raf);
   }, [handoff, revealing, held, openUnlock, setCurrentView]);
 
-  // A handoff to the shell leaves the stage: the plate lifts away with the gate
-  // (the 240ms crossfade). Any other screen stands on the same plate.
+  // A handoff to the shell or to the unlock leaves the stage: the plate lifts
+  // away with the gate (the 240ms crossfade). Any other screen stands on the
+  // same plate.
   useEffect(() => {
     if (!revealing || handoff === null) return;
-    if (handoff.kind === "view" && handoff.view === "appShell") stageVexExit();
+    if (handoff.kind === "unlock" || handoff.view === "appShell") stageVexExit();
   }, [revealing, handoff]);
 
   // Reduced motion: dismiss via effect, not the fade's animation callback -

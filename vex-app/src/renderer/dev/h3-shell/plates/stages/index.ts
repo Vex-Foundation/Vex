@@ -14,12 +14,12 @@ export const STAGE_PLATES: readonly HarnessPlate[] = [
   { id: "stage-wake", title: "The wake: the desk starting, step 3 of 5", Plate: WakePlate },
   {
     id: "stage-unlock",
-    title: "Unlock after a launch: the master password, Kimm ready",
+    title: "Superseded by ?stage=unlock (owner, 2026-11-09): unlock after a launch on the stage",
     Plate: UnlockAfterLaunchPlate,
   },
   {
     id: "stage-unlock-locked",
-    title: "Unlock after Lock Vex: Kimm asleep, where the password lives",
+    title: "Superseded by ?stage=unlock-locked (owner, 2026-11-09): unlock after Lock Vex on the stage",
     Plate: UnlockAfterLockPlate,
   },
   {

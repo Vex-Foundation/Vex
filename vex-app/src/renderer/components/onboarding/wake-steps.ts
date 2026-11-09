@@ -1,9 +1,9 @@
 /**
  * The wake's five steps, as H3's stage shows them (docs/design/H3-DESKTOP.md
- * section 4.9; the plates `stage-wake`, `stage-unlock` and
- * `stage-unlock-locked`, approved as drawn): the left column of the wake
- * while the launch runs, and of the unlock after it, every step done (after
- * Lock Vex too, as the plate draws it).
+ * section 4.9; the plate `stage-wake`, approved as drawn): the left column of
+ * the wake while the launch runs. With no current step every step is done, as
+ * the superseded plates `stage-unlock` and `stage-unlock-locked` drew it; the
+ * lock screen itself stands on no stage now (section 4.13).
  *
  * Each step is the real launch stage it stands for (`useSetupOrchestrator`'s
  * status keys, `features/setup/ChronosGate/gate-timeline.ts`), so the column
