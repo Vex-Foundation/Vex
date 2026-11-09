@@ -400,7 +400,9 @@ describe("SystemCheck", () => {
     });
     render(<SystemCheck />);
     expect(stageVexView(getStageVex()).word).toBe("Error");
-    expect(stageVexView(getStageVex()).mood).toBe("refused");
+    // Her section stands beside the stage, so it reads Cloud's chat seat: a
+    // failed probe is no money call, and she rests (H3-DESKTOP section 1.6).
+    expect(stageVexView(getStageVex()).mood).toBe("rest");
   });
 
   it("offers the way on while the disk holds Continue: the word Error, the red step, her open palm", () => {
