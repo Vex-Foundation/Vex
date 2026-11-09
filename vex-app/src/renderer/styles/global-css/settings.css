@@ -495,3 +495,125 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
     transition: none;
   }
 }
+
+/* A switch that will not act is held: the rule's edge and the muted thumb. */
+.vex-switch:disabled {
+  cursor: not-allowed;
+  border-color: var(--vex-alias-rule-chosen);
+}
+
+/* TOOLS (MCP) (VEX Cloud's built `McpServerCard` and `McpToolRow`, its
+ * `settings.css` `.vx-mcp-*` and `.vx-toolrow`; owner decision 2026-11-09):
+ * each server a box on the card ground: a 44 head band with the name (12
+ * caps, 600) and its state word at the right; the endpoint 13 muted under a
+ * rule, padding 12 16; the server's note and keys 16 in; then "Tools" (11 caps
+ * muted) in a 44 band and the tool rows, padding 10 16, a rule above each.
+ * A tool's switches stand with their labels, 13 ink 2. The add form is a box
+ * of its own. */
+.vex-mcp-box {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-mcp-box__h {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-mcp-box__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mcp-box__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mcp-box__meta {
+  margin: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-box__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+.vex-mcp-box__none {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-tools__h {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0;
+  padding: 0 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mcp-tools__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-mcp-tool {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mcp-tool__sw {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+.vex-mcp-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mcp-box--add {
+  padding: 0 16px 16px;
+}
+.vex-mcp-box--add .vex-set__sh-title {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0 -16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}

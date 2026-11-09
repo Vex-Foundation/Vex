@@ -116,6 +116,13 @@ describe("settings.css", () => {
     expect(settings).not.toContain("button-accent");
   });
 
+  it("boxes each MCP server on the card ground with a 44 head and 10 16 tool rows (Cloud's built MCP page)", () => {
+    expect(rule(settings, ".vex-mcp-box")).toContain("background: var(--vex-alias-card)");
+    expect(rule(settings, ".vex-mcp-box__h")).toContain("min-height: 44px");
+    expect(rule(settings, ".vex-mcp-tool")).toContain("padding: 10px 16px");
+    expect(rule(settings, ".vex-mcp-tools__h")).toMatch(/font-size: 11px;[\s\S]*text-transform: uppercase/);
+  });
+
   it("draws the Lock Vex row's chord in mono 12 muted", () => {
     expect(rule(settings, ".vex-pref__chord")).toMatch(
       /font-family: var\(--font-mono\);[\s\S]*font-size: 12px;[\s\S]*var\(--vex-alias-label-tertiary\)/,
