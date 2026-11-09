@@ -760,6 +760,13 @@ VEX Cloud's loading marks (its status contract and `styles/rows.css`; `component
 - **The loading hatch** (`LoadingHatch`, `.vex-stripes`): 14 square, 135 degree strokes in ink 2, 1px every 4px, blinking on two steps once every 1200ms (`--vex-duration-blink-hatch`, Cloud's `--vx-blink-hatch`). It stands only while a load lasts. Under reduced motion and Save-Data it holds still at full ink. **The loading word** (`LoadingWord`): the hatch, 10, then the word in ink at 14.
 - The place that holds covers names itself as loading once (one `role="status"`); the covers and the hatch are decoration.
 
+### 5.7 The empty, error and loading block
+VEX Cloud's `EmptyState`, `ErrorState` and `LoadingState` (`components/ui/empty-state.tsx`, `styles/rows.css`; H3 `.empty`), desktop's `EmptyBlock` (`components/ui/empty-block.tsx`, `.vex-empty-block` in `ui-primitives/indicators.css`). It replaces R3's block (the caps scope word, the 15/500 title, the 150 minimum, the blue text link, the loading line).
+- **Empty:** a centred card, the 7% rule frame on the card ground, padding 40 16, gap 12; the section's own glyph at 28 in muted when the caller names one (`glyph`), one sentence at 14 in muted, sentence case, no caps word; the next step as a 44 framed key (padding 0 26 in the rule), the outline key. No minimum height.
+- **Error:** the same card, 56 above and below, the sentence and the cross glyph (`rail-no`) in ink; Retry as the 44 framed key in the strong (ink) variant. A read whose outcome is not known yet (`concerned`) takes the warning glyph.
+- **Loading:** the card holds the loading word (the stepping hatch and the sentence, section 5.6) over three parked covers at full, four fifths and three fifths of a 320 column; the block is a busy status named by the sentence.
+- Desktop keeps a second line (`detail`) under the sentence where a caller has a reason worth saying (a failed read's message, why deposits are closed): Cloud draws one sentence only, but those lines are real information. The old scope word is no longer drawn; it rides `data-scope`. A failed read does not add its own alert: the caller names the role (`LoadFailedBlock` passes `alert`).
+
 ---
 
 ## Appendix A. Words, keys and taglines

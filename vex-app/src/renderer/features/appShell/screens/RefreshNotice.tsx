@@ -59,7 +59,7 @@ export function LoadFailedBlock({
   detail,
   onRetry,
 }: {
-  /** The muted scope word ("Portfolio", "Agent Scan"). */
+  /** The section ("Portfolio", "Agent Scan"); the block carries it as `data-scope`. */
   readonly scope: string;
   /** The cross for a failure; the ink hatch for a timeout that clears on its own. */
   readonly state?: "error" | "concerned";
