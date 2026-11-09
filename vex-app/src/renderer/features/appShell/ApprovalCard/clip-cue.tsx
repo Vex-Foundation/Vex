@@ -4,7 +4,9 @@
  * is shown in: the chat's approvals stack is bounded (`ApprovalsRegion`,
  * 75vh) and a card's own footer is sticky over its last rows, so rows can sit
  * out of view while Reject and the approve key stay in view. The cue says so
- * over the keys, never over a row: "{n} more lines below".
+ * right over the keys: "{n} more lines below". It lies over the foot of the
+ * view, the cut rows' place, and takes no layout room, so it never moves the
+ * card or shrinks the room the card is given.
  *
  * Presentational only, and `aria-hidden`: every row is in the card's reading
  * order already. Nothing here reads or writes the decision, the keys or what
@@ -21,10 +23,31 @@ import type { JSX, RefObject } from "react";
  */
 const ROWS = ".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt";
 
-/** The rows of `card` whose bottom is under `end` (a viewport y), counted. */
+/** The cue's own height: it lies over the last 29 of the view while it shows. */
+export const CLIP_CUE_PX = 29;
+
+/**
+ * Whether a row is drawn at all. A closed "All signed fields" keeps its rows
+ * in the tree, and the engine still lays them out (a closed `<details>` hides
+ * its content with `content-visibility`), so their boxes sit below the toggle
+ * though nothing of them is on screen: they are folded, not clipped. Only the
+ * toggle itself (the `<summary>`) is drawn. A row with no box is not drawn
+ * either.
+ */
+function isDrawn(row: HTMLElement): boolean {
+  const folded = row.closest("details:not([open])");
+  if (folded !== null && row.closest("summary") === null) return false;
+  const box = row.getBoundingClientRect();
+  return box.height > 0 || box.width > 0;
+}
+
+/**
+ * The drawn rows of `card` that the view cuts at `end` (a viewport y): any
+ * row whose foot is under it, whether partly or wholly out of view.
+ */
 export function rowsBelow(card: HTMLElement, end: number): number {
   return Array.from(card.querySelectorAll<HTMLElement>(ROWS)).filter(
-    (row) => row.getBoundingClientRect().bottom > end + 1,
+    (row) => isDrawn(row) && row.getBoundingClientRect().bottom > end + 1,
   ).length;
 }
 
@@ -72,7 +95,11 @@ export function useRowsBelow(
     let frame = 0;
     const measure = (): void => {
       frame = 0;
-      setBelow(rowsBelow(card, visibleEnd(card, scroller, dock)));
+      // While the cue shows it covers the last 29 of the view (it takes no
+      // room of its own), so a row under it counts as out of view; once the
+      // count is 0 the cue leaves and the full view is read again.
+      const end = visibleEnd(card, scroller, dock);
+      setBelow((shown) => rowsBelow(card, end - (shown > 0 ? CLIP_CUE_PX : 0)));
     };
     const schedule = (): void => {
       if (frame !== 0) return;

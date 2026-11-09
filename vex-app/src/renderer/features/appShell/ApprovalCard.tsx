@@ -158,6 +158,13 @@ export interface ApprovalCardProps {
    */
   readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
   /**
+   * Fires when a decision did not go through (its reply was a failure or it
+   * never answered), after the card has shown its failure line. Display
+   * only: the chat publishes it for Kimm's mood clock
+   * (`approvals/decision-signal.ts`); nothing here waits on it.
+   */
+  readonly onDecisionFailed?: (decision: "approve" | "reject") => void;
+  /**
    * `row` folds the card to one line for the Needs you page (section 8.5):
    * the sentence, the meta line, Reject and "Review {action}". The decision
    * state lives in THIS component either way, so switching a card between its
@@ -191,6 +198,7 @@ export function ApprovalCard({
   idVariant,
   projectName = null,
   onResolved,
+  onDecisionFailed,
   layout = "card",
   onReview,
   decisionDock = null,
@@ -266,12 +274,14 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("approve");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("approve");
         },
       },
     );
@@ -297,15 +307,26 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("reject");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("reject");
         },
       },
     );
+  };
+
+  // THE SEND BAND (C3-D-27): words in the reason take Approve out of the
+  // band. An approve armed by a first press must not survive that and come
+  // back armed when the words are cleared, so typing words disarms it; an
+  // armed Reject stays armed, since the send key is the same reject.
+  const onRejectReasonChange = (value: string): void => {
+    setRejectReason(value);
+    if (value.trim() !== "") setArmedAction((armed) => (armed === "approve" ? null : armed));
   };
 
   const onApproveClick = (): void => {
@@ -392,7 +413,7 @@ export function ApprovalCard({
       onReject={onRejectClick}
       onApprove={onApproveClick}
       rejectReason={rejectReason}
-      onRejectReasonChange={setRejectReason}
+      onRejectReasonChange={onRejectReasonChange}
       approveLabel={approveLabel}
       confirmApproveLabel={confirmApproveLabel}
       pendingApproveLabel={pendingApproveLabel}

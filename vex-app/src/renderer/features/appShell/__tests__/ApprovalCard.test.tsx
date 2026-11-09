@@ -22,7 +22,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -463,7 +463,8 @@ describe("ApprovalCard", () => {
     fireEvent.keyDown(field, { key: "Enter", code: "Enter" });
     expect(mockRejectMutate).not.toHaveBeenCalled();
     expect(mockApproveMutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    // With words typed the reject key is "Reject and send" (C3-D-27).
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Use USDC on Base instead" },
       expect.any(Object),
@@ -479,7 +480,7 @@ describe("ApprovalCard", () => {
       screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
       { target: { value: "Slippage too high" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
 
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Slippage too high" },
@@ -511,10 +512,11 @@ describe("ApprovalCard", () => {
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),
       false,
     );
-    fireEvent.change(
-      screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
-      { target: { value: "not this one" } },
-    );
+    const field = screen.getByRole("textbox", { name: REJECT_REASON_LABEL });
+    fireEvent.change(field, { target: { value: "not this one" } });
+    // While words are typed there is no approve key at all (C3-D-27).
+    expect(screen.queryByRole("button", { name: /^approve transfer$/i })).toBeNull();
+    fireEvent.change(field, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
 
     expect(mockApproveMutate).toHaveBeenCalledWith(
@@ -764,7 +766,11 @@ describe("ApprovalCard", () => {
     expect(held).not.toMatch(/accent|opacity|dotted/);
     // A running rejection keeps the held ground with its word in ink; the
     // working approve key is pending, not held, and keeps its blue.
-    expect(rule('.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled')).toContain(
+    expect(
+      rule(
+        '.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled,\n.vex-appr__foot > button[data-vex-key="send"][aria-busy="true"]:disabled',
+      ),
+    ).toContain(
       "color: var(--vex-alias-label-primary)",
     );
     expect(rule(".vex-appr-row__go > button:disabled")).toContain("background: var(--vex-alias-bg-layer-3)");
@@ -1931,21 +1937,101 @@ describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
     );
   }
 
+  /** Every drawn row and its box, in document order: the rows the cue may count. */
+  const ROW_SELECTOR = ".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt";
+
+  /** Lays the rows out 34 apart from `firstBottom`, the scroller ending at 500, the footer at 600. */
+  function layoutStacked(firstBottom: number): () => void {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number): DOMRect =>
+        ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      if (this.matches(ROW_SELECTOR)) {
+        const rows = Array.from(document.querySelectorAll(ROW_SELECTOR));
+        const bottom = firstBottom + rows.indexOf(this) * 34;
+        return box(bottom - 34, bottom);
+      }
+      if (this.matches('[data-vex-area="approval-foot"]')) return box(600, 672);
+      return box(0, 500);
+    });
+    return () => spy.mockRestore();
+  }
+
+  /** The drawn rows: a closed All signed fields shows its toggle, never its folded rows. */
+  const drawnRows = (): Element[] =>
+    Array.from(document.querySelectorAll(ROW_SELECTOR)).filter(
+      (row) => row.closest("details:not([open])") === null || row.closest("summary") !== null,
+    );
+
   it("says how many rows are out of view, over the keys and hidden from screen readers", () => {
     const restore = layoutWith(900);
     try {
       renderScrolled();
       const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
-      const rows = document.querySelectorAll(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt").length;
+      const rows = drawnRows().length;
       expect(rows).toBeGreaterThan(1);
       expect(cue?.textContent).toBe(`${rows} more lines below`);
       expect(cue?.getAttribute("aria-hidden")).toBe("true");
-      // The footer's first row: over the keys, never over a row.
+      // Drawn from the footer, over the keys; the sheet lays it over the view.
       expect(cue?.parentElement?.getAttribute("data-vex-area")).toBe("approval-foot");
-      expect(cue?.parentElement?.firstElementChild).toBe(cue);
     } finally {
       restore();
     }
+  });
+
+  it("never counts the folded rows of a closed All signed fields, which are not on screen at all", () => {
+    // Every row, folded ones too, laid out under the view's end: only the drawn ones count.
+    const restore = layoutWith(900);
+    try {
+      renderScrolled();
+      const details = document.querySelector("details.vex-appr__more") as HTMLDetailsElement;
+      expect(details.open).toBe(false);
+      const folded = details.querySelectorAll(".vex-appr__well dt").length;
+      expect(folded).toBeGreaterThan(0);
+      const all = document.querySelectorAll(ROW_SELECTOR).length;
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      expect(cue?.textContent).toBe(`${all - folded} more lines below`);
+    } finally {
+      restore();
+    }
+  });
+
+  it("counts only the rows the view cuts, and none while the last row is in view", () => {
+    // 34 apart from 400: the drawn rows' feet at 400, 434, 468, 502, ... The view ends at 500.
+    const restore = layoutStacked(400);
+    try {
+      renderScrolled();
+      const drawn = drawnRows().length;
+      const cut = Array.from({ length: drawn }, (_, i) => 400 + i * 34).filter((bottom) => bottom > 501).length;
+      expect(cut).toBeGreaterThan(0);
+      expect(cut).toBeLessThan(drawn);
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      expect(cue?.textContent).toBe(cut === 1 ? "1 more line below" : `${cut} more lines below`);
+    } finally {
+      restore();
+    }
+    cleanup();
+    // The whole card above the view's end, the last row (All signed fields) included: no cue.
+    const restoreAll = layoutStacked(60);
+    try {
+      renderScrolled();
+      const last = 60 + (drawnRows().length - 1) * 34;
+      expect(last).toBeLessThan(500);
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+    } finally {
+      restoreAll();
+    }
+  });
+
+  it("lays the cue over the view and takes no room: absolute over the keys", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const cue = new RegExp("(?:^|\\})\\s*\\.vex-appr__more-cue\\s*\\{([^}]*)\\}").exec(sheet)?.[1] ?? "";
+    expect(cue).toContain("position: absolute");
+    expect(cue).toContain("bottom: 100%");
+    expect(cue).toContain("height: 29px");
+    expect(sheet).not.toMatch(/grid-area: cue/);
   });
 
   it("draws nothing while every row is in view", () => {
@@ -2034,11 +2120,13 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
 
   it("keeps the two-press Reject, and the reason travels with Reject", () => {
     renderDocked(makeSummary());
-    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
+    // Armed first, then words: the armed reject is the send key now, still armed.
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     expect(mockRejectMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /confirm reject/i }).textContent).toBe("Click again to confirm reject");
+    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
     const armed = screen.getByRole("button", { name: /confirm reject/i });
-    expect(armed.textContent).toBe("Click again to confirm reject");
+    expect(armed.textContent).toBe("Click again to reject and send");
     fireEvent.click(armed);
     expect(mockRejectMutate).toHaveBeenCalledWith(
       { id: "appr-1", reason: "Use 100 USDC instead" },
@@ -2074,7 +2162,7 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     field.dispatchEvent(enter);
     expect(enter.defaultPrevented).toBe(true);
     expect(mockRejectMutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
     expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
   });
 
@@ -2087,9 +2175,101 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(dock.querySelector('[data-vex-area="approval-reason-count"]')?.textContent).toBe("450 / 500");
   });
 
+  describe("the send band (C3-D-27, owner decision 2026-11-09)", () => {
+    const keysOf = (): (string | null)[] =>
+      Array.from(foot().querySelectorAll("button")).map((key) => key.getAttribute("data-vex-key"));
+
+    it("takes Approve out of the band while a reason is typed: Clear, the gate line, Reject and send", () => {
+      renderDocked(makeSummary());
+      expect(keysOf()).toEqual(["reject", "approve"]);
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
+      expect(keysOf()).toEqual(["clear", "send"]);
+      expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+      const send = screen.getByRole("button", { name: "Reject and send" });
+      expect(dock.contains(send)).toBe(true);
+      // Words alone keep Approve: a reason of spaces is no reason.
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "   " } });
+      expect(keysOf()).toEqual(["reject", "approve"]);
+    });
+
+    it("brings Approve back when the reason is cleared, by Clear or by deleting the words", () => {
+      renderDocked(makeSummary());
+      const field = screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: "Wait" } });
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      expect(field.value).toBe("");
+      expect(document.activeElement).toBe(field);
+      expect(keysOf()).toEqual(["reject", "approve"]);
+      fireEvent.change(field, { target: { value: "Wait" } });
+      fireEvent.change(field, { target: { value: "" } });
+      expect(screen.getByRole("button", { name: "Approve transfer" })).toBeTruthy();
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+      expect(mockRejectMutate).not.toHaveBeenCalled();
+    });
+
+    it("sends the trimmed one-line reason with Reject and send, on two presses on a high-risk card", () => {
+      renderDocked(makeSummary());
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), {
+        target: { value: "  Use 100 USDC\ninstead  " },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).not.toHaveBeenCalled();
+      const armed = screen.getByRole("button", { name: "Confirm reject and send" });
+      expect(armed.textContent).toBe("Click again to reject and send");
+      fireEvent.click(armed);
+      expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("sends on one press on a card that decides on one press", () => {
+      renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "No" } });
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "No" }, expect.any(Object));
+    });
+
+    it("never lets an approve armed before the words come back armed after Clear", () => {
+      renderDocked(makeSummary());
+      fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+      expect(screen.getByRole("button", { name: /confirm approve/i })).toBeTruthy();
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Wait" } });
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      // Back at rest: the next press arms again, it does not send.
+      fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("changes nothing while the decision runs: the field, Clear and the send key are held, Approve stays out", () => {
+      renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "No" } });
+      // The mutation never answers: the decision stays in flight.
+      fireEvent.click(screen.getByRole("button", { name: "Reject and send" }));
+      expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+      expect(keysOf()).toEqual(["clear", "send"]);
+      for (const key of Array.from(foot().querySelectorAll("button"))) expect(key.disabled).toBe(true);
+      expect((screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement).disabled).toBe(true);
+      const send = foot().querySelector('[data-vex-key="send"]');
+      expect(send?.textContent).toBe("Sending…");
+      expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe("Sending…");
+      fireEvent.click(send as Element);
+      expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+    });
+
+    it("draws the same band in the card's own footer outside the dock", () => {
+      renderCard(makeSummary(), false);
+      fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Wait" } });
+      expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+      expect(screen.getByRole("button", { name: "Reject and send" })).toBeTruthy();
+    });
+  });
+
   it("never lets the reason ride along with an approve", () => {
     renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
     fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "ignored" } });
+    expect(screen.queryByRole("button", { name: "Approve transfer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
     expect(mockApproveMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
   });
@@ -2211,7 +2391,9 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       // An empty failure line is out of the layout, so a card with no failure keeps the row's measures.
       expect(rule(".vex-appr__fail:empty")).toContain("position: absolute");
       expect(rule(".vex-appr__fail")).toContain("padding: 10px var(--vex-appr-inset)");
-      expect(row).toContain("position: static");
+      // Relative, so the clip cue can lie over the view from the row; it takes no room.
+      expect(row).toContain("position: relative");
+      expect(row).not.toContain('"cue');
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
       // Cloud's instruction row: at least 56 high, 16 around the words.
       expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("min-height: 56px");
@@ -2224,7 +2406,7 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     it("steps the keys down on a narrow column as Cloud does: Reject 128, approve 168 at 20 a side, the middle 18 in", () => {
       const narrow = /@container \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
       expect(narrow).toMatch(/\.vex-appr__foot\[data-docked\] \{\s*grid-template-columns: 128px minmax\(0, 1fr\) 168px;\s*\}/);
-      expect(narrow).toMatch(/\[data-vex-key="approve"\] \{\s*padding: 0 20px;\s*\}/);
+      expect(narrow).toMatch(/\[data-vex-key="approve"\],\s*\.vex-appr__foot\[data-docked\] > \[data-vex-key="send"\] \{\s*padding: 0 20px;\s*\}/);
       expect(narrow).toMatch(/\.vex-appr__gate \{\s*padding: 0 18px;\s*\}/);
       // The 560 step comes after it, so the narrowest chat still stacks its keys.
       expect(sheet.indexOf("@container (max-width: 720px)")).toBeLessThan(sheet.indexOf("@container (max-width: 560px)"));

@@ -25,7 +25,10 @@ type PendingData =
 let pendingState: PendingData = { data: undefined };
 /** The approvals read (`approvals.get`) by id, for the closed cards. */
 let records = new Map<string, ApprovalSummaryDto | null>();
-type MutateOptions = { onSuccess?: (result: Result<ApprovalActionResult>) => void };
+type MutateOptions = {
+  onSuccess?: (result: Result<ApprovalActionResult>) => void;
+  onError?: (error: Error) => void;
+};
 let rejectMutate = vi.fn<(input: unknown, options?: MutateOptions) => void>();
 const refetch = vi.fn();
 
@@ -42,6 +45,9 @@ vi.mock("../../../lib/api/approvals.js", () => ({
 const { ApprovalsRegion } = await import("../ApprovalsRegion.js");
 const { ApprovalDockProvider } = await import("../ApprovalCard/approval-dock.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
+const { lastApprovalDecision, resetApprovalDecisionSignalForTests, subscribeApprovalDecisions } = await import(
+  "../approvals/decision-signal.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000aa01";
 
@@ -92,6 +98,7 @@ beforeEach(() => {
   records = new Map();
   rejectMutate = vi.fn();
   refetch.mockClear();
+  resetApprovalDecisionSignalForTests();
 });
 
 describe("ApprovalsRegion", () => {
@@ -381,6 +388,116 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     expect(document.querySelector("[data-vex-area='approval-closed']")).not.toBeNull();
     rerenderWith([], "00000000-0000-4000-8000-00000000aa02");
     expect(document.querySelector("[data-vex-area='approval-closed']")).toBeNull();
+  });
+});
+
+describe("ApprovalsRegion publishes the decision signal for Kimm's mood clock (display only)", () => {
+  const reply = (over: Partial<ApprovalActionResult> = {}): ApprovalActionResult => ({
+    id: "appr-1",
+    status: "rejected",
+    resolvedAt: "2026-05-28T10:02:00.000Z",
+    runtimeOutcome: "resumed",
+    executionStatus: null,
+    missionRunId: null,
+    cached: false,
+    message: "Rejected.",
+    ...over,
+  });
+
+  it("publishes nothing until a decision lands", () => {
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    expect(lastApprovalDecision()).toBeNull();
+  });
+
+  it("publishes a landed rejection, once, with the card's own ids", () => {
+    const heard = vi.fn();
+    subscribeApprovalDecisions(heard);
+    rejectMutate.mockImplementation((_input, options) => options?.onSuccess?.({ ok: true, data: reply() }));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(rejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(lastApprovalDecision()).toEqual(
+      expect.objectContaining({ kind: "rejected", decision: "reject", approvalId: "appr-1", sessionId: SESSION }),
+    );
+  });
+
+  it("publishes a failed decision, and the card still shows its failure and keeps its keys", () => {
+    rejectMutate.mockImplementation((_input, options) => options?.onError?.(new Error("IPC channel closed.")));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(lastApprovalDecision()).toEqual(expect.objectContaining({ kind: "failed", decision: "reject" }));
+    expect(screen.getByRole("alert").textContent).toBe("IPC channel closed.");
+    expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("never lets a reader that throws reach back into the decision", () => {
+    subscribeApprovalDecisions(() => {
+      throw new Error("a broken reader");
+    });
+    rejectMutate.mockImplementation((_input, options) => options?.onSuccess?.({ ok: true, data: reply() }));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(lastApprovalDecision()?.kind).toBe("rejected");
+    expect(rejectMutate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ApprovalsRegion keeps the card's top under the header (the money rule)", () => {
+  /** A chat's scrollport, 572 high, whose sticky seat holds the docked row, 113 high; the tail space 0. */
+  function renderInChat(seatHeight: number): HTMLElement {
+    pendingState = { data: { ok: true, data: [makeSummary()] } };
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-vex-conversation-scroll") ? 572 : 0;
+    });
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-vex-composer-seat") ? seatHeight : 0;
+    });
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <div data-vex-conversation-scroll="">
+            <div>
+              <ApprovalsRegion sessionId={SESSION} />
+              <div data-vex-transcript-tail="" />
+            </div>
+            <div data-vex-composer-seat="" />
+          </div>
+        </QueryClientProvider>,
+      );
+    } finally {
+      scrollHeight.mockRestore();
+      offsetHeight.mockRestore();
+    }
+    return document.querySelector<HTMLElement>("[data-vex-area='approvals-region']") as HTMLElement;
+  }
+
+  it("holds the stack to the room above the seat, as well as 75vh", () => {
+    const region = renderInChat(113);
+    // 572 less the seat (the docked row) and the content's 16 foot.
+    expect(region.style.maxHeight).toBe("min(75vh, 443px)");
+  });
+
+  it("keeps a floor of room, so a card is never squeezed out of sight", () => {
+    const region = renderInChat(540);
+    expect(region.style.maxHeight).toBe("min(75vh, 120px)");
+  });
+
+  it("leaves 75vh alone outside a chat (no scrollport, no seat)", () => {
+    pendingState = { data: { ok: true, data: [makeSummary()] } };
+    renderRegion();
+    const region = document.querySelector<HTMLElement>("[data-vex-area='approvals-region']");
+    expect(region?.style.maxHeight).toBe("");
   });
 });
 
