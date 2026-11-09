@@ -113,6 +113,35 @@ here is a defect:
   in view blinks in phase (`StateSquare` pins its animation to document time
   zero). Reduced motion and Save-Data hold it still as half a square, so it
   never reads as the solid Filled square (`ui-primitives/marks.css`).
+- The loading hatch, 1200ms a cycle (`--vex-duration-blink-hatch`,
+  `DURATION_BLINK_HATCH_MS`) on `steps(2, end)`: the 14px hatch beside a
+  loading word (`.vex-stripes`, `LoadingHatch`) steps its opacity from 1 to
+  0.25 and back on the running square's keyframe at half its pace. It is VEX
+  Cloud's built `--vx-blink-hatch` (`docs/design/H3-DESKTOP.md` section 5.6),
+  a cross-app contract. It is mounted only while a real load lasts, so its
+  loop ends with the wait. Reduced motion and Save-Data hold it still at full
+  ink (`ui-primitives/marks.css`); the parked cover beside it never moves at
+  all.
+  `VexLoader`, desktop's loader, draws this hatch in place of R3's
+  stepping loading line.
+- The loader gate's exit (`components/brand/LoaderGate.tsx`,
+  `docs/design/H3-DESKTOP.md` section 5.9), VEX Cloud's own numbers: the
+  gate fades over 600ms (`--vex-duration-gate-fade`,
+  `DURATION_GATE_FADE_MS`, Cloud's `--vx-dur-item`) on the standard curve,
+  while its mark lifts out to 96% over 700ms (`--vex-duration-gate-mark`,
+  Cloud's `--vx-dur-gate`) on the in-out curve and fades over 500ms
+  (`--vex-duration-gate-mark-fade`, Cloud's `--vx-dur-item-fade`). Cloud
+  lifts the mark on its own `--vx-ease-gate`, cubic-bezier(0.77, 0, 0.18,
+  1); desktop takes the family's in-out curve, (0.76, 0, 0.24, 1), the
+  nearest, since the family admits no sixth. The fade is a JS pair: the
+  component's backstop timer reads `DURATION_GATE_FADE_MS` (plus 120ms)
+  in case `transitionend` never fires. Two timers of the gate are numbers,
+  not motion: a full bar rests 320ms before the fade (`GATE_HOLD_MS`) and
+  after 12 s the bar completes whatever has arrived (`GATE_CEILING_MS`).
+  The fill's walk is a count of real progress, one frame at a time (the
+  whole bar in 2.4 s, at most 50ms a frame), drawn as a clip. Reduced
+  motion and Save-Data: no walk, no rest, no fade; the gate still leaves
+  only when what it counts has arrived.
 
 ### The easing family
 

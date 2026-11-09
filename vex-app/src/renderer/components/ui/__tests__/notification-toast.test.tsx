@@ -308,6 +308,22 @@ describe("the toast's seat", () => {
     );
     expect(toastRules).not.toMatch(/button-accent|blue|box-shadow/);
   });
+
+  it("raw-CSS contract: in the header's slot the words clamp to three lines and never scroll (VEX Cloud's IN_SLOT_TEXT)", () => {
+    const slotText =
+      /\.vex-notification-stack\[data-vex-toast-seat="header"\] \.vex-notification-toast__text \{([^}]*)\}/.exec(
+        OVERLAYS_CSS,
+      )?.[1] ?? "";
+    expect(slotText).toContain("-webkit-line-clamp: 3;");
+    expect(slotText).toContain("-webkit-box-orient: vertical;");
+    expect(slotText).toContain("display: -webkit-box;");
+    expect(slotText).toContain("overflow: hidden;");
+    expect(slotText).toContain("font-size: 12px;");
+    expect(slotText).not.toMatch(/overflow-y: auto/);
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-notification-stack\[data-vex-toast-seat="header"\] \.vex-notification-act \{[^}]*padding: 0 12px;/,
+    );
+  });
 });
 
 describe("NotificationAnnouncer", () => {

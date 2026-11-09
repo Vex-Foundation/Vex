@@ -171,10 +171,56 @@ describe("roving focus survives both modes", () => {
   });
 });
 
-describe("Tabs looks (R3)", () => {
-  it("underline is the default: a quiet rule under sentence case tabs", () => {
+describe("Tabs looks", () => {
+  it("cells are the default: VEX Cloud's square cells, 13 caps, the chosen one on the open ground, no underline", () => {
     render(
       <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">Alpha</TabsTrigger>
+          <TabsTrigger value="b">Beta</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+    const list = screen.getByRole("tablist");
+    expect(list.getAttribute("data-vex-tabs")).toBe("cells");
+    expect(list.getAttribute("data-density")).toBe("panel");
+    expect(list.className).toContain("h-12");
+    expect(list.className).toContain("border-rule-quiet");
+    const chosen = screen.getByRole("tab", { name: "Alpha" });
+    const other = screen.getByRole("tab", { name: "Beta" });
+    for (const cell of [chosen, other]) {
+      expect(cell.className).toContain("uppercase");
+      expect(cell.className).toContain("text-[13px]");
+      expect(cell.className).toContain("border-r");
+      expect(cell.className).toContain("outline-offset-[-2px]");
+      expect(cell.className).not.toMatch(/border-b|accent|font-medium/);
+    }
+    expect(chosen.className).toContain("bg-interactive-active");
+    expect(chosen.className).toContain("text-ink-primary");
+    expect(other.className).not.toContain("bg-interactive-active");
+    expect(other.className).toContain("text-ink-secondary");
+  });
+
+  it.each([
+    ["nav", "h-14"],
+    ["panel", "h-12"],
+    ["compact", "h-10"],
+  ] as const)("a %s row is %s high", (density, height) => {
+    render(
+      <Tabs defaultValue="a" density={density}>
+        <TabsList>
+          <TabsTrigger value="a">Alpha</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+    expect(screen.getByRole("tablist").className).toContain(height);
+    const cell = screen.getByRole("tab", { name: "Alpha" });
+    expect(cell.className).toContain(density === "compact" ? "text-[12px]" : "text-[13px]");
+  });
+
+  it("underline stays for the approved plates: a quiet rule under sentence case tabs", () => {
+    render(
+      <Tabs defaultValue="a" variant="underline">
         <TabsList>
           <TabsTrigger value="a">Alpha</TabsTrigger>
           <TabsTrigger value="b">Beta</TabsTrigger>

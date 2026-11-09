@@ -350,7 +350,9 @@ export function WalletsStep({
           })}
         </div>
       ) : (
-      <Tabs defaultValue="evm">
+      // R3's underline tabs: the approved wallets plate draws them
+      // (docs/design/H3-DESKTOP.md section 4.9).
+      <Tabs defaultValue="evm" variant="underline">
         <TabsList>
           <TabsTrigger value="evm" className="gap-[7px]">
             <Swatch

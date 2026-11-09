@@ -187,16 +187,18 @@
    *     are retired. The name stays only so the `font-serif` utility's call
    *     sites keep compiling, as the radius names stay at zero; the display
    *     rules in the sheets read --font-display.
-   * The sans stack names its metric-matched `Fallback` twin right after the
-   * web face, so the block period lays out at the final metrics. Be Vietnam
-   * Pro carries latin-ext itself, so no coverage face follows it. */
+   * The sans and the mono stacks name their metric-matched `Fallback` twins
+   * right after the web face (VEX Cloud's numbers, fonts.css), so the block
+   * period lays out at the final metrics. Be Vietnam Pro carries latin-ext
+   * and vietnamese itself, so no coverage face follows it. */
   --font-sans:
     "Be Vietnam Pro", "Be Vietnam Pro Fallback", -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
-    "Roboto Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    "Roboto Mono", "Roboto Mono Fallback", "SF Mono", Consolas,
+    "Liberation Mono", monospace;
   --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-serif: var(--font-display);
@@ -634,6 +636,22 @@
    * running state lasts; reduced motion and Save-Data hold it still as half
    * a square. */
   --vex-duration-blink: 600ms;
+
+  /* THE LOADING HATCH (docs/design/H3-DESKTOP.md section 5.6): the 14px
+   * stepping hatch beside a loading word blinks on the same two steps at
+   * half the pace, one cycle in 1200ms, VEX Cloud's built --vx-blink-hatch.
+   * A NAMED EXCEPTION to the scale (MOTION-POLICY lists it). It loops only
+   * while the load lasts; reduced motion and Save-Data hold it still. */
+  --vex-duration-blink-hatch: 1200ms;
+
+  /* THE LOADER GATE (docs/design/H3-DESKTOP.md section 5.9): VEX Cloud's
+   * gate leaves in a 600ms fade (its --vx-dur-item) while the mark lifts out
+   * to 96% over 700ms (--vx-dur-gate) and fades over 500ms
+   * (--vx-dur-item-fade). NAMED EXCEPTIONS to the scale (MOTION-POLICY lists
+   * them), the gate's alone; reduced motion and Save-Data leave at once. */
+  --vex-duration-gate-fade: 600ms;
+  --vex-duration-gate-mark: 700ms;
+  --vex-duration-gate-mark-fade: 500ms;
 
   /* THE KEY'S FILL (docs/design/H3-DESKTOP.md section 5.2): on hover a fill
    * rises from a key's foot in 420ms, VEX Cloud's --vx-dur-fill, a named

@@ -376,6 +376,37 @@ describe("the H3 dialog", () => {
     expect(container.querySelector(".vex-dialog-kicker")?.textContent).toBe("Chat");
   });
 
+  it("hangs a money dialog's tag at the head band's end, before Close (VEX Cloud's head tag)", () => {
+    const { container } = render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent kicker="Send" tag={<span data-testid="real-funds">Mainnet</span>}>
+          <DialogTitle>Send 1 ETH?</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    const head = container.querySelector("[data-vex-dialog-head]");
+    const tag = head?.querySelector("[data-vex-dialog-tag]");
+    expect(tag?.textContent).toBe("Mainnet");
+    // Kicker, then the tag, then Close: the tag sits just before Close.
+    const order = [...(head?.children ?? [])].map((el) => el.className);
+    expect(order).toEqual(["vex-dialog-kicker", "vex-dialog-tag", "vex-dialog-x"]);
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-dialog-tag \{[^}]*gap: 8px;[^}]*margin-left: auto;[^}]*padding: 0 12px;/,
+    );
+    expect(OVERLAYS_CSS).toMatch(/\.vex-dialog-tag \+ \.vex-dialog-x \{[^}]*margin-left: 0;/);
+  });
+
+  it("draws no tag cell when none is given", () => {
+    const { container } = render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent kicker="Chat">
+          <DialogTitle>Delete this chat?</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    expect(container.querySelector("[data-vex-dialog-tag]")).toBeNull();
+  });
+
   it("raw-CSS contract: 560, the head band, the foot of cell keys and the danger confirm", () => {
     expect(OVERLAYS_CSS).toMatch(
       /dialog\.vex-dialog\[data-vex-dialog-size="default"\] \{[^}]*width: min\(560px, calc\(100vw - 32px\)\);/,

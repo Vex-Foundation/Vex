@@ -137,12 +137,90 @@ html[data-still] .vex-sq[data-state="ongoing"] {
   vertical-align: middle;
 }
 
+/* A cover in a line of text (VEX Cloud's `SkeletonText`): the line box of
+ * the text it stands for (`height: 1lh`, so it takes that role's line
+ * height) with a 12 high cover centred in it, so the row keeps its height
+ * when the words land. Its width comes inline from `CoverText`. */
+.vex-cover-line {
+  display: flex;
+  align-items: center;
+  height: 1lh;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vex-cover-line > .vex-cover {
+  width: 100%;
+}
+
 @media (forced-colors: active) {
   .vex-cover {
     forced-color-adjust: none;
     border-left-color: CanvasText;
     background: GrayText;
   }
+}
+
+/* ── The loading hatch (H3) ─────────────────────────────────────────────────
+ * VEX Cloud's `.vx-stripes` (rows.css, "the stepping hatch beside a loading
+ * word", the loader gate's cell): a 14 square of 135 degree ink-2 strokes,
+ * 1px every 4px, blinking on two steps once every 1200ms
+ * (`--vex-duration-blink-hatch`, Cloud's --vx-blink-hatch; the running
+ * square's keyframe at half its pace). It is mounted only while a load
+ * lasts, so its loop ends with the wait. Reduced motion and Save-Data hold
+ * it still at full ink: a hatch reads as loading without its blink, and no
+ * other state draws one at 14. */
+.vex-stripes {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-stripes-ink, var(--vex-alias-label-secondary)) 0 1px,
+    transparent 1px 4px
+  );
+  vertical-align: middle;
+  animation: vex-sq-blink var(--vex-duration-blink-hatch) steps(2, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-stripes {
+    animation: none;
+  }
+}
+
+html[data-still] .vex-stripes {
+  animation: none;
+}
+
+@media (forced-colors: active) {
+  .vex-stripes {
+    forced-color-adjust: none;
+    background: repeating-linear-gradient(135deg, CanvasText 0 1px, transparent 1px 4px);
+  }
+}
+
+/* The loader (`VexLoader`): the hatch alone, its label for assistive tech
+ * only. `paper` is the hatch in ink on the dark pre-shell plate. */
+.vex-loader-hatch {
+  display: inline-flex;
+  flex: none;
+}
+
+.vex-loader-hatch--paper {
+  --vex-stripes-ink: var(--vex-alias-label-primary);
+}
+
+/* The loading word (Cloud's `.vx-loading-word`): the hatch, 10, then the
+ * word in ink at 14. */
+.vex-loading-word {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
 }
 
 /* ── Swatch ────────────────────────────────────────────────────────────────
@@ -426,6 +504,8 @@ html[data-still] .vex-swatch {
 }
 
 /* ── Loading line ──────────────────────────────────────────────────────────
+ * R3's line. `VexLoader` draws the loading hatch now (above); the memory
+ * panel's own loading row is the line's last holder.
  * A word and a quiet line, never a skeleton of fake numbers: a 2px track in
  * the quiet rule with one blue segment 34% wide. It loops only while it is
  * mounted, and consumers mount it only for a real pending state: the segment

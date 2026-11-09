@@ -10,8 +10,10 @@
  *
  *   1. every `@font-face` for an H3 face names a file that is on disk and IS a
  *      WOFF2 (its magic number), at the weight the file was cut for;
- *   2. each face covers latin and latin-ext and nothing else, so Polish still
- *      renders in the face rather than in the fallback;
+ *   2. each face covers latin, latin-ext or vietnamese, one subset per file,
+ *      so Polish and Vietnamese render in the face rather than the fallback,
+ *      and each vietnamese face follows its weight's latin-ext face (the
+ *      LAST face whose range holds a letter serves it);
  *   3. its licence ships beside the others and NOTICE.txt lists every file;
  *   4. the faces block like every other face (local files load at once, so
  *      blocking avoids the fallback swap);
@@ -50,6 +52,7 @@ function fileOf(face: string): string {
 
 const LATIN = "U+0000-00FF";
 const LATIN_EXT = "U+0100-02BA";
+const VIETNAMESE = "U+0102-0103";
 
 interface BundledFace {
   readonly family: string;
@@ -65,8 +68,10 @@ const H3_FACES: readonly BundledFace[] = [
     files: {
       "be-vietnam-pro-latin-400-normal.woff2": "400",
       "be-vietnam-pro-latin-ext-400-normal.woff2": "400",
+      "be-vietnam-pro-vietnamese-400-normal.woff2": "400",
       "be-vietnam-pro-latin-600-normal.woff2": "600",
       "be-vietnam-pro-latin-ext-600-normal.woff2": "600",
+      "be-vietnam-pro-vietnamese-600-normal.woff2": "600",
     },
   },
   {
@@ -76,6 +81,7 @@ const H3_FACES: readonly BundledFace[] = [
     files: {
       "roboto-mono-latin-400-normal.woff2": "400",
       "roboto-mono-latin-ext-400-normal.woff2": "400",
+      "roboto-mono-vietnamese-400-normal.woff2": "400",
       "roboto-mono-latin-700-normal.woff2": "700",
       "roboto-mono-latin-ext-700-normal.woff2": "700",
     },
@@ -101,11 +107,24 @@ describe.each(H3_FACES)("the bundled $family", ({ family, licence, files }) => {
     }
   });
 
-  it("covers latin and latin-ext, one subset per file", () => {
+  it("covers latin, latin-ext or vietnamese, one subset per file", () => {
     for (const face of faces) {
       const file = fileOf(face);
-      const subset = file.includes("-latin-ext-") ? LATIN_EXT : LATIN;
+      const subset = file.includes("-latin-ext-")
+        ? LATIN_EXT
+        : file.includes("-vietnamese-")
+          ? VIETNAMESE
+          : LATIN;
       expect(face, file).toMatch(new RegExp(`unicode-range:\\s*${subset.replace("+", "\\+")},`));
+    }
+  });
+
+  it("puts each vietnamese face after its weight's latin-ext face, so it serves the letters both list", () => {
+    const order = faces.map(fileOf);
+    for (const file of order.filter((name) => name.includes("-vietnamese-"))) {
+      const ext = file.replace("-vietnamese-", "-latin-ext-");
+      expect(order.indexOf(file), file).toBeGreaterThan(order.indexOf(ext));
+      expect(order.indexOf(ext), ext).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -153,14 +172,25 @@ describe("R3's retired faces", () => {
   });
 });
 
-describe("the metric twin", () => {
+describe("the metric twins (VEX Cloud's generated numbers)", () => {
   it("rescales a local Arial to Be Vietnam Pro's metrics", () => {
     const [twin] = facesOf("Be Vietnam Pro Fallback");
     expect(twin).toBeDefined();
     expect(twin).toContain('src: local("Arial"), local("ArialMT"), local("Liberation Sans");');
-    expect(twin).toMatch(/size-adjust:\s*110\.36%;/);
-    expect(twin).toMatch(/ascent-override:\s*90\.61%;/);
-    expect(twin).toMatch(/descent-override:\s*24\.01%;/);
+    expect(twin).toMatch(/size-adjust:\s*107\.0523%;/);
+    expect(twin).toMatch(/ascent-override:\s*93\.4123%;/);
+    expect(twin).toMatch(/descent-override:\s*24\.7543%;/);
     expect(twin).toMatch(/line-gap-override:\s*0%;/);
+  });
+
+  it("sets a local Courier New to Roboto Mono's vertical metrics, and the mono stack names it", () => {
+    const [twin] = facesOf("Roboto Mono Fallback");
+    expect(twin).toBeDefined();
+    expect(twin).toContain('src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono");');
+    expect(twin).toMatch(/size-adjust:\s*100%;/);
+    expect(twin).toMatch(/ascent-override:\s*104\.7852%;/);
+    expect(twin).toMatch(/descent-override:\s*27\.0996%;/);
+    const tokens = readFileSync(path.join(here, "..", "tokens.css"), "utf8");
+    expect(tokens).toMatch(/--font-mono:\s*"Roboto Mono", "Roboto Mono Fallback",/);
   });
 });

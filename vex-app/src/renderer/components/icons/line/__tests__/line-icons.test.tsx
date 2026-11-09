@@ -2,9 +2,10 @@
  * Catalogue contract of the line icons (docs/design/R3-MINIMAL.md section 1.7):
  * the exact set of names, the 16 x 16 frame, the paint rules (currentColor
  * stroke, no fill literal, no colour, no inline style), the drawing of every
- * icon equal to its row in appendix A (H3's nav glyphs, which have none, are
- * listed as derived), and the exports that tie the components, the registry
- * and the by-name component together.
+ * icon equal to its row in appendix A, and the exports that tie the
+ * components, the registry and the by-name component together. H3's nav
+ * names draw VEX's filled glyphs instead (docs/design/H3-DESKTOP.md section
+ * 4.6), checked at the end against the glyph data.
  */
 
 import { describe, expect, it } from "vitest";
@@ -12,7 +13,8 @@ import { render } from "@testing-library/react";
 import type { JSX } from "react";
 import SPEC from "../../../../../../docs/design/R3-MINIMAL.md?raw";
 import * as line from "../index.js";
-import { LINE_GLYPHS } from "../line-glyphs.js";
+import { glyphParts } from "../../glyph/Glyph.js";
+import { H3_NAV_GLYPHS, LINE_GLYPHS } from "../line-glyphs.js";
 
 const EXPECTED_NAMES = [
   "activity", "archive", "arrow-down", "arrow-up", "arrows", "attach", "back", "bars", "bell",
@@ -26,10 +28,18 @@ const EXPECTED_NAMES = [
   "settings", "shield", "spark", "split-horizontal", "split-vertical", "stop", "strategies",
   "studio", "sun", "swap", "terminal", "thumbs-down", "trash", "trend-line", "tuning", "undo", "update", "user",
   "users", "vault", "wallet", "warning", "watchlist", "wifi", "wifi-off", "zen",
-  // H3's nav glyphs (docs/design/H3-DESKTOP.md section 4.6).
-  "h3-new-chat", "h3-chat", "h3-missions", "h3-markets", "h3-portfolio", "h3-activity",
-  "h3-settings",
 ];
+
+/** H3's nav names (docs/design/H3-DESKTOP.md section 4.6) and the filled glyph each draws. */
+const H3_NAMES: Readonly<Record<string, string>> = {
+  "h3-new-chat": "rail-plus",
+  "h3-chat": "rail-ask",
+  "h3-missions": "cube",
+  "h3-markets": "rail-chart",
+  "h3-portfolio": "vault",
+  "h3-activity": "list",
+  "h3-settings": "gear",
+};
 
 /** The names the navigation, title bar, composer, transcript, Vex sidebar and pages draw with. */
 const CHROME_NAMES = [
@@ -41,15 +51,11 @@ const CHROME_NAMES = [
 ];
 
 /**
- * Drawings without an appendix A row: H3's nav glyphs, redrawn in this grid
- * and stroke from H3's captures, which print no paths (H3-DESKTOP.md section
- * 4.6). The R3-derived ones (archive, branch, chevron-left, chevron-up,
- * question, thumbs-down, user, warning) all have rows.
+ * Line drawings without an appendix A row: none. The R3-derived ones
+ * (archive, branch, chevron-left, chevron-up, question, thumbs-down, user,
+ * warning) all have rows, and H3's nav names draw filled glyphs.
  */
-const DERIVED: string[] = [
-  "h3-new-chat", "h3-chat", "h3-missions", "h3-markets", "h3-portfolio", "h3-activity",
-  "h3-settings",
-];
+const DERIVED: string[] = [];
 
 type Glyph = ((props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element) & {
   displayName?: string;
@@ -141,15 +147,16 @@ describe("line icon catalogue", () => {
     const names = namesOf();
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort()).toEqual([...EXPECTED_NAMES].sort());
-    expect([...line.LINE_ICON_NAMES]).toEqual(names);
+    expect(Object.keys(H3_NAV_GLYPHS).sort()).toEqual(Object.keys(H3_NAMES).sort());
+    expect([...line.LINE_ICON_NAMES]).toEqual([...names, ...Object.keys(H3_NAV_GLYPHS)]);
   });
 
   it("covers every icon the nav, title bar, composer, transcript, Vex sidebar and pages use", () => {
-    for (const name of CHROME_NAMES) expect(namesOf(), name).toContain(name);
+    for (const name of CHROME_NAMES) expect(line.LINE_ICON_NAMES, name).toContain(name);
   });
 
   it("exports one named component per icon, the registry and the by-name component", () => {
-    const names = namesOf();
+    const names = line.LINE_ICON_NAMES;
     for (const name of names) {
       const Glyph = glyphOf(name);
       expect(typeof Glyph, name).toBe("function");
@@ -276,5 +283,44 @@ describe("line icons against the design spec", () => {
 
   it("keeps the send arrow and the up arrow one drawing", () => {
     expect(canonInner(svgOf(<line.LineSend />))).toBe(canonInner(svgOf(<line.LineArrowUp />)));
+  });
+});
+
+describe("H3's nav names draw VEX's filled glyphs", () => {
+  it("maps each nav name to its DG-1 glyph, as VEX Cloud's nav", () => {
+    expect({ ...H3_NAV_GLYPHS }).toEqual(H3_NAMES);
+  });
+
+  it("draws the glyph's own parts on the 24 grid in currentColor, at 16 by default", () => {
+    for (const [name, glyph] of Object.entries(H3_NAV_GLYPHS)) {
+      const svg = svgOf(<line.LineIcon name={name as keyof typeof H3_NAV_GLYPHS} />);
+      expect(svg.getAttribute("viewBox"), name).toBe("0 0 24 24");
+      expect(svg.getAttribute("fill"), name).toBe("currentColor");
+      expect(svg.getAttribute("stroke"), name).toBeNull();
+      expect(svg.getAttribute("width"), name).toBe("16");
+      expect(svg.getAttribute("aria-hidden"), name).toBe("true");
+      expect(svg.getAttribute("focusable"), name).toBe("false");
+      const want = svgOf(<svg>{glyphParts(glyph)}</svg>);
+      expect(canonInner(svg), name).toBe(canonInner(want));
+      expect(svg.outerHTML, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b|style=|<use|<image|<text/);
+    }
+  });
+
+  it("keeps the cube's three tones as opacities of one ink", () => {
+    const svg = svgOf(<line.LineH3Missions />);
+    expect([...svg.querySelectorAll("path")].map((p) => p.getAttribute("opacity"))).toEqual([
+      null,
+      "0.7",
+      "0.45",
+    ]);
+  });
+
+  it("takes a size and a class through the same props, on the component and by name", () => {
+    const svg = svgOf(<line.LineH3Chat size={20} className="probe" />);
+    expect(svg.getAttribute("width")).toBe("20");
+    expect(svg.classList.contains("probe")).toBe(true);
+    expect(svg.outerHTML).toBe(
+      svgOf(<line.LineIcon name="h3-chat" size={20} className="probe" />).outerHTML,
+    );
   });
 });

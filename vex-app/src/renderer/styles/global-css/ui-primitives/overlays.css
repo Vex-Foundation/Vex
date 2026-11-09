@@ -120,6 +120,22 @@ dialog.vex-dialog[data-vex-dialog-size="default"] {
   background-color: var(--vex-alias-label-primary);
 }
 
+/* The head's tag (VEX Cloud's `.vx-dlg-tag`, e1083f44): a money dialog's
+ * network word and its solid REAL FUNDS tag, at the band's end before
+ * Close, gap 8 and 12 each side. Close then follows it directly. */
+.vex-dialog-tag {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 0 12px;
+}
+
+.vex-dialog-tag + .vex-dialog-x {
+  margin-left: 0;
+}
+
 .vex-dialog-x {
   display: grid;
   flex: none;
@@ -463,21 +479,33 @@ dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
   padding-left: 4px;
 }
 
-/* The slot never grows past the header onto the card: words longer than the
- * cell scroll inside it, never cut (the whole sentence is in the center and
- * was announced). */
+/* The slot never grows past the header onto the card: the words are 12
+ * clamped to three lines (VEX Cloud's `IN_SLOT_TEXT`, `line-clamp-3`), an
+ * ellipsis ending the third. Nothing is lost: the whole sentence is in the
+ * notification center and was announced. Three lines of 12/1.35 are 49, so
+ * with 8 above and below they stand inside the header's 76 cell. */
 .vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast__text {
+  display: -webkit-box;
   flex: 1;
   max-height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 8px 18px 8px 0;
   font-size: 12px;
   line-height: 1.35;
   letter-spacing: 0.02em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast__title + .vex-notification-toast__message {
   font-size: 12px;
+}
+
+/* In the slot an action is the cell's own key: its left rule, padding 0 12
+ * (Cloud's `IN_SLOT_ACTION`). */
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-act {
+  padding: 0 12px;
 }
 
 /* Reduced motion drops the entrance (movement) and keeps the exit fade

@@ -281,6 +281,10 @@ export function TerminalTabs({
         value={activeTabId}
         onValueChange={onSelectTab}
         idScope={TERMINAL_TABS_ID_SCOPE}
+        // R3's underline look under this strip's own overrides: the approved
+        // Studio plate draws its tab shells (docs/design/H3-DESKTOP.md
+        // section 4.9), not the kit's cells.
+        variant="underline"
         className="min-h-0 shrink-0"
       >
         {/* THE TABS ROW, 56 high: the tabs (they scroll sideways when they

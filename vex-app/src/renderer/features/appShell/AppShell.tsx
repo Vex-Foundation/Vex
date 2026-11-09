@@ -401,6 +401,12 @@ function ShellFrame({
   // The chats panel lies over what is read where no Vex column stands under
   // it: the band, or a page whose column folded to its strip.
   const chatsPanelCovers = band || cols.vex === 0;
+  // While the panel is open it lies over Vex's whole column (the console, her
+  // section, the band under 1024 and the tagline at its foot), so all of it
+  // rests (`inert`) until it closes: Tab and a screen reader never reach what
+  // the panel covers (VEX Cloud's nav-parts.tsx, the panel's inert scope;
+  // docs/design/H3-DESKTOP.md section 4.12). Closing restores it.
+  const chatsPanelOverVex = chatsPanelOn && chatsPanel.open;
   // UNDER 1024, HER BAND (docs/design/H3-DESKTOP.md section 1.10; VEX
   // Cloud's 768 to 1023 layout and PD-12). Her section is a band over the
   // chat's top, under the console line. It starts closed on every visit and
@@ -660,7 +666,7 @@ function ShellFrame({
       key="centre"
       ref={centreRef}
       className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
-      inert={chatsPanelOn && chatsPanel.open && chatsPanelCovers}
+      inert={chatsPanelOverVex && chatsPanelCovers}
     >
       {/* G10 - the offline row: only an actual outage renders it. A row of
         * the centre column under its head row (R3-MINIMAL.md section 12,
@@ -722,6 +728,7 @@ function ShellFrame({
       key="vex"
       ref={vexColumnRef}
       className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible"
+      inert={chatsPanelOverVex}
     >
       {/* Mounted in every session - the sidebar owns its hidden rendering,
        * so a fold never remounts the column. `vexColumnStands` folds the
@@ -777,7 +784,12 @@ function ShellFrame({
     </div>
   );
   const taglineCell = (
-    <div key="tagline" className="vex-shell-tagline vex-drag" data-vex-area="tagline-cell">
+    <div
+      key="tagline"
+      className="vex-shell-tagline vex-drag"
+      data-vex-area="tagline-cell"
+      inert={chatsPanelOverVex}
+    >
       {/* The moment's tagline (H3-DESKTOP.md Appendix A.6), from her state. */}
       <TaglineCell />
     </div>
