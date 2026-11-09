@@ -27,9 +27,11 @@
  *
  * FAIL-CLOSED STATES, following the token-history precedent exactly: a page
  * that timed out arrives as `"unavailable"` and renders the calm try-again
- * note, NEVER the empty state - a timeout must not read as "the agent has done
+ * block, NEVER the empty state - a timeout must not read as "the agent has done
  * nothing". An empty result while FILTERS ARE ACTIVE says so explicitly, so a
- * narrowed feed is never mistaken for an empty history.
+ * narrowed feed is never mistaken for an empty history. A failed REFRESH over
+ * rows already shown keeps them, with "Couldn't refresh activity." and Retry
+ * above the feed (`useKeptRead`, H3-DESKTOP section 1.9).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -47,6 +49,8 @@ import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import type { AgentScanRouteScope } from "../../../stores/uiStore/shell-route.js";
 import { ShellScreen } from "./ShellScreen.js";
 import { PageBar } from "./PageBar.js";
+import { useKeptRead } from "./kept-read.js";
+import { LoadFailedBlock, RefreshFailedNotice } from "./RefreshNotice.js";
 import {
   activeFilterCount,
   AgentScanFilterBar,
@@ -77,7 +81,7 @@ function screenSubtitle(scope: AgentScanRouteScope): string {
   }
 }
 
-/** Starting height guess per row (the 52 min height plus its rule); real heights are measured after mount. */
+/** Starting height guess per row (the 56 min height plus its rule); real heights are measured after mount. */
 const ESTIMATED_ROW_PX = 60;
 
 /** Rows kept mounted beyond the visible window, to cover fast scrolling. */
@@ -106,6 +110,9 @@ type FeedRow =
       readonly key: string;
       readonly entry: AgentScanLighterFillEntry;
     };
+
+const NO_PAGES: readonly Result<AgentScanDto>[] = [];
+const NO_ENTRIES: readonly AgentScanEntry[] = [];
 
 /** Narrow one query page to its available payload, else null. */
 function availablePage(
@@ -186,9 +193,29 @@ export function AgentScanScreen({
   const filters = useMemo(() => toAgentScanFilters(filterState), [filterState]);
   const query = useAgentScanInfinite(filters);
 
-  const pages = query.data?.pages ?? [];
+  const pages = query.data?.pages ?? NO_PAGES;
   const firstPage = pages[0];
-  const entries = pages.flatMap((page) => availablePage(page)?.entries ?? []);
+  // The newest read's rows, or null when its first page has none to give
+  // (refused, timed out, or nothing answered yet).
+  const freshEntries = useMemo(
+    () =>
+      availablePage(pages[0]) === null
+        ? null
+        : pages.flatMap((page) => availablePage(page)?.entries ?? []),
+    [pages],
+  );
+  const firstPageFailed =
+    firstPage !== undefined && (!firstPage.ok || firstPage.data.status !== "available");
+  // A failed refresh keeps the rows already shown (H3-DESKTOP section 1.9):
+  // the feed's first page resolves as a refusal or a timeout, which would
+  // otherwise replace them.
+  const kept = useKeptRead(
+    JSON.stringify(filters),
+    freshEntries,
+    query.dataUpdatedAt,
+    firstPageFailed || query.isError,
+  );
+  const entries = kept.value ?? NO_ENTRIES;
   const rows = useMemo(() => buildFeedRows(entries), [entries]);
 
   // A LATER page can fail or time out after rows already rendered - pagination
@@ -232,24 +259,24 @@ export function AgentScanScreen({
   const filtersActive = isFeedNarrowed(filterState);
   const scopeNarrowed = scope.kind !== "global";
 
+  const retry = query.refetch;
   let body: JSX.Element;
   if (query.isLoading) {
     body = <FeedNote tone="quiet">Loading…</FeedNote>;
-  } else if (firstPage !== undefined && !firstPage.ok) {
-    body = <FeedNote tone="warn">Couldn&apos;t load activity.</FeedNote>;
-  } else if (
-    firstPage !== undefined &&
-    firstPage.ok &&
-    firstPage.data.status === "unavailable"
-  ) {
-    // Timeout degradation: NEVER rendered as an empty history.
-    body = (
-      <FeedNote tone="calm">
-        Activity is unavailable right now - try again shortly.
-      </FeedNote>
-    );
-  } else if (query.isError) {
-    body = <FeedNote tone="warn">Couldn&apos;t load activity.</FeedNote>;
+  } else if (kept.value === null && kept.failed) {
+    // Nothing was read for these filters: the block, with Retry. A timeout
+    // is NEVER rendered as an empty history.
+    body =
+      firstPage !== undefined && firstPage.ok && firstPage.data.status === "unavailable" ? (
+        <LoadFailedBlock
+          scope="Agent Scan"
+          state="concerned"
+          text="Activity is unavailable right now - try again shortly."
+          onRetry={retry}
+        />
+      ) : (
+        <LoadFailedBlock scope="Agent Scan" text="Couldn't load activity." onRetry={retry} />
+      );
   } else if (rows.length === 0) {
     body = filtersActive ? (
       // A narrowed feed must never read as an empty history.
@@ -269,7 +296,7 @@ export function AgentScanScreen({
     body = (
       <ul
         aria-label="Activity"
-        className="relative w-full list-none"
+        className="vex-scan-rows relative w-full list-none"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
         {virtualRows.map((virtualRow) => {
@@ -305,10 +332,12 @@ export function AgentScanScreen({
       chapter={null}
       width="wide"
       fill
+      busy={query.isLoading}
       // The H3 frame's row (docs/design/H3-DESKTOP.md section 1.9): no tabs
       // (the four filter menus narrow the feed, they do not switch pages),
-      // and "Updated" at the fetch time of the feed's newest page.
-      bar={<PageBar updatedAt={query.dataUpdatedAt} />}
+      // and "Updated" at the fetch time of the rows on screen (after a failed
+      // refresh, the time of the rows kept, never the failure's).
+      bar={<PageBar updatedAt={kept.at} />}
     >
       <div className="flex min-h-0 w-full flex-1 flex-col">
         <p className="vex-scan-lead">{screenSubtitle(scope)}</p>
@@ -317,6 +346,9 @@ export function AgentScanScreen({
           onChange={onFiltersChange}
           projectName={projectName}
         />
+        {kept.value !== null && kept.failed ? (
+          <RefreshFailedNotice text="Couldn't refresh activity." onRetry={retry} />
+        ) : null}
         <div ref={scrollRef} className="vex-scroll min-h-0 flex-1 overflow-y-auto">
           {body}
           {laterPageDegraded ? (

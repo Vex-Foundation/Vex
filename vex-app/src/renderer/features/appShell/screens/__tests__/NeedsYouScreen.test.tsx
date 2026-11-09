@@ -262,7 +262,7 @@ describe("NeedsYouScreen: the page", () => {
   it("draws the page with its lead inside the Needs you sheet", () => {
     listed(send());
     renderPage();
-    expect(screen.getByRole("dialog", { name: "Needs you" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Needs you" })).not.toBeNull();
     expect(pageEl().getAttribute("data-state")).toBe("ready");
     expect(within(pageEl()).getByText(LEAD)).not.toBeNull();
   });

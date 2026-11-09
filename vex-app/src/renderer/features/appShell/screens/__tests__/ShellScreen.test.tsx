@@ -3,7 +3,8 @@
  * 2.3, 9.2, 9.6 and 12).
  *
  * Contract pinned here:
- *   1. renders as a modal dialog named by its title, with the serif page head
+ *   1. renders as a labelled region named by its title, never a modal dialog
+ *      (H3-DESKTOP section 1.9), busy while its first read runs, with the serif page head
  *      as its h1 (or a visually hidden h1 when the page draws none), and NO
  *      crumb or close row of its own: the title bar carries the crumb and,
  *      where a page has no other way back, its close key;
@@ -22,8 +23,8 @@
  *   4. reduced motion renders the final frame safely (no enter animation
  *      required for the content to be present), with or without an origin;
  *   5. the optional `header` slot replaces the serif H1 while `title` keeps
- *      naming the dialog and the close key (token-history screen contract);
- *   6. focus returns to the trigger control on unmount (and is never stolen
+ *      naming the region and the close key (token-history screen contract);
+ *   6. on open the page's h1 takes the focus; focus returns to the trigger control on unmount (and is never stolen
  *      from a control another surface focused meanwhile);
  *   7. Escape returns to the PREVIOUS route: the page the user came from, else
  *      the host's close. Going up a crumb cuts the way back; a return to the
@@ -68,15 +69,17 @@ function stubMatchMedia(matches: boolean): void {
 }
 
 describe("ShellScreen", () => {
-  it("opens as a titled modal dialog with the serif head as its h1, and no crumb or close row", () => {
+  it("opens as a titled region, not a modal dialog, with the serif head as its h1, and no crumb or close row", () => {
     render(
       <ShellScreen title="Memory" origin={ORIGIN} onClose={vi.fn()}>
         <p>screen content</p>
       </ShellScreen>,
     );
 
-    const overlay = screen.getByRole("dialog", { name: "Memory" });
-    expect(overlay.getAttribute("aria-modal")).toBe("true");
+    const overlay = screen.getByRole("region", { name: "Memory" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(overlay.getAttribute("aria-modal")).toBeNull();
+    expect(overlay.getAttribute("aria-busy")).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "Memory" })).not.toBeNull();
     expect(screen.getByText("screen content")).not.toBeNull();
     // The title bar says where you are; the page starts with its content.
@@ -90,7 +93,7 @@ describe("ShellScreen", () => {
         <p>screen content</p>
       </ShellScreen>,
     );
-    const overlay = screen.getByRole("dialog", { name: "Memory" });
+    const overlay = screen.getByRole("region", { name: "Memory" });
     // The class contract that keeps the overlay OUT of shell flow (its rules
     // live in overlay.css). Pinned as classes: jsdom does not lay out CSS.
     expect(overlay.classList.contains("vex-ov")).toBe(true);
@@ -109,7 +112,7 @@ describe("ShellScreen", () => {
       </ShellScreen>,
     );
     expect(
-      screen.getByRole("dialog", { name: "Sessions" }).getAttribute("data-vex-morph"),
+      screen.getByRole("region", { name: "Sessions" }).getAttribute("data-vex-morph"),
     ).toBe("center");
   });
 
@@ -220,7 +223,7 @@ describe("ShellScreen", () => {
 
     // The dialog stays named by `title` (a11y contract)…
     expect(
-      screen.getByRole("dialog", { name: "USD Coin history" }),
+      screen.getByRole("region", { name: "USD Coin history" }),
     ).not.toBeNull();
     // …while the default serif H1 is replaced by the custom header content.
     expect(screen.getByTestId("custom-header")).not.toBeNull();
@@ -249,8 +252,8 @@ describe("ShellScreen", () => {
     expect(document.activeElement).toBe(trigger);
 
     view.rerender(<Harness open />);
-    // The page claims focus on open (the dialog itself)…
-    expect(document.activeElement).toBe(screen.getByRole("dialog", { name: "Memory" }));
+    // The page claims focus on open: its h1, the route focus…
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1, name: "Memory" }));
 
     view.rerender(<Harness open={false} />);
     // …and hands it back to the trigger on close.
@@ -315,7 +318,7 @@ describe("ShellScreen", () => {
     expect(screen.getByText("register")).not.toBeNull();
     // Reduced motion takes the instant path - pinned on the morph attr.
     expect(
-      screen.getByRole("dialog", { name: "Sessions" }).getAttribute("data-vex-morph"),
+      screen.getByRole("region", { name: "Sessions" }).getAttribute("data-vex-morph"),
     ).toBe("reduced");
     withOrigin.unmount();
 
@@ -326,19 +329,29 @@ describe("ShellScreen", () => {
     );
     expect(screen.getByText("guide")).not.toBeNull();
     expect(
-      screen.getByRole("dialog", { name: "How Vex works" }),
+      screen.getByRole("region", { name: "How Vex works" }),
     ).not.toBeNull();
   });
 });
 
 describe("ShellScreen - the page chrome", () => {
+  it("is busy while its first read runs, and the hidden h1 takes the focus too", () => {
+    render(
+      <ShellScreen title="Agent Scan" origin={null} onClose={vi.fn()} chapter={null} busy>
+        <p>content</p>
+      </ShellScreen>,
+    );
+    expect(screen.getByRole("region", { name: "Agent Scan" }).getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1, name: "Agent Scan" }));
+  });
+
   it("draws the column it was given, reading by default", () => {
     const reading = render(
       <ShellScreen title="Memory" origin={null} onClose={vi.fn()}>
         <p>notes</p>
       </ShellScreen>,
     );
-    expect(screen.getByRole("dialog", { name: "Memory" }).getAttribute("data-width")).toBe("reading");
+    expect(screen.getByRole("region", { name: "Memory" }).getAttribute("data-width")).toBe("reading");
     reading.unmount();
 
     render(
@@ -346,7 +359,7 @@ describe("ShellScreen - the page chrome", () => {
         <p>ledger</p>
       </ShellScreen>,
     );
-    expect(screen.getByRole("dialog", { name: "Agent Scan" }).getAttribute("data-width")).toBe("wide");
+    expect(screen.getByRole("region", { name: "Agent Scan" }).getAttribute("data-width")).toBe("wide");
   });
 
   it("keeps an h1 for a page that draws no serif head", () => {

@@ -6,7 +6,8 @@
  * shadow, no blur, tokens only.
  *
  *   .vex-mem                   the register (the seven sections)
- *   .vex-mem-lead              the page's lead line (14.5, ink 2, max 640)
+ *   .vex-mem-lead              the page's lead line (14 / 1.5, ink 2, max 760:
+ *                              VEX Cloud's `.vx-pglead`)
  *   .vex-mem-card              the advisory-only guarantee: a 1px rule frame
  *   .vex-mem-more              "How memory works", a native disclosure
  *   .vex-mem-sec               one section of the register
@@ -36,9 +37,9 @@
 }
 
 .vex-mem-lead {
-  max-width: 640px;
+  max-width: 760px;
   margin: 0 0 24px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
@@ -116,11 +117,14 @@
 .vex-mem-sec {
   margin: 0 0 28px;
 }
+/* VEX Cloud's section head (`page.css`, `.vx-psec-h[data-desc]`): a head
+ * with its lead under it keeps 6 to the lead, and the lead 12 to the body;
+ * the count 12, muted, in tabular figures (`.vx-psec-count`). */
 .vex-mem-sec__head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 .vex-mem-sec__title {
   margin: 0;
@@ -132,7 +136,8 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-mem-sec__count {
-  font-size: 13px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mem-sec__lead {

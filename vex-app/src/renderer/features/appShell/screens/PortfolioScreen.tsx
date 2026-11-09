@@ -58,7 +58,7 @@ import {
   ALL_WALLETS_KEY,
   portfolioScopeOptions,
   selectScopeOption,
-  usePageScopePortfolio,
+  useKeptPageScopePortfolio,
   type PortfolioPageScope,
   type PortfolioScopeOption,
 } from "../book/portfolio/portfolio-page-scope.js";
@@ -77,14 +77,16 @@ export function PortfolioScreen({
   const sessionId = useChatSessionId();
   // The stamp's time is the fetch time of the read the total draws: the same
   // query (one key, one cache entry), so "Updated" and the figure under it
-  // can never come from two different reads.
-  const read = usePageScopePortfolio(scope);
+  // can never come from two different reads. After a failed refresh it stays
+  // the time of the figures still on screen, never the failure's.
+  const read = useKeptPageScopePortfolio(scope);
   return (
     <ShellScreen
       title="Portfolio"
       origin={origin}
       onClose={onClose}
       chapter={null}
+      busy={read.loading}
       bar={
         <PageBar
           // One option is "All wallets" alone, which is already what the page
@@ -100,7 +102,7 @@ export function PortfolioScreen({
               />
             ) : null
           }
-          updatedAt={read.dataUpdatedAt}
+          updatedAt={read.at}
           keys={<PortfolioRefreshButton />}
         />
       }

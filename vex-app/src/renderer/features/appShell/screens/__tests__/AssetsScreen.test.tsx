@@ -134,13 +134,13 @@ afterEach(() => {
 describe("AssetsScreen", () => {
   it("opens via uiStore as the titled All-assets dialog listing EVERY token line", () => {
     const view = render(<ShellScreens />);
-    expect(screen.queryByRole("dialog", { name: "All assets" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "All assets" })).toBeNull();
 
     act(() => {
       useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
     });
 
-    expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "All assets" })).not.toBeNull();
     expect(
       screen.getByRole("heading", { level: 1, name: "All assets" }),
     ).not.toBeNull();
@@ -174,7 +174,7 @@ describe("AssetsScreen", () => {
   it("closes on Escape back to shellRoute 'none' (ShellScreen chrome contract)", () => {
     useUiStore.setState({ shellRoute: { kind: "assets", origin: ORIGIN, sessionId: null } });
     render(<ShellScreens />);
-    expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "All assets" })).not.toBeNull();
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
@@ -290,7 +290,7 @@ describe("AssetsScreen - token-history eye", () => {
       },
     });
     render(<ShellScreens />);
-    expect(screen.queryByRole("dialog", { name: "All assets" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "All assets" })).toBeNull();
 
     // The stub's close wire is the same `onClose` the real screen's Escape/
     // close-key path fires (TokenHistoryScreen.test pins the Escape half).
@@ -304,7 +304,7 @@ describe("AssetsScreen - token-history eye", () => {
       origin: null,
       sessionId: null,
     });
-    expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "All assets" })).not.toBeNull();
   });
 });
 
@@ -394,7 +394,7 @@ describe("AssetsScreen - session scope (C4)", () => {
       sessionId: SESSION,
     });
     expect(
-      screen.getByRole("dialog", { name: "Session assets" }),
+      screen.getByRole("region", { name: "Session assets" }),
     ).not.toBeNull();
   });
 
@@ -463,7 +463,7 @@ describe("AssetsScreen - project scope (Studio parity)", () => {
     });
     expect(mockUseProject).toHaveBeenCalledWith(PROJECT);
     expect(
-      screen.getByRole("dialog", { name: "Project assets: vex-core" }),
+      screen.getByRole("region", { name: "Project assets: vex-core" }),
     ).not.toBeNull();
   });
 
@@ -472,7 +472,7 @@ describe("AssetsScreen - project scope (Studio parity)", () => {
       shellRoute: { kind: "assets", origin: null, projectId: PROJECT },
     });
     render(<ShellScreens />);
-    expect(screen.getByRole("dialog", { name: "Project assets" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Project assets" })).not.toBeNull();
   });
 
   it("the token-history close path returns to the PROJECT register, never the global one", () => {

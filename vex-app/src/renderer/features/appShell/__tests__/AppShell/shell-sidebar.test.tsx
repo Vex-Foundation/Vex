@@ -498,7 +498,7 @@ describe("AppShell", () => {
 
     expect(useUiStore.getState().shellRoute.kind).toBe("sessions");
     // The full-app screen chrome + the library register inside it.
-    const overlay = await screen.findByRole("dialog", { name: "Sessions" });
+    const overlay = await screen.findByRole("region", { name: "Sessions" });
     expect(
       overlay.querySelector("[data-vex-screen='sessions-library']"),
     ).not.toBeNull();

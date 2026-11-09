@@ -1,8 +1,12 @@
 /**
  * The Preferences section of the Settings page (docs/design/R3-MINIMAL.md
  * section 9.6): the head, then one row per setting under a hairline rule:
- * Show Vex, the Session permission explainer, the Background image
- * (`SettingsBackdropRow`), the composer Enter key and the two switches.
+ * Show Vex, the Session permission explainer, the composer Enter key and the
+ * switches.
+ *
+ * There is no Background row (owner decision, 2026-11-08): it offered an
+ * image for the print window of Vex's sidebar, which H3 no longer has. A
+ * stored image stays where main keeps it, unread, so nothing is lost.
  *
  * There is no Appearance row: H3 is dark only (the H3 revamp plan, decision
  * 6), so Celeris and the "System" choice left with the theme picker, and a
@@ -28,7 +32,6 @@ import {
 import { usePriceAlertsOsSetting } from "../../../../lib/api/notification-preferences.js";
 import { studioPlatform } from "../../studio/keybindings-labels.js";
 import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
-import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 import { SettingsHead } from "./SettingsHead.js";
 
 interface SubmitChoice {
@@ -228,7 +231,6 @@ export function SettingsPreferences(): JSX.Element {
       <div className="vex-prefs__list">
         <ShowVexRow />
         <SessionPermissionRow />
-        <SettingsBackdropRow />
         <SubmitKeyRow />
         <NotificationsRow />
         <PriceAlertNotificationsRow />

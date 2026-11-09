@@ -155,7 +155,8 @@
 }
 
 /* The section head: the name as H3's card sentence (20 / 400) with its status
- * word (13 caps, ink 2), the lead 15 / 1.55 ink 2. */
+ * word (13 caps, ink 2), the lead VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2,
+ * at most 760. */
 .vex-set__head {
   margin: 0 0 24px;
 }
@@ -181,10 +182,10 @@
   color: var(--vex-alias-label-secondary);
 }
 .vex-set__lead {
-  max-width: 620px;
+  max-width: 760px;
   margin: 0;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
 
@@ -434,43 +435,5 @@
 @media (prefers-reduced-motion: reduce) {
   .vex-switch::after {
     transition: none;
-  }
-}
-
-/* The Background preview: a 16:9 plate in the shape of the image it previews. */
-.vex-backdrop-preview {
-  position: relative;
-  width: 112px;
-  height: 63px;
-  flex: none;
-  overflow: hidden;
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
-}
-.vex-backdrop-preview > img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.vex-backdrop-preview__remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  background: var(--vex-alias-label-box);
-  color: var(--vex-alias-label-on-chrome);
-  opacity: 0;
-}
-.vex-backdrop-preview:hover .vex-backdrop-preview__remove,
-.vex-backdrop-preview__remove:focus-visible {
-  opacity: 1;
-}
-@media (pointer: coarse) {
-  .vex-backdrop-preview__remove {
-    opacity: 1;
   }
 }
