@@ -28,20 +28,19 @@ function rule(selector: string): string {
 
 describe("the header's popovers", () => {
   it("hang from the header's rule, under their control's right edge", () => {
-    const body = rule(".vex-shell-head :is(.vex-tb-pop--needs, .vex-tb-pop--notices)");
+    const body = rule(".vex-shell-head .vex-tb-pop--notices");
     expect(body).toContain("top: calc(100% + 1px);");
     expect(body).toContain("right: 0;");
   });
 
   it("anchor on a control box that stands the cell's full height", () => {
-    const body = rule(".vex-shell-head :is(.vex-tb-needs, .vex-tb-notices)");
+    const body = rule(".vex-shell-head .vex-tb-notices");
     expect(body).toContain("position: relative;");
     expect(body).toContain("align-self: stretch;");
     expect(rule(".vex-shell-head .vex-running-head__flank")).toContain("align-self: stretch;");
   });
 
   it("leave R3's anchors in place for the desk's title row", () => {
-    expect(rule(".vex-tb-pop--needs")).toContain("top: calc(100% + 2px);");
     expect(rule(".vex-tb-pop--notices")).toContain("top: 50px;");
   });
 });

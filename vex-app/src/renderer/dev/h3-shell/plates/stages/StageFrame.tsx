@@ -140,7 +140,7 @@ function VexKeyCells({ vex }: { readonly vex: StageVexKey }): JSX.Element {
           <Keycaps chord={VEX_TOGGLE_CHORD} platform={platform()} decorative />
         </span>
       </span>
-      <span className="vex-key__chevron">
+      <span className="vex-key__chevron" data-open="">
         <LineChevronUp size={16} />
       </span>
     </button>

@@ -14,6 +14,9 @@
  * row that is a provenance stamp, and `shell-sidebar.test.tsx` pins it there).
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Result } from "@shared/ipc/result.js";
@@ -127,18 +130,18 @@ describe("getRuntimeStatus", () => {
 describe("SidebarProfile foot", () => {
   it("makes Lock Vex findable in expanded and collapsed profile menus", () => {
     const expanded = render(<SidebarProfile sidebarOpen />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(screen.getByRole("menuitem", { name: /Lock Vex.*Require your password to return/ })).not.toBeNull();
     expanded.unmount();
     render(<SidebarProfile sidebarOpen={false} menuSide="bottom" />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(screen.getByRole("menuitem", { name: /Lock Vex/ })).not.toBeNull();
   });
 
   it("shows Lock Vex's chord from the one constant the Settings Vault row shares", async () => {
     const { LOCK_VEX_SHORTCUT } = await import("../LockVexControl.js");
     render(<SidebarProfile sidebarOpen />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     const lock = screen.getByRole("menuitem", { name: /Lock Vex/ });
     expect(lock.querySelector(".vex-menu-shortcut")?.textContent).toBe(LOCK_VEX_SHORTCUT);
   });
@@ -146,7 +149,7 @@ describe("SidebarProfile foot", () => {
   it("hides Lock Vex when its rollback flag is off", () => {
     feature.enabled = false;
     render(<SidebarProfile sidebarOpen />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(screen.queryByRole("menuitem", { name: /Lock Vex/ })).toBeNull();
   });
 
@@ -166,7 +169,7 @@ describe("SidebarProfile foot", () => {
 
   it("draws the cell as H3 does: the disc, the name, the line and the up chevron", () => {
     const { container } = render(<SidebarProfile sidebarOpen />);
-    const trigger = screen.getByRole("button", { name: /Open menu/ });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     expect(trigger.querySelector("[data-vex-account-disc] circle.vex-prof__disc")).not.toBeNull();
     expect(trigger.querySelector(".vex-prof__n")?.textContent).toBe("Kuba");
     expect(trigger.querySelector(".vex-prof__s")?.textContent).toBe(ACCOUNT_CELL_LINE);
@@ -200,28 +203,35 @@ describe("SidebarProfile foot", () => {
     expect(screen.getByText(RUNTIME_STATUS_SENTENCES.unavailable)).not.toBeNull();
   });
 
-  it("keeps the short word where a word is the right size: the trigger name", () => {
+  it("keeps the short word where a word is the right size: the key's description", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "Kuba, Degraded. Open menu" }),
+      screen.getByRole("button", {
+        name: "Kuba, account and settings",
+        description: "Runtime: Degraded",
+      }),
     ).not.toBeNull();
   });
 
-  it("names the account row by the name it shows, then the runtime word", () => {
+  it("names the account row by the name it shows, then what it opens (Cloud's launcher name)", () => {
     // The row shows "Kuba"; its accessible name must lead with that name and
     // not with the product ("Vex - Connected. Open menu" was the defect).
     render(<SidebarProfile sidebarOpen />);
-    const trigger = screen.getByRole("button", { name: "Kuba, Connected. Open menu" });
-    expect(trigger.getAttribute("aria-label")).toBe("Kuba, Connected. Open menu");
+    const trigger = screen.getByRole("button", {
+      name: "Kuba, account and settings",
+      description: "Runtime: Connected",
+    });
+    expect(trigger.getAttribute("aria-label")).toBe("Kuba, account and settings");
     expect(trigger.textContent).toContain("Kuba");
     expect(screen.queryByRole("button", { name: /^Vex - / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open menu/ })).toBeNull();
   });
 
-  it("names the collapsed rail's box by the same account name", () => {
+  it("names the collapsed rail's box Account and settings, as Cloud's rail does", () => {
     render(<SidebarProfile sidebarOpen={false} />);
     expect(
-      screen.getByRole("button", { name: "Kuba, Connected. Open menu" }),
+      screen.getByRole("button", { name: "Account and settings", description: "Runtime: Connected" }),
     ).not.toBeNull();
   });
 
@@ -234,7 +244,7 @@ describe("SidebarProfile foot", () => {
     });
     const asking = render(<SidebarProfile sidebarOpen />);
     expect(screen.queryByText("What should Vex call you?")).toBeNull();
-    const trigger = screen.getByRole("button", { name: "You, Connected. Open menu" });
+    const trigger = screen.getByRole("button", { name: "You, account and settings" });
     expect(trigger.querySelector(".vex-prof__n")?.textContent).toBe("You");
     fireEvent.click(trigger);
     const personalize = screen.getByRole("menuitem", { name: /Personalize/ });
@@ -246,9 +256,9 @@ describe("SidebarProfile foot", () => {
     profileMock.mockReturnValue({ isLoading: true, isError: false, data: undefined });
     const loading = render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "You, Connected. Open menu" }),
+      screen.getByRole("button", { name: "You, account and settings" }),
     ).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(
       screen.getByRole("menuitem", { name: /Personalize/ }).querySelector("[data-vex-attention-dot]"),
     ).toBeNull();
@@ -261,7 +271,7 @@ describe("SidebarProfile foot", () => {
     });
     render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "You, Connected. Open menu" }),
+      screen.getByRole("button", { name: "You, account and settings" }),
     ).not.toBeNull();
   });
 
@@ -273,7 +283,8 @@ describe("SidebarProfile foot", () => {
     expect(root).not.toBeNull();
     expect(root?.hasAttribute("data-ground")).toBe(false);
     const disc = container.querySelector(".vex-prof__av svg");
-    expect(disc?.getAttribute("width")).toBe("36");
+    // Cloud's built avatar, 34 across (`.vx-lc-me`).
+    expect(disc?.getAttribute("width")).toBe("34");
     expect(disc?.querySelector("circle.vex-prof__disc")?.getAttribute("r")).toBe("17.5");
     expect(disc?.querySelector(".vex-prof__glyph path")).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
@@ -281,7 +292,7 @@ describe("SidebarProfile foot", () => {
 
   it("opens upward as the flat profile panel, with the runtime row's fill and word", () => {
     render(<SidebarProfile sidebarOpen />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     const menu = screen.getByRole("menu");
     expect(menu.classList.contains("vex-profile-menu")).toBe(true);
     expect(menu.classList.contains("vex-profile-menu--panel")).toBe(true);
@@ -297,32 +308,69 @@ describe("SidebarProfile foot", () => {
 
   it("keeps the standard card when it opens downward from a top bar", () => {
     render(<SidebarProfile sidebarOpen={false} menuSide="bottom" />);
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(screen.getByRole("menu").classList.contains("vex-profile-menu--panel")).toBe(false);
   });
 
-  it("gives the collapsed rail the sentence as its tooltip - no subtitle there", () => {
+  it("gives the collapsed rail the shared tooltip: the sentence in trouble, no subtitle there", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     const degraded = render(<SidebarProfile sidebarOpen={false} />);
-    const trigger = screen.getByRole("button", { name: /Open menu/ });
-    expect(trigger.getAttribute("title")).toBe(RUNTIME_STATUS_SENTENCES.degraded);
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
+    // The shared tooltip, never the native title.
+    expect(trigger.hasAttribute("title")).toBe(false);
     expect(screen.queryByText(RUNTIME_STATUS_SENTENCES.degraded)).toBeNull();
+    fireEvent.mouseEnter(trigger);
+    expect(screen.getByRole("tooltip").textContent).toBe(RUNTIME_STATUS_SENTENCES.degraded);
+    fireEvent.mouseLeave(trigger);
     // The rail is the disc alone.
     expect(trigger.querySelector(".vex-prof__n")).toBeNull();
     expect(trigger.querySelector("[data-vex-account-disc]")).not.toBeNull();
     degraded.unmount();
 
-    // Healthy, the tooltip is the cell's own line.
+    // Healthy, the tooltip is the name, Cloud's label.
     healthMock.mockReturnValue({ isLoading: false, data: health("ok") });
     render(<SidebarProfile sidebarOpen={false} />);
-    expect(screen.getByRole("button", { name: /Open menu/ }).getAttribute("title")).toBe(
-      ACCOUNT_CELL_LINE,
+    const healthy = screen.getByRole("button", { name: /account and settings/i });
+    fireEvent.mouseEnter(healthy);
+    expect(screen.getByRole("tooltip").textContent).toBe("Kuba");
+    // It stays down while the menu is open.
+    fireEvent.click(healthy);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("turns the muted chevron while the menu is open, on Cloud's grid and open wash", () => {
+    const css = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "styles", "global-css", "profile-menu.css"),
+      "utf8",
     );
+    const block = (selector: string): string => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at, `${selector} has a rule`).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf("}", at));
+    };
+    const cell = block(".vex-prof");
+    expect(cell).toMatch(/grid-template-columns: 34px minmax\(0, 1fr\) 16px;/);
+    expect(cell).toMatch(/column-gap: 12px;/);
+    // Open: the chosen row's wash over the rail's ground.
+    expect(cell).toMatch(/--prof-sel: var\(--vex-alias-row-selected\), var\(--vex-alias-sidebar-fill\);/);
+    // Hover: Cloud's cell hover, 5% (the ink, as no primitive is named here).
+    expect(block(".vex-prof:hover")).toMatch(/color-mix\(in srgb, var\(--vex-alias-label-primary\) 5%, transparent\)/);
+    expect(block(".vex-prof__chev")).toMatch(/color: var\(--vex-alias-label-tertiary\);/);
+    expect(block('.vex-prof[aria-expanded="true"] .vex-prof__chev')).toMatch(/transform: rotate\(180deg\);/);
+    // From 1920 the name steps up to 15 with the column's words.
+    const wide = css.slice(css.indexOf("@media (min-width: 1920px) {"));
+    expect(wide).toMatch(/^@media \(min-width: 1920px\) \{\s*\.vex-prof__n \{\s*font-size: 15px;/);
+
+    render(<SidebarProfile sidebarOpen />);
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("opens the panel with its foot on the cell's top edge, from the column's left", () => {
     render(<SidebarProfile sidebarOpen />);
-    const trigger = screen.getByRole("button", { name: /Open menu/ });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     trigger.getBoundingClientRect = () =>
       ({ x: 0, y: 828, left: 0, top: 828, right: 248, bottom: 900, width: 248, height: 72, toJSON: () => ({}) }) as DOMRect;
     fireEvent.click(trigger);

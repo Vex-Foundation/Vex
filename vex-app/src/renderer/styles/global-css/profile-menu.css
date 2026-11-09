@@ -2,12 +2,18 @@
  * 1.4 and 1.8). The cell (SidebarProfile) is the bottom row's first cell,
  * under the chats column; the Lighter desk's rail and a standalone Studio
  * sidebar carry it at their foot. Measured at 1440 in
- * `h3-merged__welcome-closed-1440`: the whole 248 x 72 cell is the key; the
- * avatar disc, 36 across, 24 in, centred on the row; the name at 70 (24 + 36
- * + 10), 14 / 1.25 in ink, over "Account and settings" at 12 / 1.3, muted
- * (VEX Cloud's `.lc-me b` and `small`); the up chevron in ink at the right, 20 in. Hover takes the
- * interactive hover and an open menu the selected step. Closed to the rail
- * it is the disc alone, centred in its cell.
+ * `h3-merged__welcome-closed-1440`, in VEX Cloud's built metrics
+ * (`.vx-lc-me`): the whole 248 x 72 cell is the key, a grid of 34 / 1fr / 16
+ * at gap 12; the avatar disc, 34 across, 24 in, centred on the row; the name
+ * at 70 (24 + 34 + 12), 14 / 1.25 in ink, over "Account and settings" at
+ * 12 / 1.3, muted (`.vx-lc-me-text b` and `small`); the 16 up chevron muted
+ * at the right, 20 in, turned 180 degrees while the menu is open (300ms;
+ * Cloud turns it on its house curve, which desktop keeps in JS only, so the
+ * sheet takes the out curve; at once under reduced motion). Hover takes
+ * Cloud's cell hover, white at 5% (here the ink at 5%: the sheets name no
+ * primitive); an open menu lays the chosen row's wash over the rail's
+ * ground, so nothing scrolled under it shows through. Closed to the
+ * rail it is the disc alone, centred in its cell.
  *
  * The disc is the transcript's (chat-transcript.css, `.vex-you__disc`): the
  * circle on Cloud's avatar ground (--vx-avatar, #151618), on the chosen
@@ -23,10 +29,10 @@
  * menu on the exit's `animationend`. */
 
 .vex-prof {
-  --prof-sel: var(--vex-alias-interactive-active);
+  --prof-sel: var(--vex-alias-row-selected), var(--vex-alias-sidebar-fill);
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 16px;
-  column-gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr) 16px;
+  column-gap: 12px;
   align-items: center;
   width: 100%;
   min-height: calc(var(--vex-h3-bottom-h) - 1px);
@@ -38,13 +44,13 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-prof:hover {
-  background: var(--vex-alias-interactive-hover);
+  background: color-mix(in srgb, var(--vex-alias-label-primary) 5%, transparent);
 }
 .vex-prof[aria-expanded="true"] {
   background: var(--prof-sel);
 }
 .vex-prof:not([data-open]) {
-  grid-template-columns: 36px;
+  grid-template-columns: 34px;
   justify-content: center;
   padding: 0;
 }
@@ -54,8 +60,8 @@
 }
 .vex-prof__av {
   display: flex;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
 }
 .vex-prof__av > svg {
   display: block;
@@ -101,7 +107,27 @@
   font-size: 12px;
 }
 .vex-prof__chev {
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-tertiary);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-out);
+}
+.vex-prof[aria-expanded="true"] .vex-prof__chev {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-prof__chev {
+    transition: none;
+  }
+}
+html[data-still] .vex-prof__chev {
+  transition: none;
+}
+
+/* From 1920 the name steps up to 15 with the column's words (VEX Cloud's
+ * `.vx-lc-me-text > b`, left-sidebar.css's WIDE block). */
+@media (min-width: 1920px) {
+  .vex-prof__n {
+    font-size: 15px;
+  }
 }
 
 /* The menu's two-line rows, in any placement. */
@@ -176,10 +202,6 @@
   animation: vex-profile-menu-exit var(--vex-duration-base) linear both;
 }
 
-/* The chevron never tweens. */
-.vex-profile-chevron {
-  transition: none;
-}
 
 @keyframes vex-profile-menu-enter {
   from { opacity: 0; }

@@ -1,5 +1,7 @@
 # R3 Minimal: the desktop design
 
+> **Superseded.** Desktop now follows the H3 design, synced with VEX Cloud's v99 work: see [H3-DESKTOP.md](H3-DESKTOP.md). This file records the R3 look the revamp replaced (K2, paper, Instrument type, the Vex sidebar on the right). Do not design new work from it.
+
 VEX Desktop is a calm agent chat app in three columns: a left sidebar that says where you are, a centre that holds the conversation (or one page), and a right sidebar that is Vex, the K2 halftone hologram that rises from the vx token. The V10 language stays (paper, ink, one blue, Night Ledger at night, radius 0, no shadow, no glass); the open book, the gutter caption, the flock, the eagle and the pixel font are gone. Every state is a fill and a word. Money lives on its own pages, never in a side panel.
 
 ## Rules

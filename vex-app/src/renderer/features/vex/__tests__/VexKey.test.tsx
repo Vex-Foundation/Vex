@@ -40,9 +40,9 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexKey, VexKeyView, vexKeySquareOf } = await import("../VexKey.js");
+const { VexKey, VexKeyView } = await import("../VexKey.js");
 const { VEX_SECTION_ID, VEX_STAGE_SECTION_ID } = await import("../vex-section-a11y.js");
-const { VEX_STATES } = await import("../vex-state.js");
+const { VEX_STATES, VEX_STATE_WORD } = await import("../vex-state.js");
 const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
 const NOW = Date.parse("2026-11-04T12:00:00.000Z");
@@ -107,8 +107,9 @@ describe("VexKey: what it draws", () => {
     const status = part("status");
     expect(part("long")?.textContent).toBe("Waiting for approval");
     const square = status?.querySelector(".vex-key__square");
-    // H3's key square: waiting is solid ink (section 1.6).
-    expect(square?.getAttribute("data-key-square")).toBe("waiting");
+    // Waiting is the target, as Cloud's MOOD_STATE draws it (section 2.2),
+    // apart from Done with the colour taken away.
+    expect(square?.getAttribute("data-state")).toBe("warning");
     expect(square?.getAttribute("aria-hidden")).toBe("true");
     expect(part("timer")).toBeNull();
   });
@@ -132,26 +133,47 @@ describe("VexKey: what it draws", () => {
   it("draws the state square as an outline at Ready", () => {
     render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
     expect(part("status")?.textContent).toBe("Ready");
-    expect(part("status")?.querySelector(".vex-key__square")?.getAttribute("data-key-square")).toBe(
-      "ready",
-    );
+    expect(part("status")?.querySelector(".vex-key__square")?.getAttribute("data-state")).toBe("idle");
   });
 
-  it("gives each state the key square H3 draws: running blinks, waiting ink, done hud", () => {
-    // VEX Cloud's H3 key (h3-merged/js/data.js): Ready the muted frame,
-    // Thinking and Working the blinking hud, Waiting ink, Done solid hud.
-    expect(VEX_STATES.map((state) => [state, vexKeySquareOf(state)])).toEqual([
-      ["ready", "ready"],
-      ["listening", "ready"],
-      ["thinking", "running"],
-      ["working", "running"],
-      ["awaiting", "waiting"],
-      ["done", "done"],
+  it("gives each state Cloud's square: running blinks, waiting the target, done the empty frame", () => {
+    // VEX Cloud's MOOD_STATE (components/vex/vex-mood.ts): Done is a settled
+    // turn whatever its outcome, never a solid fill; Waiting is the target.
+    const { rerender } = render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+    const drawn = VEX_STATES.map((state) => {
+      arrange({ state, word: VEX_STATE_WORD[state] });
+      rerender(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+      return [state, part("status")?.querySelector(".vex-key__square")?.getAttribute("data-state")];
+    });
+    expect(drawn).toEqual([
+      ["ready", "idle"],
+      ["listening", "idle"],
+      ["thinking", "ongoing"],
+      ["working", "ongoing"],
+      ["awaiting", "warning"],
+      ["done", "idle"],
       ["concerned", "concerned"],
       ["error", "error"],
-      ["sleeping", "sleeping"],
-      ["waking", "running"],
+      ["sleeping", "paused"],
+      ["waking", "ongoing"],
     ]);
+  });
+
+  it("carries the waiting count under the same target square", () => {
+    arrange({
+      needsYou: {
+        status: "ready",
+        unknownCopy: null,
+        count: 2,
+        items: [],
+        retry: () => undefined,
+        retrying: false,
+      },
+    });
+    render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+    const count = part("count");
+    expect(count?.textContent).toBe("2");
+    expect(count?.querySelector(".vex-key__square")?.getAttribute("data-state")).toBe("warning");
   });
 
   it("counts the live turn beside the word, in m:ss from its start", () => {
@@ -188,7 +210,9 @@ describe("VexKey: what it draws", () => {
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     // Her face stays in the cell while she is open, so the two crossfade.
     expect(part("chip")?.getAttribute("data-kimm-key")).toBe("closed");
+    // One up chevron, turned by the sheet while she is closed (Cloud's `.vx-vk-dir`).
     expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 10l4-4 4 4");
+    expect(part("chevron")?.hasAttribute("data-open")).toBe(true);
     rerender(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
     expect(part("portrait")?.hasAttribute("data-open")).toBe(false);
     expect(part("pic")).not.toBeNull();
@@ -199,7 +223,8 @@ describe("VexKey: what it draws", () => {
     expect(face?.getAttribute("data-kimm-key")).toBe("closed");
     expect(face?.getAttribute("data-kimm-art")).toBe("ready");
     expect(face?.querySelector("img")?.getAttribute("src")).toMatch(/^\/art\/kimm\/chip-[a-z]+\.webp$/);
-    expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 6l4 4 4-4");
+    expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 10l4-4 4 4");
+    expect(part("chevron")?.hasAttribute("data-open")).toBe(false);
   });
 });
 
@@ -276,6 +301,25 @@ describe("VexKey: the control", () => {
     rerender(<VexKey open onToggle={() => undefined} platform="darwin" />);
     fireEvent.focus(key());
     expect(screen.getByText("Hide Vex (⇧⌘B)")).not.toBeNull();
+  });
+
+  it("while her band rests, adds the reason to its description and says it on a press, acting on nothing", () => {
+    const onToggle = vi.fn();
+    const reason = "Vex shows her section after this turn.";
+    render(<VexKey open={false} onToggle={onToggle} platform="linux" held={reason} />);
+    expect(key().getAttribute("aria-disabled")).toBe("true");
+    expect(key().hasAttribute("data-vex-key-held")).toBe(true);
+    const described = (key().getAttribute("aria-describedby") ?? "").split(" ");
+    expect(described.map((id) => document.getElementById(id))).toEqual([
+      part("status"),
+      expect.objectContaining({ textContent: reason }),
+    ]);
+    const regions = Array.from(
+      document.querySelectorAll("[data-vex-area='vex-section-announcer'] [role='status']"),
+    );
+    fireEvent.click(key());
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(regions.map((r) => r.textContent).join("")).toBe(reason);
   });
 
   it("shows her at once on a press while she is closed", () => {
@@ -404,6 +448,23 @@ describe("VexKey: its sheet, at Cloud's measures and widths", () => {
     );
     expect(rule("html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *)")).toMatch(
       /transition:\s*none;/,
+    );
+  });
+
+  it("turns one chevron over 300ms rather than swapping, at once when still", () => {
+    const turn = rule(".vex-key__chevron > svg");
+    expect(turn).toMatch(/transform:\s*rotate\(180deg\);/);
+    expect(turn).toMatch(/transition:\s*transform var\(--vex-duration-reveal\) var\(--vex-ease-standard\);/);
+    expect(rule(".vex-key__chevron[data-open] > svg")).toMatch(/transform:\s*none;/);
+    expect(sheet).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.vex-key__chevron > svg \{\s*transition: none;/,
+    );
+    expect(rule("html[data-still] .vex-key__chevron > svg")).toMatch(/transition:\s*none;/);
+  });
+
+  it("drops the action words and the chevron while held, keeping her face and state", () => {
+    expect(rule(".vex-key[data-vex-key-held] :is(.vex-key__action, .vex-key__chevron > svg)")).toMatch(
+      /visibility:\s*hidden;/,
     );
   });
 

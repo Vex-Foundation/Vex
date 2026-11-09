@@ -521,7 +521,7 @@ describe("VexSidebar, Needs you", () => {
     // The console's Needs you (H3-DESKTOP.md section 1.5): the head and its
     // count, then the one decision row.
     const section = area("vex-needs-you");
-    expect(section?.querySelector("h3")?.textContent).toBe("Needs you: 1");
+    expect(section?.querySelector("h2")?.textContent).toBe("Needs you: 1");
     expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).not.toBeNull();
     const review = within(section ?? sidebar()).getByRole("button", {
       name: `Review: ${item.title}`,
@@ -550,7 +550,7 @@ describe("VexSidebar, Needs you", () => {
       needsYou: { status: "unknown", unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.", count: null, items: [], retry: vi.fn(), retrying: false },
     });
     render(<VexSidebar open onHide={() => {}} />);
-    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you");
+    expect(area("vex-needs-you")?.querySelector("h2")?.textContent).toBe("Needs you");
     expect(area("vex-needs-you-row")?.textContent).toBe("Not available");
     // VEX Cloud's console: a polled read offers no Retry.
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
@@ -565,7 +565,7 @@ describe("VexSidebar, Needs you", () => {
     useUiStore.setState({ runtimeMode: "lighter" });
     render(<VexSidebar open onHide={() => {}} />);
     const section = area("vex-needs-you");
-    expect(section?.querySelector("h3")?.textContent).toBe("Needs you: 1");
+    expect(section?.querySelector("h2")?.textContent).toBe("Needs you: 1");
     expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).not.toBeNull();
     expect(section?.querySelector("[data-vex-area='needs-you-list']")).toBeNull();
   });

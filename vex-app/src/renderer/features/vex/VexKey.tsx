@@ -13,8 +13,8 @@
  *                          0:03"); line two, 10 under it: the action (12,
  *                          caps), Hide Vex or Show Vex, then the chord's
  *                          keycaps
- *     .vex-key__chevron    60 wide, then the column's rule: down while she
- *                          is closed, up while open
+ *     .vex-key__chevron    60 wide, then the column's rule: one up
+ *                          chevron, turned down while she is closed
  *
  * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6; VEX Cloud's EC-01):
  * "Hide Vex" while she is open, "Show Vex" while she is closed, the name
@@ -37,7 +37,8 @@
  * Everything shown comes from `useVexPresence`, the same read her column
  * draws, so the two can never disagree: the word is the state machine's
  * (`vex-state.ts`: Ready, Thinking, Waiting for approval and the rest), the
- * square H3's key square (`vexKeySquareOf`), the timer only while a turn is
+ * square her state's own (`VEX_STATE_SQUARE`, the one map the console line
+ * and the count share, Cloud's `MOOD_STATE`), the timer only while a turn is
  * live. Words are written in
  * sentence case and the key's label register sets them in caps.
  *
@@ -48,15 +49,17 @@
  * the key's cell is 288 wide and carries the waiting count beside her state,
  * since the console's Needs you is a line away (`vex-key__count`, drawn only
  * in the band tier). While her band rests (`held`: a turn, a waiting card,
- * the composer in use) the key says why instead of acting: its tooltip is
- * the reason and a press changes nothing.
+ * the composer in use) the key says why instead of acting: the reason joins
+ * its description and its tooltip, its action words and chevron leave (so
+ * nothing reads as pressable that is not), and a press changes nothing but
+ * says the reason once, politely (VEX Cloud's held key).
  */
 
 import { useId, type JSX, type ReactNode } from "react";
-import { LineChevronDown, LineChevronUp } from "../../components/icons/line/index.js";
+import { LineChevronUp } from "../../components/icons/line/index.js";
 import type { KimmMood } from "../../components/vex/kimm/kimm-assets.js";
 import { Keycaps } from "../../components/ui/keycaps.js";
-import { syncBlink } from "../../components/ui/state-square.js";
+import { StateSquare } from "../../components/ui/state-square.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { studioPlatform, type StudioPlatform } from "../appShell/studio/keybindings-labels.js";
 import { useVexPresence } from "./useVexPresence.js";
@@ -64,48 +67,15 @@ import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
 import { VexSectionAnnouncer } from "./VexSectionAnnouncer.js";
-import { VEX_SECTION_ID } from "./vex-section-a11y.js";
+import { announceVexHeld, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
-import { vexShortWordOf, type VexState } from "./vex-state.js";
+import { VEX_STATE_SQUARE, vexShortWordOf, type VexState } from "./vex-state.js";
 import {
   VEX_TOGGLE_CHORD,
   vexToggleAriaShortcut,
   vexToggleName,
   vexToggleTooltipLabel,
 } from "./vex-toggle-shortcut.js";
-
-/**
- * THE KEY'S SQUARE (docs/design/H3-DESKTOP.md sections 1.6 and 2.2; VEX
- * Cloud's H3 key, `h3-merged/js/data.js`): its own drawing per state, so the
- * state never rests on a colour. Ready is the 1px muted frame; Thinking,
- * Working and Waking up the hud square, which blinks while it lasts (PD-06);
- * Waiting for approval solid ink; Done solid hud; Concerned the framed ink
- * hatch; Error the ink cross; Sleeping the dotted frame. Listening, the
- * person typing, is Vex at rest: the Ready frame.
- */
-export type VexKeySquare = "ready" | "running" | "waiting" | "done" | "concerned" | "error" | "sleeping";
-
-export function vexKeySquareOf(state: VexState): VexKeySquare {
-  switch (state) {
-    case "ready":
-    case "listening":
-      return "ready";
-    case "thinking":
-    case "working":
-    case "waking":
-      return "running";
-    case "awaiting":
-      return "waiting";
-    case "done":
-      return "done";
-    case "concerned":
-      return "concerned";
-    case "error":
-      return "error";
-    case "sleeping":
-      return "sleeping";
-  }
-}
 
 export interface VexKeyProps {
   /** Her section is open, as the frame solved it. */
@@ -183,7 +153,7 @@ export function VexKeyView({
   const shown = open && !closing;
   const name = vexToggleName(shown);
   const stateId = useId();
-  const square = vexKeySquareOf(state);
+  const reasonId = useId();
   // Under 1280 the key says the chat row's short word ("Waiting"), so the
   // word never ends in an ellipsis there; it is a picture of the long one,
   // which stays the key's description.
@@ -199,12 +169,15 @@ export function VexKeyView({
         data-vex-key-open={shown ? "true" : "false"}
         aria-label={name}
         aria-controls={controls}
-        aria-describedby={stateId}
+        aria-describedby={held === null ? stateId : `${stateId} ${reasonId}`}
         aria-keyshortcuts={vexToggleAriaShortcut(platform)}
         aria-disabled={held === null ? undefined : true}
         data-vex-key-held={held === null ? undefined : ""}
         onClick={() => {
-          if (held !== null) return;
+          if (held !== null) {
+            announceVexHeld(held);
+            return;
+          }
           pressVexToggle(open, onToggle);
         }}
       >
@@ -213,15 +186,10 @@ export function VexKeyView({
         </span>
         <span className="vex-key__state">
           <span id={stateId} className="vex-key__line vex-key__status">
-            {/* H3's key square (section 1.6): a drawing per state, the
-              * running one blinking in phase with every other; the word
-              * says which. */}
-            <span
-              ref={square === "running" ? syncBlink : undefined}
-              aria-hidden="true"
-              className="vex-key__square"
-              data-key-square={square}
-            />
+            {/* Her state's square (sections 1.6 and 2.2): a drawing per
+              * state, the running one blinking in phase with every other;
+              * the word says which. */}
+            <StateSquare state={VEX_STATE_SQUARE[state]} size={6} className="vex-key__square" />
             <span className="vex-key__word" data-short={short === word ? undefined : ""}>
               <span className="vex-key__long">{word}</span>
               {short === word ? null : (
@@ -239,13 +207,20 @@ export function VexKeyView({
         </span>
         {count !== null && count > 0 ? (
           <span className="vex-key__count vex-num" aria-hidden="true">
-            <span aria-hidden="true" className="vex-key__square" data-key-square="waiting" />
+            <StateSquare state="warning" size={6} className="vex-key__square" />
             {count}
           </span>
         ) : null}
-        <span className="vex-key__chevron">
-          {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
+        {/* One up chevron, turned down while she is closed (VEX Cloud's
+          * `.vx-vk-dir`): it turns at the press, never swapping glyphs. */}
+        <span className="vex-key__chevron" data-open={shown ? "" : undefined}>
+          <LineChevronUp size={16} />
         </span>
+        {held === null ? null : (
+          <span id={reasonId} hidden>
+            {held}
+          </span>
+        )}
       </button>
     </Tooltip>
   );

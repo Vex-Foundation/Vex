@@ -12,11 +12,11 @@
  *            frame's header draws them in its cells over this column
  *            (`headless`), so the column itself starts with ACTIONS.
  *   ACTIONS  two H3 cells, edge to edge: NEW CHAT, 55 high on the cell fill
- *            ("New mission" on the Mission tab), and Search chats, 48 high
- *            on the ground, each behind its rule. Search chats turns its
- *            cell into the field with the All, Agent and Mission tabs under
- *            it, New chat staying above it; Escape or the field's Esc key
- *            brings back the sections.
+ *            ("New mission" on the Mission tab), and the Search chats field,
+ *            48 high, always open (VEX Cloud's), each behind its rule. A
+ *            typed query enters the search mode: the All, Agent and Mission
+ *            tabs take the nav's place under the field, New chat staying
+ *            above it; Escape clears a query, then brings back the sections.
  *   NAV      Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio,
  *            Board, Settings: nine H3 rows on the 40 pitch between two rules
  *            (`SidebarNav`; H3-DESKTOP.md section 4.6).
@@ -66,10 +66,11 @@ import { SidebarProfile } from "./SidebarProfile.js";
 import { setUpdateCardSlot } from "../updates/update-card-slot.js";
 import { useSessionRowActions } from "./useSessionRowActions.js";
 import {
-  SessionsEmptyPlaceholder,
-  SessionsErrorPlaceholder,
-  SessionsLoadingPlaceholder,
+  ChatsEmptyLine,
+  ChatsFailedLine,
+  ChatsLoadingLine,
   chatsFailedWords,
+  SearchAnnouncer,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import {
@@ -156,13 +157,24 @@ export function SessionsList({
 
   // The search mode: a title filter over the SAME resolved titles the rows
   // render. Local and launch-ephemeral; the mode tabs are the store's filter.
+  // The field is always open; a typed query (or Missions) enters the mode.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // The rail's search key opens the column with the field focused.
+  const [focusField, setFocusField] = useState(false);
 
   useEffect((): void => {
-    if (searchOpen && !rail) searchInputRef.current?.focus();
-  }, [searchOpen, rail]);
+    if (!focusField || rail) return;
+    searchInputRef.current?.focus();
+    setFocusField(false);
+  }, [focusField, rail]);
+
+  const changeSearch = useCallback((next: string): void => {
+    setSearchText(next);
+    if (next !== "") setSearchOpen(true);
+  }, []);
+  const clearSearch = useCallback((): void => setSearchText(""), []);
 
   // The agent workspace, unfiltered: the tabs count it, the search and the
   // mode filter narrow it.
@@ -201,6 +213,9 @@ export function SessionsList({
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
+  // The query the rows are narrowed by, as the announcer speaks it.
+  const appliedQuery = searchOpen ? searchText.trim() : "";
+
   const handleSelect = useCallback(
     (id: string): void => {
       setActiveSessionId(id);
@@ -236,13 +251,14 @@ export function SessionsList({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [searchOpen, rail, closeSearch]);
 
+  // The rail's search key (the open column has the field itself).
   const openSearch = useCallback((): void => {
     // Under 1280 the rail's search opens the chats panel, its field focused.
     if (rail && chatsPanel !== undefined) {
       chatsPanel.onOpen("search");
       return;
     }
-    setSearchOpen(true);
+    setFocusField(true);
     if (rail) onToggleSidebar();
   }, [rail, onToggleSidebar, chatsPanel]);
 
@@ -260,22 +276,33 @@ export function SessionsList({
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   useScrollbarVisibility(listScrollRef);
 
+  // A failed read offers Retry, which reads the list again (Cloud's
+  // `ErrorState` with its Retry key, H3-DESKTOP.md section 1.4).
+  const refetchList = query.refetch;
+  const retry = useCallback((): void => {
+    void refetchList();
+  }, [refetchList]);
+
   const listBody = query.isLoading ? (
-    <SessionsLoadingPlaceholder sidebarOpen />
+    <ChatsLoadingLine />
   ) : query.data && query.data.ok === false ? (
     // Cloud's words first, then main's own reason for the failed read (for
     // example "Vault is locked."): the person learns what to do about it.
-    <SessionsErrorPlaceholder sidebarOpen message={chatsFailedWords(query.data.error.message)} />
+    <ChatsFailedLine
+      message={chatsFailedWords(query.data.error.message)}
+      onRetry={retry}
+      retrying={query.isFetching}
+    />
   ) : query.isError ? (
     // A TRANSPORT rejection never produces a Result, so without this branch
     // it fell through to `null` and the column went blank: a lie by omission
     // (rule 08: failure is a distinct state, not emptiness).
-    <SessionsErrorPlaceholder sidebarOpen />
+    <ChatsFailedLine onRetry={retry} retrying={query.isFetching} />
   ) : query.data && query.data.ok ? (
     visibleRows.length === 0 ? (
       // "No chats yet." only when there are none; a search or a tab that
       // narrowed a list with chats says none match it.
-      <SessionsEmptyPlaceholder sidebarOpen searching={(agentRows?.length ?? 0) > 0} />
+      <ChatsEmptyLine searching={(agentRows?.length ?? 0) > 0} />
     ) : (
       <SidebarSessionGroups
         groups={groups}
@@ -286,6 +313,7 @@ export function SessionsList({
         onRename={handleRename}
         pendingPinId={pendingPinId}
         highlight={searchOpen ? searchText : ""}
+        searching={appliedQuery !== ""}
       />
     )
   ) : null;
@@ -350,43 +378,32 @@ export function SessionsList({
         <>
           {headless ? null : <AgentSidebarHeader onCollapse={onToggleSidebar} />}
           <div className="vex-ls-body">
+            {/* New chat and the field hold their places in both modes, so
+              * the field keeps its focus as a typed query enters the search
+              * mode; the tabs then take the nav's place. The way to start
+              * stays above the search, so a list of missions never hides
+              * how to begin one. */}
+            <NewChatKey rail={false} onCreate={onCreate} />
+            <SessionSearchField
+              value={searchText}
+              onChange={changeSearch}
+              onClear={clearSearch}
+              inputRef={searchInputRef}
+            />
             {searchOpen ? (
-              <div className="vex-ls-find">
-                {/* The way to start stays above the search, so a list of
-                  * missions never hides how to begin one. */}
-                <NewChatKey rail={false} onCreate={onCreate} />
-                <SessionSearchField
-                  value={searchText}
-                  onChange={setSearchText}
-                  onClose={closeSearch}
-                  inputRef={(el) => {
-                    searchInputRef.current = el;
-                  }}
-                />
-                <SessionModeTabs
-                  value={sessionModeFilter}
-                  counts={tabCounts}
-                  onChange={setSessionModeFilter}
-                />
-              </div>
+              <SessionModeTabs
+                value={sessionModeFilter}
+                counts={tabCounts}
+                onChange={setSessionModeFilter}
+              />
             ) : (
-              <>
-                <NewChatKey rail={false} onCreate={onCreate} />
-                <NavKey
-                  icon={<LineSearch className="vex-ls-nrow__i" />}
-                  label={SEARCH_LABEL}
-                  rail={false}
-                  onClick={openSearch}
-                  className="vex-ls-nrow--search"
-                />
-                {/* The nav block stands between two rules, Search chats'
-                  * and its own, so no gap sets it apart. */}
-                <SidebarNav
-                  rail={false}
-                  onMissions={openMissions}
-                  activeSessionMode={activeSessionMode}
-                />
-              </>
+              // The nav block stands between two rules, the field's and its
+              // own, so no gap sets it apart.
+              <SidebarNav
+                rail={false}
+                onMissions={openMissions}
+                activeSessionMode={activeSessionMode}
+              />
             )}
             {/* CHATS (section 1.4): the list's section head, under the nav's
               * rule. The words stay in sentence case; the class sets caps.
@@ -407,6 +424,11 @@ export function SessionsList({
               {listBody}
               {searchOpen ? <p className="vex-ls-hint">{SEARCH_HINT}</p> : null}
             </div>
+            {/* The search's result, spoken once the query rests. */}
+            <SearchAnnouncer
+              query={appliedQuery}
+              count={agentRows === null ? null : visibleRows.length}
+            />
           </div>
         </>
       )}

@@ -12,6 +12,9 @@
  * anchors a HoverCard preview, and a double-click renames inline.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -270,6 +273,52 @@ describe("a SIDEBAR row (H3-DESKTOP.md section 1.4)", () => {
     );
     expect(document.querySelector(".vex-ls-row__t mark")?.textContent).toBe("TAO");
     expect(document.querySelector(".vex-ls-row__t")?.textContent).toBe("Research TAO");
+  });
+
+  it("keeps the state in its name while the drawn tag gives way to the keys", () => {
+    // The drawn trailing cell is decoration (it leaves the row on hover and
+    // focus); the name a screen reader hears keeps the word.
+    renderRow(session({ mode: "mission", missionStatus: "running" }), false, "sidebar");
+    expect(document.querySelector(".vex-ls-row__state")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("button", { name: "Research TAO Running" })).not.toBeNull();
+  });
+
+  it("keeps the time in its name the same way", () => {
+    renderRow(session(), false, "sidebar");
+    const time = document.querySelector(".vex-ls-row__time");
+    expect(time?.getAttribute("aria-hidden")).toBe("true");
+    const select = document.querySelector<HTMLElement>(".vex-ls-row__select");
+    expect(select?.querySelector(".sr-only")?.textContent).toBe(time?.textContent);
+  });
+});
+
+describe("the sidebar row's trailing cell on hover and focus (VEX Cloud's `.vx-lc-rowmenu`)", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const css = readFileSync(
+    path.join(here, "..", "..", "..", "styles", "global-css", "left-sidebar.css"),
+    "utf8",
+  );
+  const block = (selector: string): string => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} has a rule`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  it("takes the time and the tag out of the row, so the title gains the room", () => {
+    expect(block(".vex-ls-row:has(:focus-visible) .vex-ls-row__state")).toMatch(/display: none;/);
+    expect(css).not.toMatch(/\.vex-ls-row__(?:time|state)[^{]*\{\s*visibility: hidden/);
+  });
+
+  it("narrows the title's right padding to 8, the keys standing 8 from the edge in the row's flow", () => {
+    expect(block(".vex-ls-row:has(:focus-visible) .vex-ls-row__select")).toMatch(/padding-right: 8px;/);
+    const shown = block(".vex-ls-row:has(:focus-visible) .vex-ls-row__actions");
+    expect(shown).toMatch(/padding-right: 8px;/);
+    expect(shown).toMatch(/opacity: 1;/);
+    // At rest the keys take no width but stay in the tab order (no display
+    // none, no absolute box over the title).
+    const rest = block(".vex-ls-row__actions");
+    expect(rest).toMatch(/max-width: 0;/);
+    expect(rest).not.toMatch(/position: absolute|display: none/);
   });
 });
 

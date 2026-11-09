@@ -44,8 +44,8 @@ vi.mock("../../../lib/api/studio.js", () => ({
 vi.mock("../MissionRail.js", () => ({ MissionRail: () => null }));
 vi.mock("../SessionExportControl.js", () => ({ SessionExportControl: () => null }));
 vi.mock("../NotificationCenter.js", () => ({ NotificationCenter: () => null }));
-vi.mock("../../vex/NeedsYouControl.js", () => ({
-  NeedsYouControl: () => <div data-testid="needs-you" />,
+vi.mock("../../vex/NeedsYouAnnouncer.js", () => ({
+  NeedsYouAnnouncer: () => <span data-testid="needs-you-announcer" />,
 }));
 vi.mock("../../vex/VexTokenChip.js", () => ({
   VexTokenChip: () => <button type="button" data-testid="token-chip" />,
@@ -126,7 +126,10 @@ describe("the header", () => {
     expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
     const title = head?.querySelector("[data-vex-head-cell='title']");
     expect(title?.getAttribute("data-vex-area")).toBe("shell-status-strip");
-    expect(title?.querySelector("[data-testid='needs-you']")).not.toBeNull();
+    // Needs you is the console's (section 4.8): the title cell has no
+    // control, only the announcer of a rise.
+    expect(title?.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+    expect(title?.querySelector("[data-testid='needs-you-announcer']")).not.toBeNull();
   });
 
   it("hands the Vex key the toggle the frame solved, and keeps the cell where there is none", () => {
@@ -158,7 +161,7 @@ describe("the header", () => {
     const head = document.querySelector("[data-vex-area='shell-head']");
     expect(head?.querySelector("[data-vex-head-cell='vex-key'] [data-testid='vex-key']")).not.toBeNull();
     expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
-    expect(head?.querySelector("[data-testid='needs-you']")).toBeNull();
+    expect(head?.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
   });
 
   it("states the network and never offers a menu: Mainnet, Real funds", () => {

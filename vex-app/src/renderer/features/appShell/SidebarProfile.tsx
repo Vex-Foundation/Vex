@@ -2,11 +2,16 @@
  * THE ACCOUNT CELL (docs/design/H3-DESKTOP.md sections 1.4 and 1.8): the
  * bottom row's first cell, under the chats column, 248 x 72 at 1440; also the
  * foot of the Lighter desk's rail and of a standalone Studio sidebar. As H3
- * draws it (`h3-merged__welcome-closed-1440`): the person's avatar disc, 36
- * across, 24 in; the name at 15 in ink ("You" until the person names
- * themselves); "Account and settings" at 13, muted, under it; the up chevron
- * at the right. Closed to the rail, the cell is the disc alone and its line
- * rides the tooltip.
+ * draws it, in VEX Cloud's built metrics (`account-launcher.tsx`,
+ * `.vx-lc-me`): the person's avatar disc, 34 across, 24 in; the name at 14
+ * in ink ("You" until the person names themselves); "Account and settings"
+ * at 12, muted, under it; the muted up chevron at the right, turned while the
+ * menu is open. Closed to the rail, the cell is the disc alone, with the
+ * shared tooltip.
+ *
+ * Its accessible name is Cloud's: "{name}, account and settings", or
+ * "Account and settings" on the rail. The runtime's state is the key's
+ * description ("Runtime: Connected"), so the name says what the key opens.
  *
  * The disc is the one the transcript gives the person's own messages
  * (`TranscriptMessage.tsx`, `YouAvatar`): a circle on the chosen rule with
@@ -35,6 +40,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type JSX,
@@ -58,6 +64,7 @@ import { cn } from "../../lib/utils.js";
 import { useReducedMotion } from "../../lib/motion/index.js";
 import { Menu, type MenuEntry } from "../../components/ui/menu.js";
 import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
@@ -152,7 +159,7 @@ function entryIcon(Icon: LineIconComponent): ReactNode {
 function AccountDisc(): JSX.Element {
   return (
     <span aria-hidden data-vex-account-disc="" className="vex-prof__av">
-      <svg width={36} height={36} viewBox="0 0 36 36" focusable="false">
+      <svg width={34} height={34} viewBox="0 0 36 36" focusable="false">
         <circle className="vex-prof__disc" cx="18" cy="18" r="17.5" strokeWidth="1" />
         <g className="vex-prof__glyph">
           <circle cx="18" cy="14.5" r="3.5" />
@@ -196,9 +203,12 @@ export function SidebarProfile({
   });
 
   // The cell's accessible name is the name the cell SHOWS (a screen reader
-  // user hears the account, not the product), then the runtime word: the
-  // person's name, or "You" until they set one.
+  // user hears the account, not the product), then what it opens (Cloud's
+  // `launcherName`): the person's name, or "You" until they set one. On the
+  // rail no name shows, so the key is "Account and settings".
   const accountName = nameLine.text;
+  const triggerName = sidebarOpen ? `${accountName}, account and settings` : ACCOUNT_CELL_LINE;
+  const descriptionId = useId();
   // The line under the name: H3's "Account and settings" while the runtime
   // is connected or still being checked; any trouble speaks its sentence.
   const cellLine =
@@ -363,20 +373,22 @@ export function SidebarProfile({
     return { ...rect, toJSON: () => rect };
   }, []);
 
-  const trigger = (
+  const button = (
     <button
       ref={triggerRef}
       type="button"
       aria-haspopup="menu"
       aria-expanded={open}
-      aria-label={`${accountName}, ${runtime.label}. Open menu`}
-      // The collapsed rail renders no line under a name, so the tooltip is
-      // its only carrier there: the cell's line, or the trouble's sentence.
-      title={sidebarOpen ? undefined : cellLine}
+      aria-label={triggerName}
+      aria-describedby={descriptionId}
       onClick={() => open ? closeMenu() : setMenuPhase("open")}
       className="vex-prof"
       data-open={sidebarOpen || undefined}
     >
+      {/* The runtime's state, the key's description. */}
+      <span id={descriptionId} hidden>
+        {`Runtime: ${runtime.label}`}
+      </span>
       {/* The person's disc; the closed rail shows the disc alone. */}
       <AccountDisc />
       {sidebarOpen ? (
@@ -395,6 +407,17 @@ export function SidebarProfile({
         </>
       ) : null}
     </button>
+  );
+  // On the rail the shared tooltip carries what the cell would show: the
+  // name while all is well, the trouble's sentence otherwise (the rail draws
+  // no line under a name, so a failure never hides there). It stays down
+  // while the menu is open.
+  const trigger = sidebarOpen ? (
+    button
+  ) : (
+    <Tooltip label={cellLine === ACCOUNT_CELL_LINE ? accountName : cellLine} side="right" disabled={open}>
+      {button}
+    </Tooltip>
   );
 
   return (

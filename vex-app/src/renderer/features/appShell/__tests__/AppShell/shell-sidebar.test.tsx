@@ -340,7 +340,7 @@ describe("AppShell", () => {
     // Healthy runtime → the account cell says H3's "Account and settings"
     // (docs/design/H3-DESKTOP.md Appendix A.2), its trigger naming the
     // runtime's word.
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
     const account = document.querySelector("[data-vex-area='account-cell']");
     expect(account?.textContent).toContain("Account and settings");
     expect(screen.queryByText("The night shift is active.")).toBeNull();
@@ -353,9 +353,9 @@ describe("AppShell", () => {
 
   it("profile menu carries seven actions including Lock Vex", async () => {
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
 
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     // The status row speaks ONE short word (the long RuntimeLedger strings
     // are retired), beside the Postgres mark.
     expect(screen.getByText("Connected")).not.toBeNull();
@@ -394,7 +394,7 @@ describe("AppShell", () => {
     useUiStore.getState().setShellRoute({ kind: "none" });
 
     // Agent Scan opens its own full-app ShellScreen, expanding from the row.
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Agent Scan/i }));
     expect(useUiStore.getState().shellRoute.kind).toBe("agentScan");
     useUiStore.getState().setShellRoute({ kind: "none" });
@@ -403,7 +403,7 @@ describe("AppShell", () => {
     // reconfigure-wizard door is retired): the route carries the row's
     // rect origin and a null section (the landing register), and the
     // view machine never leaves the shell.
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
     const settingsRoute = useUiStore.getState().shellRoute;
     expect(settingsRoute.kind).toBe("settings");
@@ -415,8 +415,8 @@ describe("AppShell", () => {
 
   it.each(["Escape", "outside", "selection"])("profile menu retains an inert exit after %s until its own animation ends", async (dismissal) => {
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
-    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     trigger.focus();
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
@@ -448,8 +448,8 @@ describe("AppShell", () => {
 
   it("reopening the profile menu cancels an exit without a stale event closing it", async () => {
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
-    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
     fireEvent.click(trigger);
@@ -464,8 +464,8 @@ describe("AppShell", () => {
   it("opens and removes the profile menu immediately with reduced motion", async () => {
     reducedMotion = true;
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
-    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
     fireEvent.click(trigger);
@@ -475,8 +475,8 @@ describe("AppShell", () => {
 
   it("removes a closing profile menu when reduced motion becomes active", async () => {
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
-    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
+    const trigger = screen.getByRole("button", { name: /account and settings/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
     fireEvent.click(trigger);
@@ -490,9 +490,9 @@ describe("AppShell", () => {
 
   it("Sessions menu entry opens the Sessions screen mounting the sessions library", async () => {
     renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
 
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     // Accessible row name = label + hint subline, so anchor on the label.
     fireEvent.click(screen.getByRole("menuitem", { name: /^Sessions/i }));
 
@@ -513,8 +513,8 @@ describe("AppShell", () => {
 
   it("shows no pulsing dots anywhere - status is color + words, never motion", async () => {
     const view = renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     expect(view.container.querySelectorAll(".vex-pulse-dot")).toHaveLength(0);
   });
 
@@ -546,13 +546,13 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("What should Vex call you?");
 
-    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account and settings/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Personalize/i }));
 
     expect(screen.getByText("Instructions for Vex")).not.toBeNull();
   });
 
-  it("opens the rail search from the magnifier and filters session titles live", async () => {
+  it("filters chat titles live from the always-open search field", async () => {
     sessionsListMock.mockResolvedValueOnce({
       ok: true,
       data: makeSessionRows(),
@@ -561,7 +561,8 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Portfolio Check");
 
-    fireEvent.click(screen.getByRole("button", { name: /Search chats/i }));
+    // The field is always open (H3-DESKTOP.md section 1.4): no row opens it.
+    expect(screen.queryByRole("button", { name: /Search chats/i })).toBeNull();
     const input = screen.getByRole("searchbox", { name: /Search chats/i });
     fireEvent.change(input, { target: { value: "arbitrum" } });
     // The match is marked, so the title is the mark plus the rest: the row's
@@ -573,11 +574,9 @@ describe("AppShell", () => {
     expect(within(list).getByRole("button", { name: /Arbitrum LP Rebalance/ })).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
 
-    // Escape closes the field AND clears the filter.
+    // Escape clears the filter; the field stays open.
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(
-      screen.queryByRole("searchbox", { name: /Search chats/i }),
-    ).toBeNull();
+    expect((input as HTMLInputElement).value).toBe("");
     expect(screen.getByText("Portfolio Check")).not.toBeNull();
   });
 
@@ -920,7 +919,7 @@ describe("AppShell", () => {
     // The left sidebar says where you are (docs/design/R3-MINIMAL.md section
     // 4); the $VEX line moves to the Portfolio page.
     const view = renderShell();
-    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
+    await screen.findByRole("button", { name: /, account and settings$/, description: "Runtime: Connected" });
     const sidebar = view.container.querySelector(
       "[data-vex-area='sessions-sidebar']",
     );
@@ -1140,6 +1139,26 @@ describe("AppShell", () => {
       wide.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']")?.style.gridTemplateColumns,
     ).toBe("248px 432px minmax(0, 1fr)");
     wide.unmount();
+  });
+
+  // C3-B-01, F-08 (VEX Cloud's W3 review, `nav-parts.tsx`): while the chats
+  // panel is open, what it lies over rests, so Tab never leaves the panel for
+  // it: Vex's column (her console, her section and, under 1024, the band, all
+  // inside `.vex-shell-vex`), and the chat where the panel covers. AppShell
+  // sets `inert` on the Vex column while the panel is open.
+  it("rests Vex's column while the chats panel lies over it, at 1024 and in the band", () => {
+    for (const width of [1024, 1000]) {
+      setWindowWidth(width);
+      useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+      const view = renderShell();
+      const vex = view.container.querySelector<HTMLElement>(".vex-shell-vex");
+      expect(vex?.hasAttribute("inert")).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+      expect(vex?.hasAttribute("inert")).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+      expect(vex?.hasAttribute("inert")).toBe(false);
+      view.unmount();
+    }
   });
 
   it("opens the chats panel from the rail's search with its field focused", () => {

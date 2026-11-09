@@ -7,9 +7,10 @@
  * gate are `kimm-field.ts`. It is the named exception MOTION-POLICY.md gives
  * it, bound four ways:
  *
- *   - IT RUNS ONLY WHILE HER SECTION IS OPEN (`open`): closed, the field
- *     holds its frame in the strip (section 3.2), and opening starts it again
- *     from that frame.
+ *   - IT RUNS ONLY WHILE HER SECTION IS OPEN (`open`) IN A CHAT: closed, the
+ *     field holds its frame in the strip (section 3.2), and opening starts it
+ *     again from that frame; on a page (`hold`) it holds its frame open too,
+ *     as VEX Cloud's field runs only in a chat's section.
  *   - THE RUN GATE (`lib/motion/run-gate.ts`): only while the field is on
  *     screen and the window is shown; a hidden window, a column scrolled or
  *     folded away, or the inspect view over her paints no frame. (The port
@@ -40,6 +41,13 @@ export interface KimmFieldProps {
   readonly open: boolean;
   /** `live` in her section, `frame` (one still frame) in her band. */
   readonly mode?: KimmFieldMode;
+  /**
+   * Hold the frame it stands at though her section is open: on a page, where
+   * VEX Cloud paints one frame and runs the field only in a chat's section
+   * (`kimm-field.ts`, `kimmFieldMode`). Held through `setStill`, so a page
+   * opened or closed never remounts the port.
+   */
+  readonly hold?: boolean;
   /** The field has painted (true) or is gone (false). */
   readonly onDrawn?: (drawn: boolean) => void;
 }
@@ -56,12 +64,12 @@ function afterTwoFrames(fn: () => void): () => void {
   };
 }
 
-export function KimmField({ open, mode = "live", onDrawn }: KimmFieldProps): JSX.Element {
+export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFieldProps): JSX.Element {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<GradientAsciiHandle | null>(null);
   const still = useStillFrame();
   const [onScreen, setOnScreen] = useState(false);
-  const running = kimmFieldRuns({ mode, open, still, onScreen });
+  const running = kimmFieldRuns({ mode, open: open && !hold, still, onScreen });
   const runningRef = useRef(running);
   const drawnRef = useRef(onDrawn);
   useEffect(() => {

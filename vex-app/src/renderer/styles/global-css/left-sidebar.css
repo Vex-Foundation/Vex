@@ -274,11 +274,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: currentColor;
 }
 
-/* SEARCH MODE: Search chats becomes the field in its own cell, 48 high, the
- * icon and the text where the row had them, the rule under it; the All,
- * Agent and Mission tabs follow. A field in H3 sits on the ground inside its
- * rules (section 2.1); while it holds the focus the chosen rule draws inside
- * the cell. */
+/* THE SEARCH FIELD: a 48 cell, the icon and the text 24 in, the rule under
+ * it. A field in H3 sits on the ground inside its rules (section 2.1); while
+ * it holds the focus the chosen rule draws inside the cell. Studio's search
+ * mode (`.vex-ls-find`, the Esc keycap) shares the cell. */
 .vex-ls-find {
   flex: none;
 }
@@ -331,7 +330,34 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: transparent;
   color: var(--vex-alias-label-tertiary);
 }
-/* The keycap is the mouse's way out of the search, so it answers the pointer. */
+/* THE CHATS SEARCH (section 1.4; VEX Cloud's `.vx-lc-search`): always open,
+ * the icon in the muted ink, the whole cell carrying the 2px focus ring, and
+ * "Clear search" (a 24 key, its 16 glyph muted, 6 into the cell's padding)
+ * only while there is a query. */
+.vex-ls-search--chats .vex-ls-search__i {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search--chats:focus-within {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-ls-search__clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search__clear:hover {
+  color: var(--vex-alias-label-primary);
+}
+/* Studio's keycap is the mouse's way out of its search, so it answers the
+ * pointer. */
 .vex-ls-search__kbd:hover {
   border-color: var(--vex-alias-rule-ink);
   background: var(--vex-alias-interactive-hover);
@@ -459,9 +485,57 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 .vex-ls-row[data-selected] .vex-ls-row__t {
   color: var(--vex-alias-label-primary);
 }
-/* The loading, error and empty lines sit where a row's title would. */
-.vex-ls-sessions > :not(.vex-ls-groups, .vex-ls-hint) {
-  padding-inline: 24px 20px;
+/* THE LIST'S STATES (section 1.4; VEX Cloud's `.vx-lc-msg` and
+ * `.vx-lc-error`): one sentence at 14 / 1.4 in the muted ink, set 24 in where
+ * a row's title starts, padding 6 24 10, its mark 10 before it. Loading
+ * leads with the stepping hatch, a failure with the cross over its Retry key
+ * (40 high, 4 24 round it); the empty and no-match lines stand alone. */
+.vex-ls-msg,
+.vex-ls-fail__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 24px 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-fail__line {
+  align-items: flex-start;
+}
+.vex-ls-fail__line > .vex-sq {
+  margin-top: 0.4em;
+}
+.vex-ls-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.vex-ls-fail__retry {
+  margin: 4px 24px;
+}
+/* The stepping hatch (Cloud's `.vx-stripes`): a 14 square of ink 2 strokes
+ * that steps on and off on two steps, one cycle in two blinks; still under
+ * reduced motion and Save-Data. */
+.vex-ls-msg__hatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-alias-label-secondary) 0 1px,
+    transparent 1px 4px
+  );
+  animation: vex-sq-blink calc(var(--vex-duration-blink) * 2) steps(2, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-ls-msg__hatch {
+    animation: none;
+  }
+}
+html[data-still] .vex-ls-msg__hatch {
+  animation: none;
 }
 .vex-ls-row__t mark {
   background: var(--ls-mark);
@@ -494,25 +568,36 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   white-space: nowrap;
   color: var(--vex-alias-label-primary);
 }
-/* Pin and Remove (24 x 24) take the time's place on hover and focus. */
+/* Pin and Remove (24 x 24) take the trailing cell's place on hover and focus
+ * (VEX Cloud's `.vx-lc-rowmenu`): the time or the tag leaves the row
+ * (`display: none`) and the title's right padding narrows to 8, so the title
+ * gains the room; the keys stand in the row's flow, 8 from its right edge.
+ * At rest they take no width (max-width 0) but stay in the tab order, so Tab
+ * and Shift+Tab both reach them and focus opens them. */
 .vex-ls-row__actions {
-  position: absolute;
-  top: 50%;
-  right: 6px;
   display: flex;
+  flex: none;
+  align-items: center;
   gap: 2px;
+  max-width: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateY(-50%);
 }
 .vex-ls-row:hover .vex-ls-row__actions,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__actions {
+  max-width: 58px;
+  padding-right: 8px;
   opacity: 1;
+}
+.vex-ls-row:hover .vex-ls-row__select,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__select {
+  padding-right: 8px;
 }
 .vex-ls-row:hover .vex-ls-row__time,
 .vex-ls-row:hover .vex-ls-row__state,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__time,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__state {
-  visibility: hidden;
+  display: none;
 }
 .vex-ls-row[data-editing] {
   padding: 0 4px;
@@ -534,6 +619,27 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
+}
+
+/* WIDE: the column never zooms (docs/design/H3-DESKTOP.md section 1.11);
+ * from 1920 its words step up instead, as VEX Cloud's do (`styles/left.css`,
+ * H3 section 16): New chat and the nav to 14; the day heads, the tags and the
+ * times to 12; the chat rows and the search field to 15. The account name's
+ * step is in profile-menu.css. */
+@media (min-width: 1920px) {
+  .vex-ls-nrow--new,
+  .vex-ls-nrow--nav {
+    font-size: 14px;
+  }
+  .vex-ls-group,
+  .vex-ls-row__state,
+  .vex-ls-row__time {
+    font-size: 12px;
+  }
+  .vex-ls-row__select,
+  .vex-ls-search__input {
+    font-size: 15px;
+  }
 }
 
 /* FOOT: the account row behind a quiet rule. */
@@ -937,10 +1043,16 @@ html[data-os="mac"] .vex-ls-railhead {
  * stay above it. Closed it is hidden and inert; Web Animations slide it
  * (transform) and fade its scrim (opacity), and nothing else moves.
  *
+ * Its ground is a step above the rail, VEX Cloud's --vx-history-panel,
+ * oklch(8% 0.006 264), which lands on the ground's own #010203 in sRGB, so it
+ * takes the ground token; its edge the 24% chosen rule.
+ *
  * The scrim lies beside it over the rest of Vex's column (her column's
  * track less the panel); where the panel covers what is read (under 1024,
  * a page with her column folded to its strip) it runs to the window's
- * edge. A press on it closes the panel. */
+ * edge. It is Cloud's --vx-scrim, oklch(3% 0.004 264 / 50%): the ground at
+ * half (an alias composed in place, as the sheets may name no primitive). A
+ * press on it closes the panel. */
 .vex-shell-frame > .vex-chats-panel {
   position: absolute;
   z-index: 19;
@@ -950,6 +1062,7 @@ html[data-os="mac"] .vex-ls-railhead {
   width: var(--vex-h3-chats-w);
   height: auto;
   border-right-color: var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-bg-base);
   transform: translate3d(-100%, 0, 0);
   visibility: hidden;
 }
@@ -986,7 +1099,7 @@ html[data-os="mac"] .vex-ls-railhead {
   width: max(0px, calc(var(--vex-vex-track) - var(--vex-h3-chats-w)));
   padding: 0;
   border: 0;
-  background: var(--vex-alias-bg-mask-1);
+  background: color-mix(in srgb, var(--vex-alias-bg-base) 50%, transparent);
   cursor: default;
   opacity: 0;
   visibility: hidden;

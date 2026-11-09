@@ -1,7 +1,7 @@
 /**
  * THE APP-WIDE APPROVALS' SYNC (docs/design/R3-MINIMAL.md sections 3 and 8).
- * The count and the list are "Needs you · N" (`features/vex/NeedsYouControl.tsx`)
- * and the cards a Review key opens are the Needs you page
+ * The count and the list are the Vex console's Needs you (`features/vex/VexConsole.tsx`,
+ * and the console line under 1024) and the cards a Review key opens are the Needs you page
  * (`screens/NeedsYouScreen.tsx`), so what stays here is what has no control of
  * its own: `GlobalApprovalsSync` keeps the app-wide inbox fresh and owns the
  * cross-mode announcement. It renders nothing and is mounted ONCE by the

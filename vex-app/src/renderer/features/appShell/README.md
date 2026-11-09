@@ -60,8 +60,11 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   Portfolio, Agent Scan (its full feed), Board and Settings open pages; Lighter
   and Studio switch mode. The selected row is `selectNavDestination`: the open
   page first (Agent Scan in any scope selects its row), then the mode.
-- Search chats turns its cell into the field with All, Agent and Mission tabs and
-  counts (local text, title filter). Escape closes it and drops the Agent tab.
+- The Search chats field is always open in its 48 cell (VEX Cloud's). A typed
+  query (or Missions) enters the search mode: All, Agent and Mission tabs with
+  counts take the nav's place (local text, title filter). "Clear search" stands
+  only while there is a query. Escape clears a query first, then leaves the mode
+  and drops the Agent tab.
 - The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
   (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
   scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
@@ -104,11 +107,11 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   through `goUpToPage`. Else the Studio project or the session title with "Agent ·
   Restricted" and the mission badge (`MissionRail`). The agent welcome has none.
 - Right cluster: a page close key (top-level page outside agent mode), export,
-  the Studio host word, Notices (while any exist), Needs you, the token chip.
-- `features/vex/NeedsYouControl.tsx`: on every screen and mode; checking, none,
-  some (count capped at 99+) and a failed read ("Needs you · ?", Retry). Its
-  panel is the Vex sidebar's `NeedsYouList`. Review never decides: an on-screen
-  card is scrolled to with Reject focused, other approvals open the Needs you page.
+  the Studio host word, Notices (while any exist), the token chip.
+- Needs you lives in the Vex console (`features/vex/VexConsole.tsx`, the console
+  line under 1024); `NeedsYouAnnouncer` in the header says a rise in its count.
+  Review never decides: an on-screen card is scrolled to with Reject focused,
+  other approvals open the Needs you page.
 - Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
   timer, and "n mission running" only while Vex is hidden. It toggles Vex
   (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + B

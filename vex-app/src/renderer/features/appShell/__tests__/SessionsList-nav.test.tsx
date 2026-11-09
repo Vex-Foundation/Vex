@@ -248,7 +248,8 @@ describe("the nav", () => {
     // Escape brings back the sections; the Mission tab holds, so Missions
     // stays the selected row and the key still says New mission.
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "New mission" })).not.toBeNull();
     expect(navRow("Missions").getAttribute("aria-current")).toBe("page");
 
@@ -297,17 +298,24 @@ describe("the selected nav row follows the real destination", () => {
 });
 
 describe("New chat and the search mode", () => {
-  it("draws New chat and Search chats as the column's first two H3 cells", () => {
+  it("draws New chat and the Search chats field as the column's first two H3 cells", () => {
     // docs/design/H3-DESKTOP.md section 1.4: NEW CHAT on the cell fill, then
-    // "Search chats"; the word on screen is the name a screen reader hears.
+    // the field, always open (VEX Cloud's): no row that opens into it. Its
+    // placeholder is the name a screen reader hears.
     renderSidebar();
     const body = document.querySelector(".vex-ls-body");
     const [first, second] = Array.from(body?.children ?? []);
     expect(first?.classList.contains("vex-ls-nrow--new")).toBe(true);
     expect(first?.textContent).toBe("New chat");
-    expect(second?.classList.contains("vex-ls-nrow--search")).toBe(true);
-    expect(second?.textContent).toBe("Search chats");
-    expect(second?.hasAttribute("aria-label")).toBe(false);
+    expect(second?.classList.contains("vex-ls-search")).toBe(true);
+    const field = within(second as HTMLElement).getByRole("searchbox", { name: "Search chats" });
+    expect(field.getAttribute("placeholder")).toBe("Search chats");
+    expect(screen.queryByRole("button", { name: "Search chats" })).toBeNull();
+    // The nav stands under it until a query is typed.
+    expect(nav()).not.toBeNull();
+    // No Clear key while the field is empty, and no Esc keycap.
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close search" })).toBeNull();
   });
 
   it("New chat opens the creator", () => {
@@ -316,15 +324,23 @@ describe("New chat and the search mode", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("Search turns into the field with the All, Agent and Mission tabs, counted", () => {
+  it("a typed query brings the All, Agent and Mission tabs, counted, in the nav's place", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     const field = screen.getByRole("searchbox", { name: "Search chats" });
+    field.focus();
+    // A press or a focus alone moves nothing.
+    expect(nav()).not.toBeNull();
+    // "r" is in every title, so the counts are the whole list's.
+    fireEvent.change(field, { target: { value: "r" } });
+    // The field keeps its node and its focus as the mode comes in.
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).toBe(field);
     expect(document.activeElement).toBe(field);
-    // The nav makes way for the field; New chat stays above it.
+    // The nav makes way for the tabs; New chat stays above the field.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
 
+    // "Chat", never "session", in every word a person reads (Appendix A.2).
+    expect(screen.getByRole("tablist", { name: "Filter chats" })).not.toBeNull();
     const tabs = screen.getAllByRole("tab");
     // A tab's name is its word; the count beside it is decoration.
     expect(tabs.map((t) => t.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
@@ -339,13 +355,31 @@ describe("New chat and the search mode", () => {
     expect(screen.getByText(/Esc closes search/)).not.toBeNull();
   });
 
-  it("starts a session and closes the search from the mouse, not only the keyboard", () => {
+  it("Clear search stands only while there is a query, empties it and focuses the field", () => {
     const { onCreate } = renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
+    fireEvent.change(field, { target: { value: "btc" } });
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect((field as HTMLInputElement).value).toBe("");
+    expect(document.activeElement).toBe(field);
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+    expect(screen.getByText("Portfolio Check")).not.toBeNull();
+  });
+
+  it("Escape with a query clears it and keeps the focus; with an empty field it brings back the sections", () => {
+    renderSidebar();
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
+    field.focus();
+    fireEvent.change(field, { target: { value: "btc" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect((field as HTMLInputElement).value).toBe("");
+    expect(document.activeElement).toBe(field);
+    // Still in the search mode: the tabs hold until the empty field's Escape.
+    expect(screen.getByRole("tablist", { name: "Filter chats" })).not.toBeNull();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByRole("tablist")).toBeNull();
     expect(nav()).not.toBeNull();
   });
 
@@ -360,21 +394,89 @@ describe("New chat and the search mode", () => {
     const taken = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     taken.preventDefault();
     document.body.dispatchEvent(taken);
-    expect(screen.getByRole("searchbox")).not.toBeNull();
+    expect(screen.getByRole("tablist")).not.toBeNull();
 
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
     expect(nav()).not.toBeNull();
   });
 
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "a" } });
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     expect(useUiStore.getState().sessionModeFilter).toBe("agent");
+    // The first Escape clears the query, the second leaves the search.
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
     expect(useUiStore.getState().sessionModeFilter).toBe("all");
     expect(screen.getByText("Arbitrum LP Rebalance")).not.toBeNull();
+  });
+});
+
+describe("the search's result, spoken (VEX Cloud's chat-list.tsx)", () => {
+  const announcer = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='chats-search-announcer']");
+
+  it("says how many chats a resting query found, politely, and names the results", () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      expect(announcer()?.getAttribute("aria-live")).toBe("polite");
+      expect(announcer()?.textContent).toBe("");
+      const field = screen.getByRole("searchbox", { name: "Search chats" });
+      fireEvent.change(field, { target: { value: "btc" } });
+      // Nothing while the query is still moving.
+      expect(announcer()?.textContent).toBe("");
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("1 chat found");
+      expect(screen.getByRole("group", { name: "Search results" })).not.toBeNull();
+
+      fireEvent.change(field, { target: { value: "r" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("4 chats found");
+
+      fireEvent.change(field, { target: { value: "zzz" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("No chats match your search.");
+
+      // A cleared query says nothing, and the chats are no longer results.
+      fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("");
+      expect(screen.queryByRole("group", { name: "Search results" })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("speaks a new query that finds the same count again", () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      const field = screen.getByRole("searchbox", { name: "Search chats" });
+      fireEvent.change(field, { target: { value: "btc" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const first = announcer()?.textContent;
+      fireEvent.change(field, { target: { value: "gas" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).not.toBe(first);
+      expect(announcer()?.textContent?.trim()).toBe("1 chat found");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -390,7 +492,7 @@ describe("the sessions by name", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Pinned" })).not.toBeNull();
     expect(screen.getByRole("heading", { level: 3, name: "Today" })).not.toBeNull();
     // The search mode heads its matches with the tabs instead.
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "a" } });
     expect(screen.queryByRole("heading", { name: "Chats" })).toBeNull();
   });
 
@@ -464,7 +566,9 @@ describe("the rail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     expect(onToggle).toHaveBeenCalledTimes(2);
     rerender(false);
-    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
+    // Opened, the column's field takes the focus; the sections stay.
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search chats" }));
+    expect(nav()).not.toBeNull();
   });
 
   it("opens the sidebar on the list when Chat or Missions is pressed on the rail", () => {
@@ -503,6 +607,20 @@ describe("the column fits its track at every seam", () => {
     path.join(here, "..", "..", "..", "styles", "global-css", "left-sidebar.css"),
     "utf8",
   );
+
+  it("steps its words up from 1920, since the column never zooms (VEX Cloud's left.css)", () => {
+    const at = css.indexOf("@media (min-width: 1920px) {");
+    expect(at).toBeGreaterThan(-1);
+    const wide = css.slice(at, css.indexOf("\n}\n", at));
+    const sizeOf = (selectors: string): string =>
+      new RegExp(`${selectors.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{\\s*font-size: (\\d+)px;`).exec(wide)?.[1] ?? "none";
+    expect(sizeOf(".vex-ls-nrow--new,\n  .vex-ls-nrow--nav")).toBe("14");
+    expect(sizeOf(".vex-ls-group,\n  .vex-ls-row__state,\n  .vex-ls-row__time")).toBe("12");
+    expect(sizeOf(".vex-ls-row__select,\n  .vex-ls-search__input")).toBe("15");
+    // The block follows the base sizes, so it wins on order.
+    expect(at).toBeGreaterThan(css.indexOf(".vex-ls-row__time {"));
+    expect(at).toBeGreaterThan(css.indexOf(".vex-ls-search__input {"));
+  });
 
   it("fills its track and may shrink below its content", () => {
     const block = /\.vex-ls \{([^}]*)\}/.exec(css)?.[1] ?? "";

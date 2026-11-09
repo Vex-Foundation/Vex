@@ -239,6 +239,11 @@ export interface KimmSectionProps {
    */
   readonly band?: { readonly line: { readonly lead: string; readonly rest: string } };
   /**
+   * A page stands beside her: her field holds its frame, as VEX Cloud runs
+   * it only in a chat's section (`KimmField`'s `hold`).
+   */
+  readonly fieldHold?: boolean;
+  /**
    * Her section's id, which every toggle names in `aria-controls` (VEX
    * Cloud's EC-01: a disclosure named by its words, no `aria-expanded`); her
    * corner key names it too. The shell's and the stage's differ.
@@ -253,6 +258,7 @@ export function KimmSection({
   shortcut,
   reportsPhase = true,
   band,
+  fieldHold = false,
   id,
 }: KimmSectionProps): JSX.Element {
   const art = useKimmArt();
@@ -422,7 +428,7 @@ export function KimmSection({
         {/* The glyph field, behind her figure: it runs while she is open and
           * holds its frame in the strip; the band draws one frame
           * (`KimmField.tsx`, S4-17). */}
-        <KimmField open={open} mode={fieldMode} onDrawn={setFieldDrawn} />
+        <KimmField open={open} mode={fieldMode} hold={fieldHold} onDrawn={setFieldDrawn} />
         {/* Her drop rides this layer, which stands from the first frame,
           * so her first open drops her too: her figure is only asked for at
           * that press, and a new element has no closed place to drop from. */}
