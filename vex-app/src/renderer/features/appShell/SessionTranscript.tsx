@@ -299,10 +299,10 @@ export function SessionTranscript({
           unchanged. */}
       {/* The reading column (`.vex-reading-col`, docs/design/R3-MINIMAL.md
           section 6): centred, at most 760, the same column as the docked
-          composer below it. The 18px column gap is the ONE vertical rhythm -
-          no per-row margins. */}
+          composer below it. Its rows carry their own gaps, VEX Cloud's
+          6 / 12 / 16 flow rhythm (`SessionTranscript/flowRhythm.ts`). */}
       <div data-vex-transcript-column="" className="vex-reading-col">
-      <div ref={columnRef} className="relative flex flex-col gap-[18px]">
+      <div ref={columnRef} data-vex-flow="" className="relative flex flex-col">
         <EarlierBand state={earlierState} onRetry={retryEarlier} />
         <TranscriptRows
           rows={rows}

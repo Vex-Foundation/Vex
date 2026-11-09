@@ -162,11 +162,19 @@ describe("TranscriptRows - the animation must not sit on the anchored element", 
     expect(key).not.toBe("");
   });
 
-  it("keeps the turn rhythm on the row element, where layout belongs", () => {
-    // docs/design/R3-MINIMAL.md section 6: the 18 gap plus 4 opens a turn at
-    // the reader's message (22 above the user block).
-    const { container } = renderRows([row(1, "user")], new Set());
-    expect(entry(container, 1).className).toContain("mt-1");
+  it("keeps the flow rhythm on the row element, where layout belongs", () => {
+    // VEX Cloud's 6 / 12 / 16 (`flowRhythm.ts`): the row carries its gap. The
+    // first row under the day line stands 6 under it; Vex's answer 12 under
+    // the person's message; their next message 12 under her answer.
+    const { container } = renderRows(
+      [row(1, "user"), row(2, "assistant"), row(3, "user")],
+      new Set(),
+    );
+    expect(entry(container, 1).getAttribute("data-vex-gap")).toBe("6");
+    expect(entry(container, 2).getAttribute("data-vex-gap")).toBe("12");
+    expect(entry(container, 3).getAttribute("data-vex-gap")).toBe("12");
+    expect(entry(container, 1).className).not.toContain("mt-1");
+    expect(container.querySelector("[data-vex-day-separator]")?.getAttribute("data-vex-gap")).toBe("0");
   });
 });
 

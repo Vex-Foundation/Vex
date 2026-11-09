@@ -6,11 +6,12 @@
  * the scroll model, the anchor and every query.
  *
  * Three rules live here and nowhere else:
- *  1. TURN RHYTHM - the list gap is the 18px beat of the page; a USER row
- *     starts a new turn, so its extra `mt-1` opens the turn (22 above it,
- *     docs/design/R3-MINIMAL.md section 6). A prose-less tool row that only
- *     continues the step run above it takes the gap back
- *     (`data-vex-run-continues`), so one run reads as one ruled list.
+ *  1. FLOW RHYTHM - no single gap: each row's gap comes from what it shows
+ *     at its edges (VEX Cloud's 6 / 12 / 16, `flowRhythm.ts`), stamped as
+ *     `data-vex-gap` and set by chat-transcript.css. A prose-less tool row
+ *     that only continues the step run above it joins its card with no gap
+ *     (`data-vex-run-continues`), and a row the fold hides adds none
+ *     (`data-vex-trace-shut`).
  *  2. WHAT ANIMATES - only rows appended LIVE (id outside the settled set).
  *     History, including load-older prepends, hard-cuts. A tool group keeps its
  *     first call row's id, so its status matches its members'. The SAME
@@ -22,9 +23,8 @@
  *     the trace's head over its first step part, which says the turn's steps
  *     and, after a turn watched live, its measured time (`turnSteps.ts`,
  *     `TurnIsland/turnClock.ts`, `TurnTrace.tsx`). The head folds every step
- *     of the turn (`turnFold.ts`); a row that holds nothing but steps takes
- *     its gap back while its turn is folded (`data-vex-trace-shut`), so a
- *     folded turn reads as its head and its answer.
+ *     of the turn (`turnFold.ts`); a folded turn reads as its head and its
+ *     answer.
  *
  * The animation rides an INNER wrapper, never the element carrying
  * `data-vex-entry-id` / `data-vex-anchor-key`. That element is the scroll
@@ -49,7 +49,8 @@ import { transcriptEntryKey as entryKey } from "../agentActivity.js";
 import type { TranscriptEntry } from "../transcriptRowModel.js";
 import { crossesLocalDay, dayLabel } from "./daySeparator.js";
 import { continuesStepRun, turnMarkKeys } from "./turnMarks.js";
-import { foldsWhole, turnTraces } from "./turnSteps.js";
+import { flowRhythm } from "./flowRhythm.js";
+import { turnTraces } from "./turnSteps.js";
 import { TurnFoldContext, useTurnFold, type TurnFoldView } from "./turnFold.js";
 import { useTurnClock } from "../TurnIsland/turnClock.js";
 import type { MessageForkActions } from "./useMessageForkActions.js";
@@ -60,11 +61,18 @@ import type { MessageForkActions } from "./useMessageForkActions.js";
  * rows from different LOCAL calendar days and above the very first loaded
  * row, so a resumed session names its day. Chrome, not content: aria-hidden.
  */
-function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
+function DaySeparator({
+  iso,
+  gap,
+}: {
+  readonly iso: string;
+  /** Its place in the flow rhythm (`flowRhythm.ts`). */
+  readonly gap: number;
+}): JSX.Element | null {
   const label = dayLabel(iso, Date.now());
   if (label === null) return null;
   return (
-    <div aria-hidden data-vex-day-separator="" className="vex-day">
+    <div aria-hidden data-vex-day-separator="" data-vex-gap={gap} className="vex-day">
       <span>{label}</span>
     </div>
   );
@@ -151,29 +159,59 @@ export function TranscriptRows({
       reveal: fold.reveal,
     };
   }, [fold, traces.heads]);
+  // Where a day line stands, and which rows only continue the steps above.
+  const startsDayAt = (row: TranscriptEntry, index: number): boolean => {
+    const prev = index > 0 ? rows[index - 1] : undefined;
+    return prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
+  };
+  const continuesAt = (row: TranscriptEntry, index: number): boolean =>
+    !startsDayAt(row, index) && continuesStepRun(row, index > 0 ? rows[index - 1] : undefined);
+  // The flow rhythm (`flowRhythm.ts`): every row's gap from its edges.
+  // Memoized: the list re-renders at the live preview's rate, and the rhythm
+  // reads each row's acts.
+  const flow = useMemo(
+    () =>
+      flowRhythm(rows, {
+        headed: (row) => traces.heads.has(entryKey(row)),
+        shut: (row) => {
+          const anchorId = traces.turnOf.get(entryKey(row));
+          return anchorId !== undefined && foldView.shut.has(anchorId);
+        },
+        startsDay: (row, index) => {
+          const prev = index > 0 ? rows[index - 1] : undefined;
+          return prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
+        },
+        continues: (row, index) => {
+          const prev = index > 0 ? rows[index - 1] : undefined;
+          return (
+            prev !== undefined &&
+            !crossesLocalDay(prev.createdAt, row.createdAt) &&
+            continuesStepRun(row, prev)
+          );
+        },
+      }),
+    [rows, traces, foldView],
+  );
   return (
     <TurnFoldContext.Provider value={foldView}>
       {rows.map((row, index) => {
         const liveAppend = settledIds !== null && !settledIds.has(row.id);
-        const prev = index > 0 ? rows[index - 1] : undefined;
-        const startsDay =
-          prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
-        const continues = !startsDay && continuesStepRun(row, prev);
+        const startsDay = startsDayAt(row, index);
+        const continues = continuesAt(row, index);
         const key = entryKey(row);
         const thinkingHead = traces.heads.get(key);
         const anchorId = traces.turnOf.get(key);
-        const traceShut =
-          anchorId !== undefined && foldView.shut.has(anchorId) && foldsWhole(row);
+        const place = flow[index] ?? { dayGap: null, gap: 0, hidden: false };
         return (
           <Fragment key={entryKey(row)}>
-            {startsDay ? <DaySeparator iso={row.createdAt} /> : null}
+            {startsDay ? <DaySeparator iso={row.createdAt} gap={place.dayGap ?? 0} /> : null}
             <div
               data-vex-entry-id={row.id}
               data-vex-entry-variant={row.variant}
               data-vex-anchor-key={entryKey(row)}
               data-vex-run-continues={continues ? "" : undefined}
-              data-vex-trace-shut={traceShut ? "" : undefined}
-              className={cn(row.variant === "user" && "mt-1")}
+              data-vex-trace-shut={place.hidden ? "" : undefined}
+              data-vex-gap={place.gap}
             >
               <div
                 className={cn(

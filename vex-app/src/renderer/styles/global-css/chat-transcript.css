@@ -127,6 +127,32 @@ html[data-still] .vex-latest {
   zoom: var(--vex-zoom);
 }
 
+/* THE FLOW RHYTHM (VEX Cloud's spec 10.10, `FLOW_GAP`; `flowRhythm.ts`):
+ * the column has no gap of its own; each row's gap comes from what it shows
+ * at its edges, the larger edge winning: 6 between rows and trace cards, 12
+ * around text or a card and above the live turn, 16 around the turn's head.
+ * A row the fold hides, and a row that joins the card above, take 0. The
+ * band over the first row stands 12 above it; the turn's stats line 6 under
+ * its turn. */
+[data-vex-flow] > [data-vex-gap="6"] {
+  margin-top: 6px;
+}
+[data-vex-flow] > [data-vex-gap="12"] {
+  margin-top: 12px;
+}
+[data-vex-flow] > [data-vex-gap="16"] {
+  margin-top: 16px;
+}
+[data-vex-flow] > [data-vex-area="stream-preview"]:not(:first-child) {
+  margin-top: 12px;
+}
+[data-vex-flow] > [data-vex-turn-stats] {
+  margin-top: 6px;
+}
+[data-vex-flow] .vex-earlier {
+  margin-bottom: 12px;
+}
+
 /* The earlier-messages band (`EarlierBand`; VEX Cloud's `.vx-tx-earlier`,
  * H3's `.t-earlier`): 36 high on the 1px rule under it, caps 11 tracked in
  * ink 2, the swatch 10 from the words; Retry a 28 key at the band's end in
@@ -185,8 +211,7 @@ html[data-still] .vex-latest {
 
 /* The day line (VEX Cloud's `.vx-tx-day`, H3's `.t-day`): caps 11 tracked,
  * muted, centred between two hairlines that fade from the chosen rule (24%)
- * to nothing, 14 from the word. The row stack's 18 gap plus 8 here is the 26
- * above it; the gap below is the 18. */
+ * to nothing, 14 from the word, 8 under its flow gap. */
 .vex-day {
   display: flex;
   align-items: center;
@@ -1515,12 +1540,8 @@ html[data-still] .vex-trace-head__chev {
 .vex-reply .vex-trace[data-shut]:not(:has(> .vex-trace-head)) {
   margin: 0;
 }
-/* A row of nothing but steps, in a folded turn, takes its gap back; a row
- * that only continues the steps above it joins their card. */
-[data-vex-trace-shut],
-[data-vex-run-continues] {
-  margin-top: -18px;
-}
+/* A row that only continues the steps above it joins their card: no gap
+ * (`flowRhythm.ts`) and no rule between the two lists. */
 [data-vex-run-continues] .vex-trace {
   border-top: 0;
 }
