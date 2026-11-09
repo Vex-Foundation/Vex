@@ -157,15 +157,16 @@
   margin-left: auto;
   padding-left: 16px;
 }
-/* "Updated 14:30": 14, muted, sentence case; the clock is a figure. */
+/* "Updated 14:30": 12, muted, sentence case (VEX Cloud's page stamp); the
+ * clock is a figure at the same size. */
 .vex-pg-stamp {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pg-stamp .vex-num {
-  font-size: 13px;
+  font-size: 12px;
 }
 /* A page key in the row: a square cell the row's height, the rule on its
  * left, the icon at rest in ink 2. */
@@ -296,7 +297,7 @@
   gap: 8px 20px;
   max-width: 760px;
   margin: 0 0 20px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-secondary);
 }
@@ -827,7 +828,7 @@
 .vex-pf-t {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .vex-pf-t th {
   padding: 10px 0;
@@ -1189,7 +1190,7 @@
  *   - Load more is a key cell. */
 .vex-ov[data-frame="h3"] .vex-scan-lead {
   max-width: 760px;
-  font-size: 15px;
+  font-size: 14px;
 }
 .vex-ov[data-frame="h3"] .vex-scan-filters {
   gap: 0;
@@ -1249,7 +1250,7 @@
   color: var(--vex-alias-label-tertiary);
 }
 .vex-ov[data-frame="h3"] .vex-scan-what {
-  font-size: 15px;
+  font-size: 14px;
 }
 .vex-ov[data-frame="h3"] .vex-scan-legs {
   font-size: 14px;
@@ -1345,7 +1346,7 @@
 .vex-mk__lead {
   max-width: 760px;
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--vex-alias-label-secondary);
 }
 .vex-mk__ink {
