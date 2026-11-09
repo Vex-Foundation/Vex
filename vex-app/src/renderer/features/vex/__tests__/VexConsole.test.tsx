@@ -474,6 +474,21 @@ describe("the console's recent activity", () => {
     expect(rows[1]?.getAttribute("data-vex-activity-status")).toBe("failed");
   });
 
+  it("pins Open activity as the console's foot, 44 high under a top rule, opaque (VEX Cloud's .vx-cn-foot)", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/vex-sidebar.css"), "utf8");
+    const foot = /\.vex-vs__rest > \[data-vex-area="vex-recent-activity"\] > \.vex-console__open \{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+    expect(foot).toMatch(/position:\s*sticky;/);
+    expect(foot).toMatch(/bottom:\s*0;/);
+    expect(foot).toMatch(/height:\s*44px;/);
+    expect(foot).toMatch(/margin-top:\s*auto;/);
+    expect(foot).toMatch(/border-top:\s*1px solid var\(--vex-alias-rule-quiet\);/);
+    expect(foot).toMatch(/background:\s*var\(--vex-alias-sidebar-fill\);/);
+    expect(sheet).toMatch(/\.vex-vs__rest \{[^}]*flex-direction:\s*column;/);
+    // The key stays the section's last child, so the sheet can seat it.
+    render(<VexConsoleActivity />);
+    expect(activity().lastElementChild?.getAttribute("data-vex-area")).toBe("vex-open-activity");
+  });
+
   it("opens Agent Scan from Open activity", () => {
     answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
     render(<VexConsoleActivity />);

@@ -326,9 +326,37 @@
  * scrolling within the column when it outgrows it. Each part opens with a 44
  * head (12, 600, caps) over the rule. */
 .vex-vs__rest {
+  display: flex;
   min-height: 0;
   flex: 1 1 0;
+  flex-direction: column;
   overflow-y: auto;
+}
+/* OPEN ACTIVITY IS THE CONSOLE'S FOOT (VEX Cloud's `.vx-cn-foot`, DG-3
+ * decision 7): Recent activity, the last part, takes the room left, and its
+ * Open activity key sits on the column's foot, 44 high under a top rule on
+ * the column's ground, sticky while the rest scrolls, so it is a press away
+ * whatever the rest holds. */
+.vex-vs__rest > [data-vex-area="vex-recent-activity"] {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.vex-vs__rest > [data-vex-area="vex-recent-activity"] > .vex-console__open {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex: none;
+  height: 44px;
+  margin-top: auto;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  border-bottom: 0;
+  background: var(--vex-alias-sidebar-fill);
+}
+/* Opaque even under the pointer, so no row shows through the foot: the
+ * pointer lifts the words to ink instead. */
+.vex-vs__rest > [data-vex-area="vex-recent-activity"] > .vex-console__open:hover {
+  background: var(--vex-alias-sidebar-fill);
 }
 .vex-console__head--section {
   height: 44px;
