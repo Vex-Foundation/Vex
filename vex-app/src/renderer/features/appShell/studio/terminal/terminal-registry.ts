@@ -95,6 +95,11 @@ interface RegistryRecord {
    * An in-flight WebGL load compares against it and drops itself when stale.
    */
   rendererGeneration: number;
+  /**
+   * Settles once the WebGL renderer has attached (`true`) or will not
+   * (`false`). See `rendererSettled`.
+   */
+  rendererSettled: Promise<boolean>;
   disposeTheme: () => void;
   disposed: boolean;
   readonly linkHint: TerminalLinkHint;
@@ -247,6 +252,24 @@ export class TerminalRegistry {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Resolves `true` once the terminal's WebGL renderer has attached, `false`
+   * when it will not (no WebGL, a stale load, an unknown id). Never rejects.
+   *
+   * WHY. The terminal opens on the DOM renderer and the WebGL one attaches
+   * after an async load. The two measure the cell differently (WebGL floors
+   * it to whole device pixels: Roboto Mono's 7.8px cell at 13 is 7 at a
+   * device pixel ratio of 1), so a grid fitted before the attach keeps the DOM
+   * renderer's column count and leaves a band of empty columns at the right
+   * until the pane next changes size. The caller refits on `true` and tells
+   * the host the size, as it does after `remeasureFace`.
+   */
+  rendererSettled(terminalId: string): Promise<boolean> {
+    const record = this.#records.get(terminalId);
+    if (record === undefined || record.disposed) return Promise.resolve(false);
+    return record.rendererSettled;
   }
 
   /**
@@ -479,6 +502,7 @@ export class TerminalRegistry {
       container: null,
       webgl: null,
       rendererGeneration: 0,
+      rendererSettled: Promise.resolve(false),
       disposeTheme: () => undefined,
       disposed: false,
       linkHint: new TerminalLinkHint(terminal, wrapper),
@@ -495,7 +519,7 @@ export class TerminalRegistry {
     });
 
     const generation = record.rendererGeneration;
-    void enableWebglRenderer({
+    record.rendererSettled = enableWebglRenderer({
       terminal,
       loader: this.#webglLoader,
       preference: this.#rendererPreference,
@@ -504,12 +528,13 @@ export class TerminalRegistry {
         record.webgl = null;
       },
     }).then((attachment) => {
-      if (attachment === null) return;
+      if (attachment === null) return false;
       if (record.disposed || record.rendererGeneration !== generation) {
         attachment.dispose();
-        return;
+        return false;
       }
       record.webgl = attachment;
+      return true;
     });
 
     return record;

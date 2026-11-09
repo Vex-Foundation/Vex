@@ -16,6 +16,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TerminalRegistry } from "../terminal-registry.js";
+import { RendererPreference } from "../webgl-renderer.js";
 import { installMatchMedia, stubBox } from "./terminal-harness.js";
 
 /** The chain must not attempt a real WebGL load; jsdom has no context. */
@@ -271,5 +272,35 @@ describe("TerminalRegistry lifecycle", () => {
     registry.dispose("remeasure");
     expect(registry.remeasureFace("remeasure")).toBe(false);
     document.documentElement.style.removeProperty("--font-mono");
+  });
+});
+
+describe("TerminalRegistry renderer settle", () => {
+  beforeEach(() => {
+    installMatchMedia();
+  });
+
+  it("says when the WebGL renderer has attached, so the host fits its cell again", async () => {
+    class FakeWebglAddon {
+      activate(): void {}
+      dispose(): void {}
+      onContextLoss(): { dispose: () => void } {
+        return { dispose: () => undefined };
+      }
+    }
+    const withWebgl = new TerminalRegistry({
+      webglLoader: () => Promise.resolve(FakeWebglAddon),
+      rendererPreference: new RendererPreference(),
+    });
+    withWebgl.acquire("gl");
+    await expect(withWebgl.rendererSettled("gl")).resolves.toBe(true);
+    withWebgl.dispose("gl");
+    await expect(withWebgl.rendererSettled("gl")).resolves.toBe(false);
+
+    const dom = new TerminalRegistry({ ...noWebgl, rendererPreference: new RendererPreference() });
+    dom.acquire("dom");
+    await expect(dom.rendererSettled("dom")).resolves.toBe(false);
+    await expect(dom.rendererSettled("unknown")).resolves.toBe(false);
+    dom.dispose("dom");
   });
 });
