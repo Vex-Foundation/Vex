@@ -22,7 +22,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -1931,21 +1931,101 @@ describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
     );
   }
 
+  /** Every drawn row and its box, in document order: the rows the cue may count. */
+  const ROW_SELECTOR = ".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt";
+
+  /** Lays the rows out 34 apart from `firstBottom`, the scroller ending at 500, the footer at 600. */
+  function layoutStacked(firstBottom: number): () => void {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number): DOMRect =>
+        ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      if (this.matches(ROW_SELECTOR)) {
+        const rows = Array.from(document.querySelectorAll(ROW_SELECTOR));
+        const bottom = firstBottom + rows.indexOf(this) * 34;
+        return box(bottom - 34, bottom);
+      }
+      if (this.matches('[data-vex-area="approval-foot"]')) return box(600, 672);
+      return box(0, 500);
+    });
+    return () => spy.mockRestore();
+  }
+
+  /** The drawn rows: a closed All signed fields shows its toggle, never its folded rows. */
+  const drawnRows = (): Element[] =>
+    Array.from(document.querySelectorAll(ROW_SELECTOR)).filter(
+      (row) => row.closest("details:not([open])") === null || row.closest("summary") !== null,
+    );
+
   it("says how many rows are out of view, over the keys and hidden from screen readers", () => {
     const restore = layoutWith(900);
     try {
       renderScrolled();
       const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
-      const rows = document.querySelectorAll(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt").length;
+      const rows = drawnRows().length;
       expect(rows).toBeGreaterThan(1);
       expect(cue?.textContent).toBe(`${rows} more lines below`);
       expect(cue?.getAttribute("aria-hidden")).toBe("true");
-      // The footer's first row: over the keys, never over a row.
+      // Drawn from the footer, over the keys; the sheet lays it over the view.
       expect(cue?.parentElement?.getAttribute("data-vex-area")).toBe("approval-foot");
-      expect(cue?.parentElement?.firstElementChild).toBe(cue);
     } finally {
       restore();
     }
+  });
+
+  it("never counts the folded rows of a closed All signed fields, which are not on screen at all", () => {
+    // Every row, folded ones too, laid out under the view's end: only the drawn ones count.
+    const restore = layoutWith(900);
+    try {
+      renderScrolled();
+      const details = document.querySelector("details.vex-appr__more") as HTMLDetailsElement;
+      expect(details.open).toBe(false);
+      const folded = details.querySelectorAll(".vex-appr__well dt").length;
+      expect(folded).toBeGreaterThan(0);
+      const all = document.querySelectorAll(ROW_SELECTOR).length;
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      expect(cue?.textContent).toBe(`${all - folded} more lines below`);
+    } finally {
+      restore();
+    }
+  });
+
+  it("counts only the rows the view cuts, and none while the last row is in view", () => {
+    // 34 apart from 400: the drawn rows' feet at 400, 434, 468, 502, ... The view ends at 500.
+    const restore = layoutStacked(400);
+    try {
+      renderScrolled();
+      const drawn = drawnRows().length;
+      const cut = Array.from({ length: drawn }, (_, i) => 400 + i * 34).filter((bottom) => bottom > 501).length;
+      expect(cut).toBeGreaterThan(0);
+      expect(cut).toBeLessThan(drawn);
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      expect(cue?.textContent).toBe(cut === 1 ? "1 more line below" : `${cut} more lines below`);
+    } finally {
+      restore();
+    }
+    cleanup();
+    // The whole card above the view's end, the last row (All signed fields) included: no cue.
+    const restoreAll = layoutStacked(60);
+    try {
+      renderScrolled();
+      const last = 60 + (drawnRows().length - 1) * 34;
+      expect(last).toBeLessThan(500);
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+    } finally {
+      restoreAll();
+    }
+  });
+
+  it("lays the cue over the view and takes no room: absolute over the keys", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const cue = new RegExp("(?:^|\\})\\s*\\.vex-appr__more-cue\\s*\\{([^}]*)\\}").exec(sheet)?.[1] ?? "";
+    expect(cue).toContain("position: absolute");
+    expect(cue).toContain("bottom: 100%");
+    expect(cue).toContain("height: 29px");
+    expect(sheet).not.toMatch(/grid-area: cue/);
   });
 
   it("draws nothing while every row is in view", () => {
