@@ -95,11 +95,13 @@ export function useRowsBelow(
     let frame = 0;
     const measure = (): void => {
       frame = 0;
-      // While the cue shows it covers the last 29 of the view (it takes no
-      // room of its own), so a row under it counts as out of view; once the
-      // count is 0 the cue leaves and the full view is read again.
+      // The cue covers the last 29 of the view when it shows (it takes no
+      // room of its own), so a row ending in that band counts as out of view
+      // whether or not the cue is up yet. One rule, never read from the cue's
+      // own state: a row in the band always calls the cue, so the count
+      // cannot flip between two stable answers with the load's timing.
       const end = visibleEnd(card, scroller, dock);
-      setBelow((shown) => rowsBelow(card, end - (shown > 0 ? CLIP_CUE_PX : 0)));
+      setBelow(rowsBelow(card, end - CLIP_CUE_PX));
     };
     const schedule = (): void => {
       if (frame !== 0) return;

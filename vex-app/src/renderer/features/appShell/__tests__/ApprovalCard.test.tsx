@@ -2022,6 +2022,22 @@ describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
     }
   });
 
+  it("counts a last row ending under the cue's band, every time, never by the cue's own state", () => {
+    // Count the drawn rows, then lay them out so the last one ends at 490:
+    // inside the 29 the cue covers at the view's end (500), above the end.
+    renderScrolled();
+    const drawn = drawnRows().length;
+    cleanup();
+    const restore = layoutStacked(490 - (drawn - 1) * 34);
+    try {
+      renderScrolled();
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      expect(cue?.textContent).toBe("1 more line below");
+    } finally {
+      restore();
+    }
+  });
+
   it("lays the cue over the view and takes no room: absolute over the keys", () => {
     const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
       /\/\*[\s\S]*?\*\//g,
