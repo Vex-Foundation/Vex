@@ -21,6 +21,7 @@ import type {
 } from "@shared/schemas/lighter-points.js";
 import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
 import { useLighterPoints } from "../../../../lib/api/lighter-points.js";
+import { LoadingWord } from "../../../../components/ui/cover.js";
 
 const AUTH_REASON_COPY: Readonly<Record<string, string>> = {
   no_credential: "No Lighter trading credential is saved for this account on this machine.",
@@ -235,11 +236,8 @@ export function LighterPointsSection({
 
       <div aria-busy={refreshing} aria-live="polite">
         {state.kind === "idle" || state.kind === "loading" ? (
-          <p
-            className="text-[13px] leading-[20px] text-ink-secondary"
-            data-vex-lighter-points-state="loading"
-          >
-            Reading the campaign from Lighter…
+          <p className="m-0" data-vex-lighter-points-state="loading">
+            <LoadingWord word="Reading the campaign from Lighter…" />
           </p>
         ) : state.kind === "failed" ? (
           <p

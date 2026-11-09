@@ -112,6 +112,14 @@ describe("UserMcpSection", () => {
     expect(box.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
+  it("reads the servers as the loading word over two cover rows, one status", () => {
+    settings.listUserMcp.mockReturnValue(new Promise(() => undefined));
+    renderSection();
+    const status = screen.getByRole("status", { name: "Reading your servers…" });
+    expect(status.querySelector(".vex-stripes")).not.toBeNull();
+    expect(status.querySelectorAll("[data-vex-cover-rows] > li")).toHaveLength(2);
+  });
+
   it("turns a tool on with the answer main gives, and shows a refusal in the row", async () => {
     settings.listUserMcp.mockResolvedValue(ok(list([tool({})])));
     settings.setUserMcpToolEnabled.mockResolvedValueOnce(ok(list([tool({ enabled: true })])));

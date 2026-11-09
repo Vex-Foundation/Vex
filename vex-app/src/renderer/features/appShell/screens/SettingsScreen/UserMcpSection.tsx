@@ -34,6 +34,7 @@ import {
   userMcpErrorText,
   useUserMcpList,
 } from "../../../../lib/api/user-mcp.js";
+import { CoverRows, PageLoading } from "../PageLoading.js";
 
 export const USER_MCP_INTRO =
   "Their tools can look things up for your chats. They can never trade, move funds or sign. The arguments you approve are sent to that server.";
@@ -341,7 +342,9 @@ export function UserMcpSection(): JSX.Element {
           {userMcpErrorText(list.data)}
         </p>
       ) : (
-        <p className={noteClass}>Loading</p>
+        <PageLoading label="Reading your servers…">
+          <CoverRows rows={2} />
+        </PageLoading>
       )}
       {data?.servers.map((server) => <ServerCard key={server.id} server={server} />)}
       <div className="vex-mcp-box vex-mcp-box--add">
