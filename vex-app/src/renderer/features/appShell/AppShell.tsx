@@ -756,8 +756,9 @@ function ShellFrame({
    *   - the ACCOUNT cell under the chats column: the account row
    *     (`SidebarProfile`), moved out of the sidebars, which are headless
    *     here; on the rail, its box alone;
-   *   - the TAGLINE cell under the Vex column: the moment's tagline
-   *     (`TaglineCell`); 0 wide where her column is;
+   *   - the BARS cell under the Vex column: her bars, no words
+   *     (`TaglineCell`, D2); empty while she is hidden; 0 wide where her
+   *     column is;
    *   - the chat's composer seat: the centre runs on into the row, so the
    *     composer ends at the window's foot under the chat (composer.css).
    * Each follows its column in the DOM, so focus reaches a column's foot
@@ -781,8 +782,9 @@ function ShellFrame({
       data-vex-area="tagline-cell"
       inert={chatsPanelOverVex}
     >
-      {/* The moment's tagline (H3-DESKTOP.md Appendix A.6), from her state. */}
-      <TaglineCell />
+      {/* Her bars (D2, H3-DESKTOP.md section 6.5): no words; nothing while
+        * she is hidden, the cell's ground and rule alone, as her column's. */}
+      {vexEffectiveOpen ? <TaglineCell words={false} /> : null}
     </div>
   );
 

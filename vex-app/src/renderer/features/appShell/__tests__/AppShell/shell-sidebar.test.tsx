@@ -1209,11 +1209,16 @@ describe("AppShell", () => {
       view.container.querySelector("[data-vex-area='sessions-sidebar'] [data-vex-area='sidebar-profile']"),
     ).toBeNull();
     expect(view.container.querySelectorAll("[data-vex-area='sidebar-profile']")).toHaveLength(1);
-    // The tagline cell says the moment (H3-DESKTOP.md Appendix A.6): at rest,
-    // desktop's line.
+    // The cell under Vex's column holds her bars and no words (D2,
+    // H3-DESKTOP.md section 6.5); hidden, it is ground alone.
     const tagline = view.container.querySelector<HTMLElement>("[data-vex-area='tagline-cell']");
-    expect(tagline?.textContent).toBe("An AI trading agent, on your computer.");
+    expect(tagline?.querySelector("[data-vex-area='vex-foot']")?.getAttribute("data-vex-foot-words")).toBe("none");
+    expect(tagline?.querySelector(".vex-tagline")).toBeNull();
+    expect(tagline?.textContent).toBe("");
     expect(tagline?.classList.contains("vex-drag")).toBe(true);
+    act(() => useUiStore.getState().setVexOpen(false));
+    expect(tagline?.childElementCount).toBe(0);
+    act(() => useUiStore.getState().setVexOpen(true));
     // Each cell follows its column in the DOM: chats, account, chat, Vex, tagline.
     const order = Array.from(frame?.children ?? [])
       .map((el) =>

@@ -323,6 +323,37 @@ export function SessionComposer({
   const dragHasFiles = (event: DragEvent): boolean =>
     Array.from(event.dataTransfer.types).includes("Files");
 
+  // The effort key (its menu, or its quiet placeholder while the catalogue
+  // loads), and the model cell's key: D2's model cell holds both (section
+  // 6.5); the desk keeps the effort in its strip.
+  const effortReady =
+    reasoningCapability !== null && reasoningStageIsAgent && effectiveReasoningEffort !== null;
+  const effortKey =
+    effortReady ? (
+      <ReasoningEffortSelect
+        capability={reasoningCapability}
+        value={effectiveReasoningEffort}
+        onChange={handleReasoningPick}
+      />
+    ) : reasoningStageIsAgent && !modelsResolved ? (
+      <ReasoningEffortPlaceholder />
+    ) : null;
+  const modelCell = (
+    <ComposerModelCell
+      modelId={composerModel.modelId}
+      {...(composerModel.canPick && {
+        menu: {
+          options: composerModel.options,
+          onPick: composerModel.pick,
+          // Never changes under a running turn.
+          disabled: submitPending,
+          conversationTokens,
+          onOpenSettings: () => setShellRoute(inferenceSettingsRoute(null)),
+        },
+      })}
+    />
+  );
+
   return (
     <>
       {/* The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7):
@@ -431,18 +462,19 @@ export function SessionComposer({
             onPickAt={slashMenu.pickAt}
           />
 
-          {/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section
-           * 1.8): 31 high across the chat column, four cells divided by the
-           * rule, at 1440:
+          {/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md sections
+           * 1.8 and 6.5): 31 high across the chat column, four cells divided
+           * by the rule. D2 moved the model and its effort down into the
+           * model cell; the strip reads, left to right:
            *
-           *   model   680, 248    the model and its effort, "{model} HIGH"
-           *   promise 928, 211    FUNDS REQUIRE APPROVAL in Restricted, FULL
-           *                       ACCESS in Full access
-           *   state   1139, 47+   H3's empty cell; desktop's composer states
-           *                       stand here while they last ("Waiting for
-           *                       approval", "Stopping...")
-           *   context 1186, 254   CONTEXT, its meter and the real share, where
-           *                       H3 draws DAILY BUDGET, which desktop has not
+           *   access  AI PERMISSION, the grant's caption (and the legacy
+           *           plan seat while a session has one)
+           *   promise FUNDS REQUIRE APPROVAL in Restricted, FULL ACCESS in
+           *           Full access
+           *   state   the room left; desktop's composer states stand here
+           *           while they last ("Waiting for approval", "Stopping...")
+           *   context at the right: CONTEXT, its meter and the real share,
+           *           where Cloud draws DAILY BUDGET, which desktop has not
            *
            * `@container` (container-type: inline-size) makes the strip the
            * query container for the promise's collapse, so the seat answers to
@@ -450,9 +482,10 @@ export function SessionComposer({
            * follows the chat column, and a viewport media query would fire at
            * the wrong moment.
            *
-           * SHRINK CHAIN (codex Bug 3, cross-check section 2). The model cell is
-           * `min-w-0` and shrinkable, the model name truncates first; the
-           * promise and the context are the strip's protected seats and never
+           * SHRINK CHAIN (codex Bug 3, cross-check section 2). In the row the
+           * model cell is `min-w-0` and shrinkable, the model name truncating
+           * first; in the strip the state cell takes the room left, and the
+           * promise and the context are the protected seats that never
            * shrink. The promise's WORDS collapse second, at the 600px
            * container threshold, to the grant's icon. Nothing is
            * blanket-clipped: every focusable control stays visible and
@@ -464,30 +497,34 @@ export function SessionComposer({
             data-vex-strip-state={awaitingApproval ? "approval" : stopping ? "stopping" : undefined}
             className="vex-composer-strip @container"
           >
-            <div className="vex-composer-strip__cell vex-composer-strip__model min-w-0">
-              <ComposerOptions
-                modelId={composerModel.modelId}
-                effort={
-                  reasoningCapability !== null &&
-                  reasoningStageIsAgent &&
-                  effectiveReasoningEffort !== null ? (
-                    <ReasoningEffortSelect
-                      capability={reasoningCapability}
-                      value={effectiveReasoningEffort}
-                      onChange={handleReasoningPick}
-                    />
-                  ) : reasoningStageIsAgent && !modelsResolved ? (
-                    <ReasoningEffortPlaceholder />
-                  ) : null
-                }
-              />
-              <ComposerPlanChip
-                sessionId={sessionId}
-                missionStatus={runStatus}
-                open={planOpen}
-                onOpenChange={setPlanOpen}
-              />
-            </div>
+            {onLighterDesk ? (
+              // The desk keeps its approved strip (section 4.9): the model
+              // and its effort first.
+              <div className="vex-composer-strip__cell vex-composer-strip__model min-w-0">
+                <ComposerOptions modelId={composerModel.modelId} effort={effortKey} />
+                <ComposerPlanChip
+                  sessionId={sessionId}
+                  missionStatus={runStatus}
+                  open={planOpen}
+                  onOpenChange={setPlanOpen}
+                />
+              </div>
+            ) : (
+              // AI PERMISSION, the strip's first words (D2, section 6.5): a
+              // caption for the grant beside it, which names itself. The
+              // legacy plan seat stands after it while a session has one.
+              <div className="vex-composer-strip__cell vex-composer-strip__access flex-none">
+                <span className="vex-composer-strip__label" aria-hidden="true">
+                  AI permission
+                </span>
+                <ComposerPlanChip
+                  sessionId={sessionId}
+                  missionStatus={runStatus}
+                  open={planOpen}
+                  onOpenChange={setPlanOpen}
+                />
+              </div>
+            )}
             <div className="vex-composer-strip__cell vex-composer-strip__promise flex-none">
               <ComposerPermissionSeat
                 permission={
@@ -540,19 +577,23 @@ export function SessionComposer({
            * model cell, the field and the send cell, the bottom row's chat
            * cells. */}
           <div data-vex-area="composer-row" className="vex-composer-row">
-            <ComposerModelCell
-              modelId={composerModel.modelId}
-              {...(composerModel.canPick && {
-                menu: {
-                  options: composerModel.options,
-                  onPick: composerModel.pick,
-                  // Never changes under a running turn.
-                  disabled: submitPending,
-                  conversationTokens,
-                  onOpenSettings: () => setShellRoute(inferenceSettingsRoute(null)),
-                },
-              })}
-            />
+            {/* THE MODEL CELL (D2, section 6.5): the provider's mark (the
+                model menu, or the key to Settings), then the model's name
+                over "Reasoning: High" and the effort key's chevron. Two
+                keys in one cell, each with its own name. The desk keeps its
+                approved mark-only cell. */}
+            {onLighterDesk ? (
+              modelCell
+            ) : (
+              <div data-vex-area="composer-model-group" className="vex-composer-modelcell">
+                {modelCell}
+                <ComposerOptions
+                  modelId={composerModel.modelId}
+                  reasoning={effortReady}
+                  effort={effortKey}
+                />
+              </div>
+            )}
             <div className="vex-composer-field">
               <ComposerField
                 fieldSlotRef={fieldSlotRef}

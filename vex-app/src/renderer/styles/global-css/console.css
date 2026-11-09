@@ -184,6 +184,51 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   background-clip: padding-box;
   color: var(--vex-alias-label-primary);
 }
+/* D2'S MODEL CELL (docs/design/H3-DESKTOP.md section 6.5): one cell of the
+ * bottom row holding the provider's mark (the model key, 56 wide, its frame
+ * given to the cell) and the model's name over "Reasoning: High" with the
+ * effort key's chevron, 16 from the cell's right rule; at most 260 wide, the
+ * name truncating first. */
+.vex-composer-modelcell {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 260px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  align-items: stretch;
+  border-top: 1px solid var(--vex-alias-rule);
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+  background-clip: padding-box;
+}
+.vex-composer-modelcell .vex-composer-model {
+  width: 56px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+.vex-composer-modelcell > .vex-composer-options {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding-right: 16px;
+}
+.vex-composer-options__reasoning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+}
+.vex-composer-modelcell .vex-composer-options .vex-composer-options__effort {
+  height: 20px;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--vex-alias-label-secondary);
+}
 .vex-composer-model:hover:not(:disabled) {
   background-color: var(--vex-alias-interactive-hover);
 }
@@ -312,6 +357,9 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   .vex-composer-model {
     width: 56px;
   }
+  .vex-composer-modelcell > .vex-composer-options {
+    display: none;
+  }
   .vex-composer-key {
     width: 72px;
     padding: 0;
@@ -358,10 +406,8 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 .vex-composer-strip__cell + .vex-composer-strip__cell {
   border-left: 1px solid var(--vex-alias-rule);
 }
-/* The model cell takes the room left (248 at 1440, its words from the
- * left), so the promise stands next to the context with only the state cell
- * between, H3's 47 wide empty cell, which widens to its words while it
- * holds them. */
+/* The desk's strip (its approved plate, section 4.9): the model cell takes
+ * the room left, its words from the left, the promise beside it. */
 .vex-composer-strip__model {
   flex: 1 1 auto;
   min-width: 120px;
@@ -370,6 +416,16 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   flex: 0 1 auto;
   min-width: 47px;
   padding: 0 12px;
+}
+/* D2's strip (section 6.5): AI PERMISSION and the promise stand at the left,
+ * the state cell takes the room left, and the context stands at the right. */
+.vex-composer-strip__label {
+  color: var(--vex-alias-label-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-composer-strip__access ~ .vex-composer-strip__state {
+  flex: 1 1 auto;
 }
 .vex-composer-strip__state:empty {
   padding: 0;
