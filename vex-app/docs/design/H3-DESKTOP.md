@@ -775,6 +775,11 @@ VEX Cloud's tabs (`components/ui/underline-tabs.tsx`, `styles/rows.css`, DG-2 se
 - The page frame's tab cells (`PageTabs`, `.vex-pg-tabs` in `book.css`) were already these cells in the 57 row; their unused card head size (`size="head"`) is retired.
 - R3's `underline` look stays only where an approved plate draws it (the wizard's wallets and Studio's tab strip, section 4.9); the `segmented` look is unchanged.
 
+### 5.9 The loader and the loader gate
+- **The loader** (`VexLoader`) is the loading hatch (section 5.6), 14 square, blinking once every 1200ms, still under reduced motion and Save-Data, its label announced once. It replaces R3's quiet loading line (the 2px track and its stepping blue segment) in the migrations, the wizard's waits and the transcript's loading states. The memory panel's own loading row still draws the line until its restyle.
+- **The loader gate** (`LoaderGate`, `components/brand/`, `ui-primitives/gate.css`) is VEX Cloud's (its CTR/brand contract section 3, DG-3 shell.css section 9), ported as a primitive (owner approval 2026-11-08): the VEX mark 200 wide at 1440 (clamp(120px, 14vw, 200px)) drawn twice, the base at 8% white and the fill in white clipped from the right as real progress arrives; the word 11 caps in muted, 22 under the mark; a row of max(18, round(width / 22)) upright cells on the frame's foot line, off 3%, lit 20%, the head 42%; the slow line or a failure hung under the mark, out of flow. The count walks toward what has arrived at one speed (the whole bar in 2.4 s) and never past it; a full bar rests 320ms, the gate fades in 600ms while the mark lifts out to 96% (MOTION-POLICY.md); after 12 s it completes whatever has arrived. The gate's ground is the black primitive (Cloud's oklch(5% 0.006 264) is #000001, one step away). The gate's art is code (the mark's path and CSS): no file joins the brand asset registry.
+- **Not mounted.** Desktop's boot is the approved wake plate (`ChronosGate`, section 4.9), which the gate does not replace. Open: whether the gate stands anywhere on desktop (the wake, a window's first paint) is the owner's call.
+
 ---
 
 ## Appendix A. Words, keys and taglines

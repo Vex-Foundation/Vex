@@ -149,6 +149,19 @@ export const DURATION_BLINK_MS = 600;
 export const DURATION_BLINK_HATCH_MS = 1200;
 
 /**
+ * The loader gate's exit (`components/brand/LoaderGate.tsx`, VEX Cloud's
+ * `--vx-dur-item`, `--vx-dur-gate` and `--vx-dur-item-fade`): the gate fades
+ * over 600ms while its mark lifts out to 96% over 700ms and fades over 500ms.
+ * Named exceptions to the scale (MOTION-POLICY.md). The fade is paired with
+ * the component's backstop timer, which reads `DURATION_GATE_FADE_MS`.
+ * CSS: `--vex-duration-gate-fade`, `--vex-duration-gate-mark`,
+ * `--vex-duration-gate-mark-fade`.
+ */
+export const DURATION_GATE_FADE_MS = 600;
+export const DURATION_GATE_MARK_MS = 700;
+export const DURATION_GATE_MARK_FADE_MS = 500;
+
+/**
  * The general key's hover fill: it rises from the key's foot (VEX Cloud's
  * `--vx-dur-fill`, docs/design/H3-DESKTOP.md section 5.2). A named exception
  * to the scale (MOTION-POLICY.md), owned by `components/ui/button.tsx`.

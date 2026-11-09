@@ -38,6 +38,9 @@ import {
   DURATION_BASE_MS,
   EASE_HOUSE,
   DURATION_BLINK_HATCH_MS,
+  DURATION_GATE_FADE_MS,
+  DURATION_GATE_MARK_FADE_MS,
+  DURATION_GATE_MARK_MS,
   DURATION_BLINK_MS,
   DURATION_FAST_MS,
   DURATION_INSTANT_MS,
@@ -81,6 +84,7 @@ const allSheets: readonly (readonly [string, string])[] = [
   "type.css",
   "ui-primitives.css",
   "ui-primitives/indicators.css",
+  "ui-primitives/gate.css",
   "ui-primitives/menu.css",
   "ui-primitives/overlays.css",
 ].map((name) => [name, read(name)] as const);
@@ -108,6 +112,9 @@ describe("motion vocabulary", () => {
       ["--vex-duration-vex-close", DURATION_VEX_CLOSE_MS],
       ["--vex-duration-blink", DURATION_BLINK_MS],
       ["--vex-duration-blink-hatch", DURATION_BLINK_HATCH_MS],
+      ["--vex-duration-gate-fade", DURATION_GATE_FADE_MS],
+      ["--vex-duration-gate-mark", DURATION_GATE_MARK_MS],
+      ["--vex-duration-gate-mark-fade", DURATION_GATE_MARK_FADE_MS],
       ["--vex-duration-key-fill", DURATION_KEY_FILL_MS],
     ];
     for (const [token, ms] of pairs) {
@@ -137,6 +144,9 @@ describe("motion vocabulary", () => {
       "--vex-duration-vex-close",
       "--vex-duration-blink",
       "--vex-duration-blink-hatch",
+      "--vex-duration-gate-fade",
+      "--vex-duration-gate-mark",
+      "--vex-duration-gate-mark-fade",
       "--vex-duration-key-fill",
       "--vex-ease-standard",
       "--vex-ease-out",

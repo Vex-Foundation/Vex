@@ -177,7 +177,7 @@ html[data-still] .vex-sq[data-state="ongoing"] {
   height: 14px;
   background: repeating-linear-gradient(
     135deg,
-    var(--vex-alias-label-secondary) 0 1px,
+    var(--vex-stripes-ink, var(--vex-alias-label-secondary)) 0 1px,
     transparent 1px 4px
   );
   vertical-align: middle;
@@ -199,6 +199,17 @@ html[data-still] .vex-stripes {
     forced-color-adjust: none;
     background: repeating-linear-gradient(135deg, CanvasText 0 1px, transparent 1px 4px);
   }
+}
+
+/* The loader (`VexLoader`): the hatch alone, its label for assistive tech
+ * only. `paper` is the hatch in ink on the dark pre-shell plate. */
+.vex-loader-hatch {
+  display: inline-flex;
+  flex: none;
+}
+
+.vex-loader-hatch--paper {
+  --vex-stripes-ink: var(--vex-alias-label-primary);
 }
 
 /* The loading word (Cloud's `.vx-loading-word`): the hatch, 10, then the
@@ -493,6 +504,8 @@ html[data-still] .vex-swatch {
 }
 
 /* ── Loading line ──────────────────────────────────────────────────────────
+ * R3's line. `VexLoader` draws the loading hatch now (above); the memory
+ * panel's own loading row is the line's last holder.
  * A word and a quiet line, never a skeleton of fake numbers: a 2px track in
  * the quiet rule with one blue segment 34% wide. It loops only while it is
  * mounted, and consumers mount it only for a real pending state: the segment
