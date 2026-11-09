@@ -40,9 +40,9 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexKey, VexKeyView, vexKeySquareOf } = await import("../VexKey.js");
+const { VexKey, VexKeyView } = await import("../VexKey.js");
 const { VEX_SECTION_ID, VEX_STAGE_SECTION_ID } = await import("../vex-section-a11y.js");
-const { VEX_STATES } = await import("../vex-state.js");
+const { VEX_STATES, VEX_STATE_WORD } = await import("../vex-state.js");
 const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
 const NOW = Date.parse("2026-11-04T12:00:00.000Z");
@@ -107,8 +107,9 @@ describe("VexKey: what it draws", () => {
     const status = part("status");
     expect(part("long")?.textContent).toBe("Waiting for approval");
     const square = status?.querySelector(".vex-key__square");
-    // H3's key square: waiting is solid ink (section 1.6).
-    expect(square?.getAttribute("data-key-square")).toBe("waiting");
+    // Waiting is the target, as Cloud's MOOD_STATE draws it (section 2.2),
+    // apart from Done with the colour taken away.
+    expect(square?.getAttribute("data-state")).toBe("warning");
     expect(square?.getAttribute("aria-hidden")).toBe("true");
     expect(part("timer")).toBeNull();
   });
@@ -132,26 +133,47 @@ describe("VexKey: what it draws", () => {
   it("draws the state square as an outline at Ready", () => {
     render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
     expect(part("status")?.textContent).toBe("Ready");
-    expect(part("status")?.querySelector(".vex-key__square")?.getAttribute("data-key-square")).toBe(
-      "ready",
-    );
+    expect(part("status")?.querySelector(".vex-key__square")?.getAttribute("data-state")).toBe("idle");
   });
 
-  it("gives each state the key square H3 draws: running blinks, waiting ink, done hud", () => {
-    // VEX Cloud's H3 key (h3-merged/js/data.js): Ready the muted frame,
-    // Thinking and Working the blinking hud, Waiting ink, Done solid hud.
-    expect(VEX_STATES.map((state) => [state, vexKeySquareOf(state)])).toEqual([
-      ["ready", "ready"],
-      ["listening", "ready"],
-      ["thinking", "running"],
-      ["working", "running"],
-      ["awaiting", "waiting"],
-      ["done", "done"],
+  it("gives each state Cloud's square: running blinks, waiting the target, done the empty frame", () => {
+    // VEX Cloud's MOOD_STATE (components/vex/vex-mood.ts): Done is a settled
+    // turn whatever its outcome, never a solid fill; Waiting is the target.
+    const { rerender } = render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+    const drawn = VEX_STATES.map((state) => {
+      arrange({ state, word: VEX_STATE_WORD[state] });
+      rerender(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+      return [state, part("status")?.querySelector(".vex-key__square")?.getAttribute("data-state")];
+    });
+    expect(drawn).toEqual([
+      ["ready", "idle"],
+      ["listening", "idle"],
+      ["thinking", "ongoing"],
+      ["working", "ongoing"],
+      ["awaiting", "warning"],
+      ["done", "idle"],
       ["concerned", "concerned"],
       ["error", "error"],
-      ["sleeping", "sleeping"],
-      ["waking", "running"],
+      ["sleeping", "paused"],
+      ["waking", "ongoing"],
     ]);
+  });
+
+  it("carries the waiting count under the same target square", () => {
+    arrange({
+      needsYou: {
+        status: "ready",
+        unknownCopy: null,
+        count: 2,
+        items: [],
+        retry: () => undefined,
+        retrying: false,
+      },
+    });
+    render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+    const count = part("count");
+    expect(count?.textContent).toBe("2");
+    expect(count?.querySelector(".vex-key__square")?.getAttribute("data-state")).toBe("warning");
   });
 
   it("counts the live turn beside the word, in m:ss from its start", () => {
