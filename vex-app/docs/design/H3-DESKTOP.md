@@ -2,6 +2,8 @@
 
 VEX Desktop's next look, H3, is a grid of square cells on a near-black ground: the chats column on the left, Vex's column in the middle, the chat on the right, one header row across all three and one bottom row under them. Vex's column holds the Vex key, her console and Kimm's section, the illustrated figure the person opens and closes. Opening or closing her section never moves a waiting money card.
 
+**D2 (owner decision, 2026-11-09).** The app shell (the chat interface and its frame, in the agent shell and Studio) no longer stands Vex's column in the middle: it stands at the RIGHT edge, a fixed 280, under a VEX cell in the header, with Kimm as a portrait card at its top, and hiding Vex hides that whole column while its room stays. Section 6 records D2 and every behaviour it changed; where a section of 1 to 4 below describes the shell's middle column, Kimm's section in it, its wipe, strip, corner key or first-close hint, or H3's Vex key in the header, section 6 replaces it for the shell. The Lighter desk (section 4.9), the lock screen (section 4.13) and the screens before the shell (wake, checks, migrations, the wizard) are not part of D2 and keep what those sections say.
+
 This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`. R3-MINIMAL stays the source of truth for a screen until the slice that restyles it lands; the last slice points R3-MINIMAL here. Once a slice lands, code comments cite this file as `docs/design/H3-DESKTOP.md section N`. Row IDs such as S1-03 are the feature rows of the revamp plan (`.context/revamp-ui-plan.md`, kept locally by the lead), one commit each.
 
 The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 November 2026. Cloud builds the same design in `Jcaster99/Vex` (`apps/web`). No H3 branch was on that remote on 3 November 2026, so both apps start from the same mockup; wherever this document derives a number the mockup does not print, the number is reconciled with Cloud once Cloud's branch exists.
@@ -841,6 +843,63 @@ VEX Cloud's tabs (`components/ui/underline-tabs.tsx`, `styles/rows.css`, DG-2 se
 - **Not mounted.** Desktop's boot is the approved wake plate (`ChronosGate`, section 4.9), which the gate does not replace. Open: whether the gate stands anywhere on desktop (the wake, a window's first paint) is the owner's call.
 
 ---
+
+## 6. D2: Vex's column at the right edge
+
+Owner decision, 2026-11-09: desktop's app shell moves from H3's middle Vex column to the "D2 version, column" layout, because it "looks clean and better" (the owner's words). The source is two plates the owner showed ("D2 version · column · New chat, greeting" and "version d2 · column · chat in progress, trace of reasoning"), not in any repo, measured from a 1440-wide capture; the spec taken from them is the lead's `D2-SPEC.md` (kept locally). Where the plates are silent, desktop keeps what it did. Built on `revamp-ui-d2`, one feature per commit.
+
+Not part of D2: the lock screen (its own split, section 4.13), the screens before the shell (they keep the stage and H3's middle column, `--vex-h3-vex-w`), and the Lighter desk (its approved plates, section 4.9: its order, its Kimm section with the wipe, strip and corner key, its H3 Vex key in the header and its composer strip are unchanged).
+
+### 6.1 The frame
+- Columns, left to right: chats 248 (the 76 rail where folded, and under 1280) | the chat, the rest | Vex 280, fixed at every width from 1024 up (`D2_VEX_WIDTH`, `--vex-d2-vex-w`; `computeH3ShellColumns` and `h3GridTemplateColumns`, `lib/shell-columns.ts`). At 1440: 248 | 912 | 280; at 1280: 248 | 752 | 280; at 1024: 76 | 668 | 280.
+- The DOM follows the screen: chats, chat, Vex (`shellColumnOrder`), so focus reaches the composer before her column. Under 1024 her console line stands over the chat and comes before it.
+- Rows as H3's: the header 76, the body, the bottom row 72 x zoom and its rule (section 1.11). Open: the plates measure the header about 56; desktop keeps 76 because the macOS traffic lights and the Windows caption overlay are placed for it by the main process, the lock screen and the stages share it, and the spec keeps their reserved areas as today.
+- Her column's rule is on its left, against the chat. Her column never zooms (it is fixed, as the chats column is); the page strip that stands for it on a page still zooms.
+- The money rule's first leg holds by construction: the solve reads the window, the chats choice and a page's strip, and nothing about her shown or hidden choice (section 3.6).
+
+### 6.2 The header
+- Over the chats: the logo cell and the sidebar key, as before.
+- Over the chat: the title cell (as before), then **NEEDS YOU and its count** (`NeedsYouHeadCell`): one key, caps 12 at 600, the count a figure after it, muted at zero, no count while the read runs or after it failed. A press opens the Needs you page at its first decision (`{ kind: "needsYou", approvalId: null }`) and never decides; the cards there keep their gate (section 4.3). This reverses section 4.8's "no header control" for the shell; the desk keeps none. Under 1024 the cell leaves the row: the console line carries Needs you and its Review (section 1.10). Then MAINNET and REAL FUNDS (static, as before), the Notices pill and the export as before. No PAUSE ALL.
+- Over Vex's column: **the VEX cell** (`VexHeadCell`): VEX in caps at its left, and at its right end a 44 square key with the panel glyph (`LinePanelRight`), named "Hide Vex" or "Show Vex", `aria-controls` her column (`#vex-section`; her band under 1024), `aria-keyshortcuts` and the tooltip carrying Ctrl+Shift+B (Cmd+Shift+B on a Mac), her state word as its description, every press said "Vex shown." or "Vex hidden." as before. It replaces H3's Vex key (portrait, state word, keycaps, chevron) in the shell. The cell shares the column with the caption reserve, `calc(280px - var(--overlay-w))`, so the Windows and Linux buttons keep their corner; under 1024 the cell is as wide as what it holds. The announcers of her state word and of her shown or hidden press live in this cell, which always stands.
+- The cells in the DOM: chats, title, needs, funds, the caption reserve, VEX (`ShellHeader.tsx`); the running head keeps its one tree position. On the desk the same slot holds H3's Vex key, now after the network cell in the DOM (its place on screen is unchanged).
+
+### 6.3 Vex's column
+Top to bottom (`VexColumn.tsx`, vex-sidebar.css):
+1. **Kimm's portrait card**: the lock screen's panel (`KimmPanel`) in its `card` seat, the column's width and 280 / 0.78 (about 359) high, flush under the header; her live glyph field behind her figure, her figure her mood's still by the mood clock (`useKimmShellMood`), placed by her section's settled rule (48 from her top, 88% of the width, cut by the foot). On a page her field holds its frame, as her section's did; reduced motion and Save-Data hold one frame; off screen it stops (`KimmField`'s run gate). On a short window the card gives way first, to 160, so the rows under it keep their place.
+2. **The state row**, 44 under a rule: her state square (`VEX_STATE_SQUARE`) and word in caps 13, the live timer at the right end in mono, muted, while a turn runs.
+3. **THIS CHAT** (this mission, this project), caps 11 muted, over one line from real parts (`thisChatLineOf`): the narration desktop already writes (`narration.ts`); with none, "{n} decision(s) wait(s) for you." while decisions wait elsewhere, or "Nothing waiting in your chats." once the Needs you read says nothing waits; nothing while that read has not answered. At least 68 high. In Studio with a project open, This project's block takes its place.
+4. **Needs you and the missions row**: the console's top block as before (section 1.5), Review rows that never decide.
+5. A page's own block (the Board's Ask Vex), then **OPEN ACTIVITY** as the column's foot row, 44 high. Under it, the column's empty ground.
+
+Gone from the shell's column: Kimm's section over the console, its wipe, strip, scan head, drop, corner key, guard and first-close hint, the console's rest (AI permission, recent activity). The chat's AI permission stands in the composer's strip (section 6.5); its console block is retired.
+
+### 6.4 Hiding Vex
+- The VEX key and the chord hide or show **the whole column's body** at the press, no motion: hidden, the column keeps its track (280) and shows its ground and rule only (`data-vex-shown="false"`, no children), so the chat keeps its width and a waiting money card never moves (section 3.6). The bars cell under it shows its ground too. Focus inside the body as it hides goes to the VEX key (section 3.4).
+- The remembered choices keep their meaning: chats `vexOpenChat` (open by default), pages `vexOpenPages` (closed by default; hidden on a table page the column folds to the page strip as before, section 1.9), the band under 1024 `vexOpenNarrow` (the session's own). Esc never hides her (section 3.5).
+- The proof (`e2e/h3-card-proof.spec.ts`, the D2 legs): at 1280, 1366, 1440, 1920 and 2560 the card's box, her column's box and the grid's columns are read on every painted frame of Hide Vex, Show Vex, a press turned around 80ms later and the chord, and must not change; the frames must show her hidden and shown; the card's pixels shown and hidden must be identical; and at 1440, 1920 and 2560 the card never reaches under her column.
+
+### 6.5 The bottom row and the status strip
+- Under Vex's column the bottom row's cell holds **her bars and no words** (`TaglineCell` with `words` false); hidden, it is ground. The stages before the shell and her band keep their lines.
+- **The model cell** (`composer-model-group`): the provider's mark (the model menu, or the key to Settings, as before), then the model's name over "Reasoning:" and the effort key's word and chevron ("Reasoning: High"), at most 260 wide, the name truncating first; two keys, each with its own name. "Reasoning:" stands only before a real effort key.
+- The field "Ask Vex...", SEND (STOP while a turn runs), as before. No image key.
+- **The strip** over the composer: AI PERMISSION (a caption, `aria-hidden`; the grant names itself), FUNDS REQUIRE APPROVAL or FULL ACCESS, the state cell taking the room left, and the context meter at the right. The model and its effort left the strip for the model cell. The Lighter desk keeps its strip (the model and its effort first) and its mark-only model cell.
+
+### 6.6 The reading column
+The chat's content stands on a column anchored at the chat's LEFT, never centred, so it does not move when the window's right side does (shell.css, chat-transcript.css): `--vex-read-x` = clamp(24, chat - 712 x zoom - 24, 100 x zoom) from the chat's left edge and `--vex-read-w` = min(712 x zoom, chat - read-x - 24); under 1024, 24 and the chat less 48. 100 and 712 at 1440 (348 in the window), 24 and 704 at 1280, 109.1 and 776.8 at 1920 (357.1), 145.5 at 2560 (393.5). The chat's title, the transcript, the waiting card's text (the card one 24 inset wider) and a page's body start on it. This replaces section 1.11's centred reading line.
+
+The welcome stands on it too: "Ready when you are." at 32 / 40 and 600 (no bubble), its two notes under it in muted sentence case 15 / 22, and the 2 x 2 suggestion grid on the reading column's width. The words and the suggestions are the welcome's own.
+
+### 6.7 Narrower windows
+- 1024 to 1279: the chats are the 76 rail; their key slides the chats panel out of the rail **over the chat** (it used to lie over Vex's column); its scrim runs to the window's edge and the chat and her column rest (`inert`) until it closes (section 4.12). Studio's files drawer lies over the chat the same way. Vex's column stays 280 at the right.
+- Under 1024: the band and the console line as before (section 1.10), re-seated: her console line stands in the chat's track and before the chat in the DOM; the VEX cell's key opens and closes her band, held with its reason while the band rests; the header's NEEDS YOU cell leaves the row.
+
+### 6.8 Studio and the harness
+Studio stands in the same frame (Vex at the right, the VEX cell, Needs you in the header, This project in THIS CHAT's place). The H3 harness's Studio plates (section 4.9) now lay their parts on D2's tracks; what each part draws is still the plate approved under H3.
+
+### 6.9 Open
+- The header's height (56 on the plates, 76 here; section 6.1).
+- Where the chat's scroll body shows a classic scrollbar, its gutter stands between the composer's cells and the bars cell (the composer seat is sticky inside the scroll body), about 6 px of ground. Under H3 it stood at the window's edge.
+- AI permission and recent activity left the column; recent activity's component stays for the approved Studio plate in the harness.
 
 ## Appendix A. Words, keys and taglines
 
