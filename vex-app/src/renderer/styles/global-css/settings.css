@@ -27,7 +27,11 @@
  * sentence case 14, ink 2, the 18 icon muted; hover and the chosen row take
  * the chosen row's fill and ink. The nav stays in the page (moving it into the
  * left column is the owner's call); the sections, their words and their
- * controls stay desktop's.
+ * controls stay desktop's. A section (the page kit): no visible title (the
+ * nav's chosen row and the header name it; the h2 stays for assistive tech),
+ * the lead row with the section's status word first; the body 24 in, its
+ * column at most 760; each block a box on the card ground, its 44 head band
+ * the 12 caps name (600) with its link at the right.
  *
  * The sheet's own column gives way to the full width here: the nav sits
  * flush against the left sidebar's rule. The frame's padding rule in
@@ -138,12 +142,12 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 44px 56px;
+  padding: 24px 24px 56px;
   /* The rows answer to the section's own width, not the window's. */
   container-type: inline-size;
 }
 .vex-set__col {
-  max-width: 680px;
+  max-width: 760px;
 }
 
 /* Under 1180 the nav is 210 and the section pads 22 28. The status words
@@ -154,7 +158,7 @@
     grid-template-columns: 210px minmax(0, 1fr);
   }
   .vex-set__body {
-    padding: 22px 28px 56px;
+    padding: 24px 24px 56px;
   }
   .vex-set__word {
     position: absolute;
@@ -166,11 +170,11 @@
   }
 }
 
-/* The section head: the name as H3's card sentence (20 / 400) with its status
- * word (13 caps, ink 2), the lead VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2,
- * at most 760. */
+/* The section head (Cloud's `PageHeader`): the name is the visually hidden
+ * h2; the lead row shows the status word (11 caps, ink 2, its swatch first)
+ * and the lead, VEX Cloud's `.vx-pglead`: 14 / 1.5 ink 2, at most 760. */
 .vex-set__head {
-  margin: 0 0 24px;
+  margin: 0 0 8px;
 }
 .vex-set__title {
   display: flex;
@@ -187,7 +191,8 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  margin-right: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -201,9 +206,9 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* A block inside a section (Points, Trading setup): H3's section head (13
- * caps, 600) with a link at the right (13, ink, underlined), a note under it
- * (13, ink 2). */
+/* A block inside a section (Points, Trading setup): Cloud's section head (12
+ * caps, 600, 12 under it) with a link at the right (13, ink, underlined), a
+ * note under it (13, ink 2). */
 .vex-set__sec {
   margin: 0 0 28px;
 }
@@ -211,11 +216,11 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 .vex-set__sh-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 22px;
   letter-spacing: var(--tracking-label);
@@ -262,11 +267,33 @@
   color: var(--vex-alias-label-primary);
 }
 
+/* A block as Cloud's PageBox (`page.css`, `.vx-pbox`): one rule frame on the
+ * card ground, 16 in; its first head is a 44 band across the box with a rule
+ * under it. Tools (MCP) keeps its own per-server boxes. */
+section.vex-set__sec:not([data-vex-user-mcp]) {
+  margin: 0 0 16px;
+  padding: 0 16px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+section.vex-set__sec:not([data-vex-user-mcp]) > :is(.vex-set__sh, .vex-set__sh-title):first-child {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  margin: 0 -16px 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):first-child {
+  margin-bottom: 0;
+}
+
 /* Label and value rows (the Lighter points): one framed cell, the label in
  * caps (13, muted) at the left, the value, an optional sub line, a rule
  * between rows. */
 .vex-set__kvl {
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 .vex-set__kv {
   display: grid;
