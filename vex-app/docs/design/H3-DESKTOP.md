@@ -798,7 +798,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | "{n} more below", "{n} more above" | same, on the cue at the head's right (DRAFT in Cloud) | every decision is listed; the list scrolls inside the row |
 | "Missions · Not available" | same (DRAFT in Cloud: REAL words joined) | the sessions read failed |
 | "Approve swap: 200 USDC → ETH" | the decision from desktop's approval sentence (`approvalSentence`), for example "Swap 200 USDC for ETH on Base"; for a mission, "Recover the mission", "Accept the contract" or "Fill in the form" | desktop builds the sentence from the signed arguments; missions wait on these three decisions too |
-| "Mainnet, real funds · since 12:40" | same, or "expires {time} UTC" when the approval has an expiry | |
+| "Mainnet, real funds · since 12:40" | same, or "expires {time} UTC" when the approval has an expiry; an approval raised in another chat than the one on screen leads with its chat, Chat “{title}” ("Untitled chat" with none) | VEX Cloud's built `consoleMetaOf`: a decision from elsewhere says where it waits |
 | REVIEW | same | |
 | "1 mission running on Mainnet · Grow ETH" | same form: "1 mission running on Mainnet · {title}", "2 missions running on Mainnet"; with none, "No mission running" (proposed) | the row stays so her box never moves (section 1.5); H3 draws no empty row |
 | "2 strategies running" | left out | no strategies |

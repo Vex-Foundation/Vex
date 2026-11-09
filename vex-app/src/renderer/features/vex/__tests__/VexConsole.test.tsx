@@ -199,6 +199,31 @@ describe("the console's decision row", () => {
     expect(useUiStore.getState().activeSessionId).toBe(OTHER);
   });
 
+  it("names the chat a decision from elsewhere waits in, and not the chat on screen", () => {
+    // VEX Cloud's consoleMetaOf: Chat “{title}” leads the meta line,
+    // dropped only for the chat on screen.
+    useUiStore.setState({ runtimeMode: "agent", activeSessionId: SESSION });
+    const elsewhere = approvalNeedsYouItem(
+      approval({ id: "a2", sessionId: OTHER, sessionTitle: "Treasury chat" }),
+      NOW,
+    );
+    const view = render(<VexConsoleNeedsYou needsYou={ready([elsewhere])} />);
+    const meta = (): string | null | undefined => row().querySelector(".vex-console__meta")?.textContent;
+    expect(meta()?.startsWith(`Chat “Treasury chat” · ${elsewhere.metaLead}`)).toBe(true);
+    view.unmount();
+    const untitled = approvalNeedsYouItem(approval({ id: "a3", sessionId: OTHER, sessionTitle: null }), NOW);
+    const second = render(<VexConsoleNeedsYou needsYou={ready([untitled])} />);
+    expect(meta()?.startsWith("Chat “Untitled chat” · ")).toBe(true);
+    second.unmount();
+    const here = approvalNeedsYouItem(
+      approval({ id: "a1", sessionId: SESSION, sessionTitle: "This chat" }),
+      NOW,
+    );
+    render(<VexConsoleNeedsYou needsYou={ready([here])} />);
+    expect(meta()?.startsWith(here.metaLead)).toBe(true);
+    expect(meta()).not.toContain("Chat “");
+  });
+
   it("lists every decision, the one that expires first leading, and counts them all", () => {
     const soon = approvalNeedsYouItem(
       approval({ id: "a1", sessionId: OTHER, expiresAt: "2026-11-04T12:40:00.000Z" }),

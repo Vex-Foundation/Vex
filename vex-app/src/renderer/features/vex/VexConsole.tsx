@@ -155,11 +155,26 @@ export function needsYouListOf(items: readonly NeedsYouItem[]): readonly NeedsYo
   return lead === null ? [] : [lead, ...items.filter((item) => item !== lead)];
 }
 
-function MetaLine({ item }: { readonly item: NeedsYouItem }): JSX.Element {
-  if (item.metaTime === null) return <>{item.metaLead}</>;
+/**
+ * The chat a decision was raised in, when it is not the chat on screen
+ * (VEX Cloud's `consoleMetaOf`): Chat “{title}”, "Untitled chat" for a
+ * chat with no title, leading the meta line, so a decision from elsewhere
+ * says where it waits.
+ * Only an approval raised in a chat: a mission's line already leads with
+ * its own title, and a Studio project's place is its project.
+ */
+export function needsYouChatPart(item: NeedsYouItem, here: boolean): string | null {
+  if (here || item.kind !== "approval" || item.sessionId === null) return null;
+  return `Chat “${item.where}”`;
+}
+
+function MetaLine({ item, here }: { readonly item: NeedsYouItem; readonly here: boolean }): JSX.Element {
+  const chat = needsYouChatPart(item, here);
+  const lead = chat === null ? item.metaLead : `${chat} · ${item.metaLead}`;
+  if (item.metaTime === null) return <>{lead}</>;
   return (
     <>
-      {item.metaLead} <span className="vex-num">{item.metaTime}</span>
+      {lead} <span className="vex-num">{item.metaTime}</span>
     </>
   );
 }
@@ -176,7 +191,7 @@ function DecisionItem({ item }: { readonly item: NeedsYouItem }): JSX.Element {
           {item.title}
         </p>
         <p className="vex-console__meta">
-          <MetaLine item={item} />
+          <MetaLine item={item} here={here} />
         </p>
       </div>
       <button
