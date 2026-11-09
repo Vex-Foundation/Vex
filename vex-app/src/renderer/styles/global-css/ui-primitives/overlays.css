@@ -120,6 +120,22 @@ dialog.vex-dialog[data-vex-dialog-size="default"] {
   background-color: var(--vex-alias-label-primary);
 }
 
+/* The head's tag (VEX Cloud's `.vx-dlg-tag`, e1083f44): a money dialog's
+ * network word and its solid REAL FUNDS tag, at the band's end before
+ * Close, gap 8 and 12 each side. Close then follows it directly. */
+.vex-dialog-tag {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 0 12px;
+}
+
+.vex-dialog-tag + .vex-dialog-x {
+  margin-left: 0;
+}
+
 .vex-dialog-x {
   display: grid;
   flex: none;

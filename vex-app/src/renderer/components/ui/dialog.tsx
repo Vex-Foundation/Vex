@@ -279,6 +279,13 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
    * holds Close alone. Only the default size draws the band.
    */
   readonly kicker?: string;
+  /**
+   * The head band's tag (Cloud's `tag`, `.vx-dlg-tag`): at the band's end,
+   * before Close, gap 8 and 12 each side. It holds a money dialog's network
+   * word and its solid REAL FUNDS tag, so a money dialog wears its mark in
+   * the head. Omitted, nothing is drawn. Only the default size draws the band.
+   */
+  readonly tag?: ReactNode;
 }
 
 /**
@@ -308,6 +315,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
       size = "default",
       backdrop = "scrim",
       kicker,
+      tag,
       ...rest
     },
     ref,
@@ -439,6 +447,11 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
         {size === "default" ? (
           <div className="vex-dialog-head" data-vex-dialog-head="">
             {kicker === undefined ? null : <span className="vex-dialog-kicker">{kicker}</span>}
+            {tag === undefined || tag === null ? null : (
+              <span className="vex-dialog-tag" data-vex-dialog-tag="">
+                {tag}
+              </span>
+            )}
             <button
               type="button"
               className="vex-dialog-x"
