@@ -3,15 +3,16 @@
  * SVG markup of docs/design/R3-MINIMAL.md appendix A (the 16 x 16 grid, the
  * paint lives on the root in `LineSvg`), keyed by the name the app uses.
  *
- * `spec` is the row id in appendix A, or null for a drawing the appendix does
- * not list: the `h3-` nav glyphs at the end, redrawn from H3's captures
- * (docs/design/H3-DESKTOP.md section 4.6). The mirrored chevrons, warning,
+ * `spec` is the row id in appendix A. H3's nav names (`h3-`) are not
+ * drawn here: they draw VEX's filled glyphs (`H3_NAV_GLYPHS` below,
+ * docs/design/H3-DESKTOP.md section 4.6). The mirrored chevrons, warning,
  * question, user, archive, branch and thumbs-down (the transcript's message
  * keys) were derived in the same grid and stroke and have their own rows.
  * Several names may share one spec row (`send` is the `up` arrow).
  */
 
 import type { JSX } from "react";
+import type { GlyphName } from "../glyph/glyph-sprite-data.js";
 
 export interface LineGlyphDef {
   readonly spec: string | null;
@@ -696,76 +697,48 @@ export const LINE_GLYPHS = {
     spec: "moon",
     draw: <path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z" />,
   },
-
-  // H3's nav (docs/design/H3-DESKTOP.md sections 1.4 and 4.6). H3 draws its
-  // nav glyphs filled; these are the same shapes redrawn in this family's grid
-  // and stroke, read from `h3-merged__welcome-open-1440` (no source plate
-  // prints their paths), so each is derived and has no appendix A row. Search
-  // and the sidebar key are this family's `search` and `panel-left` as they
-  // stand; desktop's own entries (Lighter, Studio, Board) keep their drawings,
-  // which share the grid and stroke (section 4.6).
-  /** New chat: the chat bubble, a plus in it. */
-  "h3-new-chat": {
-    spec: null,
-    draw: (
-      <>
-        <path d="M1.5 2.5h13v9H6l-3 3v-3H1.5z" />
-        <path d="M8 4.75v4.5M5.75 7h4.5" />
-      </>
-    ),
-  },
-  /** Chat: the bubble, its tail at the lower left. */
-  "h3-chat": {
-    spec: null,
-    draw: <path d="M1.5 2.5h13v9H6l-3 3v-3H1.5z" />,
-  },
-  /** Missions: a cube, three faces about one corner. */
-  "h3-missions": {
-    spec: null,
-    draw: (
-      <>
-        <path d="M8 1.5l5.5 3v7L8 14.5l-5.5-3v-7z" />
-        <path d="M2.5 4.5L8 7.5l5.5-3M8 7.5v7" />
-      </>
-    ),
-  },
-  /** Markets: three bars rising to the right. */
-  "h3-markets": {
-    spec: null,
-    draw: <path d="M2 9.5h3v4H2zM6.5 6h3v7.5h-3zM11 2.5h3v11h-3z" />,
-  },
-  /** Portfolio: a case, its round lock at the centre. */
-  "h3-portfolio": {
-    spec: null,
-    draw: (
-      <>
-        <path d="M1.5 3h13v10h-13z" />
-        <circle cx="8" cy="8" r="2" />
-      </>
-    ),
-  },
-  /** Activity: three lines shortening downwards, a tick after the last. */
-  "h3-activity": {
-    spec: null,
-    draw: (
-      <>
-        <path d="M1.5 3.5h12M1.5 7h10M1.5 10.5h6" />
-        <path d="M9.5 11.5l1.5 1.5 3.5-3.5" />
-      </>
-    ),
-  },
-  /** Settings: a six-tooth cog round its hub. */
-  "h3-settings": {
-    spec: null,
-    draw: (
-      <>
-        <path d="M6.53 3.48L6.76 1.62L9.24 1.62L9.47 3.48L11.18 4.47L12.91 3.74L14.15 5.88L12.65 7.01L12.65 8.99L14.15 10.12L12.91 12.26L11.18 11.53L9.47 12.52L9.24 14.38L6.76 14.38L6.53 12.52L4.82 11.53L3.09 12.26L1.85 10.12L3.35 8.99L3.35 7.01L1.85 5.88L3.09 3.74L4.82 4.47z" />
-        <circle cx="8" cy="8" r="2" />
-      </>
-    ),
-  },
 } satisfies Record<string, LineGlyphDef>;
 
-export type LineIconName = keyof typeof LINE_GLYPHS;
+/** A name drawn in this family's line (a row of `LINE_GLYPHS`). */
+export type LineDrawingName = keyof typeof LINE_GLYPHS;
 
-export const LINE_ICON_NAMES = Object.keys(LINE_GLYPHS) as readonly LineIconName[];
+/**
+ * H3's nav glyphs (docs/design/H3-DESKTOP.md sections 1.4 and 4.6). H3 draws
+ * its nav filled, and these names now draw VEX's own filled glyphs on the 24
+ * grid (`components/icons/glyph/`, VEX Cloud's DG-1 set, owner approval
+ * 2026-11-08) in place of the line redrawings they first had. The names and
+ * their components (`LineH3Chat` and the rest) stay, so the nav's call sites
+ * need no change. Search and the sidebar key keep this family's `search` and
+ * `panel-left`; desktop's own entries (Lighter, Studio, Board) keep their
+ * line drawings (section 4.6).
+ */
+export const H3_NAV_GLYPHS = {
+  /** New chat: the bubble with a plus cut in it. */
+  "h3-new-chat": "rail-plus",
+  /** Chat: the bubble, its tail at the lower left. */
+  "h3-chat": "rail-ask",
+  /** Missions: the cube, its three faces in three tones. */
+  "h3-missions": "cube",
+  /** Markets (the Watchlist): three bars rising to the right. */
+  "h3-markets": "rail-chart",
+  /** Portfolio: the vault, its round door at the centre. */
+  "h3-portfolio": "vault",
+  /** Activity (Agent Scan): the list with a tick. */
+  "h3-activity": "list",
+  /** Settings: the gear. */
+  "h3-settings": "gear",
+} as const satisfies Record<string, GlyphName>;
+
+export type H3NavGlyphName = keyof typeof H3_NAV_GLYPHS;
+
+export type LineIconName = LineDrawingName | H3NavGlyphName;
+
+export const LINE_ICON_NAMES = [
+  ...Object.keys(LINE_GLYPHS),
+  ...Object.keys(H3_NAV_GLYPHS),
+] as readonly LineIconName[];
+
+/** Whether a name draws one of H3's filled nav glyphs rather than a line. */
+export function isH3NavGlyph(name: LineIconName): name is H3NavGlyphName {
+  return Object.hasOwn(H3_NAV_GLYPHS, name);
+}

@@ -633,7 +633,7 @@ Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board, Settin
 - Desktop keeps its page names (owner decision, 2026-11-04): H3's MARKETS is desktop's Watchlist and H3's ACTIVITY is desktop's Agent Scan, which joins the nav. Their titles, nav rows and links keep those names.
 - No Strategies until F11.
 - Lighter, Studio and Board are desktop's; H3 does not draw them.
-- Icons follow H3's nav icons (S5-04); desktop's three extra entries are drawn in the same grid and stroke.
+- Icons are VEX's filled glyphs on the 24 grid, VEX Cloud's DG-1 set (`components/icons/glyph/`, a byte copy of Cloud's `glyph-sprite-data.ts`, VEX's own art; owner approval 2026-11-08): New chat `rail-plus`, Chat `rail-ask`, Missions `cube` in its three tones, Watchlist `rail-chart`, Portfolio `vault`, Agent Scan `list`, Settings `gear`, as Cloud's nav. They replace the line redrawings S5-04 first made from the captures; the components (`LineH3Chat` and the rest) keep their names and props. Desktop draws a glyph's parts inline, where Cloud clones a mounted sprite by `<use>`, so a glyph needs no sprite mounted first. Desktop's three extra entries (Lighter, Studio, Board) keep their line drawings. The Vex key's open portrait is the set's `portrait` (section 1.6).
 
 Nine rows on the 40px pitch take 360 where H3's seven take 280, so the chats list's rule moves from 472 to about 552. The CHATS heading, the first group head and the first row need about 114 under that rule, so at a 720-high window (bottom row at 648) not one chat row fits; H3's own seven rows leave about one. Open: whether the nav condenses or the column scrolls at short heights. Settled in the harness at 1000 x 720 and 1280 x 800.
 
