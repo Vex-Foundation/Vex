@@ -427,16 +427,17 @@ function ShellFrame({
     if (!bandProbed) setBandHold(BAND_HOLD_REASONS.turn);
   }, [bandProbed]);
   const bandOpen = band && !lighter && narrowOpen && bandHold === null;
-  // H3 has no derived close, so Vex is shown exactly when asked: her plate
-  // where the column stays, the column itself on a table page and the desk,
-  // and under 1024 her band, as its own choice and its hold say.
+  // There is no derived close, so Vex is shown exactly when asked: her
+  // column's body where the column stays (a chat), the column itself on a
+  // table page, her section on the desk, and under 1024 her band, as its own
+  // choice and its hold say.
   const vexEffectiveOpen = !zen && (band ? bandOpen : vexOpen && cols.vex > 0);
   // Whether her column (or the band) stands at all, whatever she shows in it.
   const vexColumnStands = cols.vex > 0 || band;
-  // THE VEX TOGGLE, as the frame solved it: her section in a chat and on the
-  // Lighter desk, the column on a table page, the band under 1024. The Vex
-  // key, her corner key, the console line and the shortcut all press this
-  // one; it writes the stored choice as ever (the desk's own,
+  // THE VEX TOGGLE, as the frame solved it: her column's body in a chat, her
+  // section on the Lighter desk, the column on a table page, the band under
+  // 1024. The header's VEX key (H3's Vex key on the desk), the desk's corner
+  // key, the console line and the shortcut all press this one; it writes the stored choice as ever (the desk's own,
   // `vexOpenLighter`), and under 1024 the session's own. Zen has no column:
   // no toggle.
   const vexToggle = zen
@@ -736,11 +737,12 @@ function ShellFrame({
               }
             : undefined
         }
-        // In H3's frame the stored choice shows or hides her plate; her
-        // column stays wherever the solve keeps it (a chat), and hiding
-        // there keeps focus where it is.
+        // The stored choice shows or hides her column's body (D2, section
+        // 6.4); the column's track stays wherever the solve keeps it (a
+        // chat). Focus in the body goes to the header's key as it hides; on
+        // the desk only her section folds, and focus stays.
         plate={vexOpen}
-        stays={lighter || !tablePage}
+        stays={lighter}
         onHide={() => {
           if (zen) setZenAssistantOpen(false);
           else setVexOpen(false);

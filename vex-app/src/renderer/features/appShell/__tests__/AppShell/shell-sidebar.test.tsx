@@ -646,10 +646,10 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("stands Kimm's section in the Vex column, where the print stood, and none on the left page", () => {
-    // docs/design/H3-DESKTOP.md section 1.5 (plan row S4-04): in H3's frame
-    // her plate is her section, laid over the column (`VexPortraitPlate.test.tsx`
-    // owns its mount); no print window and no other figure stand there.
+  it("stands Kimm's portrait card at the top of the Vex column, and none on the left page", () => {
+    // docs/design/H3-DESKTOP.md section 6.3: D2's column opens on her
+    // portrait card (her field and her still); no section, no wipe, no
+    // strip, no corner key, no print window and no other figure.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
 
@@ -657,17 +657,19 @@ describe("AppShell", () => {
     const page = view.container.querySelector("[data-vex-area='left-page']");
     expect(page?.querySelector("img")).toBeNull();
     expect(page?.querySelector("[data-vex-area='sessions-sidebar']")).not.toBeNull();
-    const section = view.container.querySelector(
-      "[data-vex-area='vex-sidebar'] [data-vex-area='kimm-section']",
+    const card = view.container.querySelector(
+      "[data-vex-area='vex-sidebar'] [data-vex-area='vex-portrait-card'] [data-vex-area='kimm-panel']",
     );
-    expect(section).not.toBeNull();
-    expect(view.container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(card).not.toBeNull();
+    expect(view.container.querySelector("[data-vex-area='kimm-section']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-area='kimm-key']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-area='kimm-hint']")).toBeNull();
     // Her art is the app's own (VEX Cloud's renders in public/art/kimm/), never a stand-in.
-    expect(section?.getAttribute("data-kimm-art")).toBe("ready");
-    expect(section?.querySelector("img.vex-kimm__figure")?.getAttribute("src")).toMatch(
+    expect(card?.getAttribute("data-kimm-art")).toBe("ready");
+    expect(card?.querySelector("img.vex-kimm-panel__figure")?.getAttribute("src")).toMatch(
       /^\/art\/kimm\/still-[a-z]+\.webp$/,
     );
-    expect(section?.innerHTML).not.toMatch(/kimm-standin-/);
+    expect(card?.innerHTML).not.toMatch(/kimm-standin-/);
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {
@@ -1383,11 +1385,12 @@ describe("AppShell", () => {
     expect(frame?.style.gridTemplateColumns).toMatch(/^\d+px minmax\(0, 1fr\) \d+px$/);
   });
 
-  it("in a chat never moves a track for her: hiding Vex folds only her plate, at every size", () => {
-    // docs/design/H3-DESKTOP.md section 3.6, the money rule's first leg: the
-    // chat's track is a function of the window alone. The stored choice
-    // reaches her plate, never the grid, in the columns and in the band;
-    // under 1024 her band follows the session's own choice (section 1.10).
+  it("in a chat never moves a track for her: hiding Vex keeps her column's room, at every size", () => {
+    // docs/design/H3-DESKTOP.md sections 3.6 and 6.4, the money rule's first
+    // leg: the chat's track is a function of the window alone. The stored
+    // choice reaches what her column shows, never the grid, in the columns
+    // and in the band; under 1024 her band follows the session's own choice
+    // (section 1.10).
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenNarrow: true });
     for (const width of [1000, 1023, 1024, 1280, 1366, 1440, 1920, 2560]) {
       const narrow = width < 1024;
@@ -1405,9 +1408,12 @@ describe("AppShell", () => {
           .gridTemplateColumns,
       };
       const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
-      const section = (): Element | null | undefined =>
-        aside()?.querySelector("[data-vex-area='kimm-section']");
-      expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("true");
+      // Shown: her band under 1024, her column's body from 1024 up.
+      const shownNow = (): string | null | undefined =>
+        narrow
+          ? aside()?.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")
+          : aside()?.getAttribute("data-vex-shown");
+      expect(shownNow(), String(width)).toBe("true");
       act(() => show(false));
       expect(
         {
@@ -1418,9 +1424,10 @@ describe("AppShell", () => {
         },
         String(width),
       ).toEqual(shown);
-      // The column stands, open; only her plate went, the flat token in its place.
+      // The column stands, its room kept; what it showed went.
       expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
-      expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("false");
+      expect(shownNow(), String(width)).toBe("false");
+      if (!narrow) expect(aside()?.childElementCount, String(width)).toBe(0);
       // The stored flag is the same one the toggle always wrote; under 1024
       // the session's own, the chat's untouched.
       expect(useUiStore.getState().vexOpenChat).toBe(narrow);
@@ -1430,17 +1437,17 @@ describe("AppShell", () => {
     }
   });
 
-  it("never closes or opens her section on Escape, wherever it is pressed", () => {
+  it("never hides or shows her on Escape, wherever it is pressed", () => {
     // docs/design/H3-DESKTOP.md sections 3.5 and 4.4 (plan row S4-13): Esc
-    // belongs to the money card and to what it is pressed in; her section
-    // moves only on her three controls. The walk of every Escape handler is
-    // `components/vex/kimm/__tests__/kimm-escape.test.ts`.
+    // belongs to the money card and to what it is pressed in; her column
+    // moves only on her key and the chord. The walk of every Escape handler
+    // is `components/vex/kimm/__tests__/kimm-escape.test.ts`.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
-    const section = (): Element | null => view.container.querySelector("[data-vex-area='kimm-section']");
+    const column = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
     const places = (): (HTMLElement | null)[] => [
       document.body,
-      view.container.querySelector<HTMLElement>("[data-vex-area='kimm-key']"),
+      view.container.querySelector<HTMLElement>("[data-vex-area='vex-column-foot'] button"),
       view.container.querySelector<HTMLElement>("[data-vex-area='vex-key']"),
       view.container.querySelector<HTMLElement>("[data-vex-area='vex-console-top'] button"),
       view.container.querySelector<HTMLElement>("[data-vex-composer-stage] textarea"),
@@ -1454,27 +1461,21 @@ describe("AppShell", () => {
         fireEvent.keyUp(place, { key: "Escape", code: "Escape" });
         fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
         expect(useUiStore.getState().vexOpenChat, place.tagName).toBe(open);
-        expect(section()?.getAttribute("data-kimm-open"), place.tagName).toBe(String(open));
+        expect(column()?.getAttribute("data-vex-shown"), place.tagName).toBe(String(open));
       }
     }
-    expect(places().filter((place) => place !== null).length).toBeGreaterThanOrEqual(4);
+    expect(places().filter((place) => place !== null).length).toBeGreaterThanOrEqual(3);
   });
 
-  it("the header's Vex key flips the same flag both ways, the column standing", () => {
+  it("the header's VEX key flips the same flag both ways, the column standing", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
     const aside = view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']");
     if (aside === null) throw new Error("no Vex column");
-    // The column has no hide key of its own (S3-11) beyond her section's own
-    // corner key (S4-04): the Vex key hides her, her section folds to its
-    // strip, the column stands, focus stays on the key. In H3's frame the
-    // write lands at the press: her section's own wipe is the close
-    // (docs/design/H3-DESKTOP.md section 3.6), and nothing waits for it.
-    expect(
-      within(aside)
-        .queryAllByRole("button", { name: "Hide Vex" })
-        .map((button) => button.getAttribute("data-vex-area")),
-    ).toEqual(["kimm-key"]);
+    // The column has no hide key of its own (D2, section 6.4): the header's
+    // VEX key hides her whole column's body, the column's room stands, focus
+    // stays on the key. The write lands at the press; nothing waits.
+    expect(within(aside).queryAllByRole("button", { name: /^(Hide|Show) Vex$/ })).toHaveLength(0);
     const key = view.container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
     if (key === null) throw new Error("no Vex key");
     expect(key.getAttribute("aria-label")).toBe("Hide Vex");
@@ -1482,17 +1483,15 @@ describe("AppShell", () => {
     fireEvent.click(key);
     expect(useUiStore.getState().vexOpenChat).toBe(false);
     expect(aside.getAttribute("data-vex-vex-open")).toBe("true");
-    expect(aside.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")).toBe(
-      "false",
-    );
+    expect(aside.getAttribute("data-vex-shown")).toBe("false");
+    expect(aside.childElementCount).toBe(0);
     expect(document.activeElement).toBe(key);
     expect(key.getAttribute("aria-label")).toBe("Show Vex");
     // The same key shows her again.
     fireEvent.click(key);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
-    expect(aside.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")).toBe(
-      "true",
-    );
+    expect(aside.getAttribute("data-vex-shown")).toBe("true");
+    expect(aside.querySelector("[data-vex-area='vex-portrait-card']")).not.toBeNull();
   });
 
   it("binds Ctrl+Shift+B at the shell: it opens and closes her from anywhere, a page included", () => {
