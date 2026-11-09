@@ -7,6 +7,8 @@
  * row renders the indicator only. Markers are static - no in-flight animation.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
@@ -893,5 +895,38 @@ describe("TranscriptMessage: Vex's answer in bubble runs", () => {
     // Runs: [plan, detail] code [after] table [done].
     expect(tops).toEqual([true, false, false, true, false, true]);
     expect(bottoms).toEqual([false, true, false, true, false, true]);
+  });
+});
+
+describe("TranscriptMessage turn actions (VEX Cloud's TurnActions)", () => {
+  it("draws Vex's keys as message keys under the answer, always shown on the latest turn", () => {
+    const latest = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "answer" }),
+        latest: true,
+      }),
+    );
+    const reply = latest.container.querySelector(".vex-reply");
+    expect(reply?.hasAttribute("data-vex-latest")).toBe(true);
+    const copy = screen.getByRole("button", { name: "Copy message" });
+    expect(copy.className).toContain("vex-msg-key");
+    expect(copy.closest(".vex-reply__tail")).not.toBeNull();
+    latest.unmount();
+    const earlier = render(
+      createElement(TranscriptMessage, { row: row({ variant: "assistant", content: "answer" }) }),
+    );
+    expect(earlier.container.querySelector("[data-vex-latest]")).toBeNull();
+  });
+
+  it("raw-CSS contract: 32 keys with 16 glyphs in a 32 row, the latest turn's shown, the rest revealed over 200 ms", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-reply__tail \{[^}]*gap: 2px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key \{[^}]*width: 32px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key > svg \{[^}]*width: 16px;[^}]*height: 16px;/);
+    expect(css).toMatch(/transition: opacity 200ms/);
+    expect(css).toContain(".vex-reply[data-vex-latest] .vex-reply__tail > :is(.vex-time-reveal, .vex-action-reveal)");
   });
 });

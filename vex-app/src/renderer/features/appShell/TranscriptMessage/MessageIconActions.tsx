@@ -2,8 +2,11 @@
  * Hover-revealed per-message icon actions (A13 copy, G7 feedback, A14
  * branch, A18 edit) — the single owner of the caption action-button chrome.
  * Every action is keyboard-reachable (`.vex-action-reveal` reveals on
- * :focus-within too, and touch devices always show it). The glyphs are the
- * calm line set (docs/design/R3-MINIMAL.md section 1.7) at 14 px.
+ * :focus-within too, and touch devices always show it; the latest turn's
+ * always show). The glyphs are the calm line set (docs/design/R3-MINIMAL.md
+ * section 1.7); the key's box and glyph are set by where it stands
+ * (`.vex-msg-key`, chat-transcript.css): 32 keys with 16 glyphs under Vex's
+ * answer (VEX Cloud's `TurnActions`), 28 with 14 elsewhere.
  */
 
 import { useMemo, useState, type JSX, type ReactNode } from "react";
@@ -18,7 +21,7 @@ import { ReportIssueDialog } from "../ReportIssueDialog.js";
 import { useCopyFeedback } from "../../../lib/use-copy-feedback.js";
 import { extractMarkdownPlainText } from "../../../lib/markdown/plain-text.js";
 
-/** Shared 20px square action-button chrome for the caption register. */
+/** Shared square action-button chrome for the message keys (`.vex-msg-key`). */
 function MessageActionButton({
   label,
   dataAttr,
@@ -36,7 +39,7 @@ function MessageActionButton({
       {...{ [dataAttr]: "" }}
       aria-label={label}
       onClick={onClick}
-      className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      className="vex-action-reveal vex-msg-key"
     >
       {children}
     </button>

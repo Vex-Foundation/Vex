@@ -239,6 +239,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   pendingApprovals,
   agentWorking = false,
   turnMark = true,
+  latest = false,
   turnAnchorId,
   turnSteps,
   turnOutcome,
@@ -265,6 +266,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
    * the default.
    */
   readonly turnMark?: boolean;
+  /**
+   * The newest message of its speaker (`TranscriptRows`): its keys always
+   * show, as VEX Cloud keeps the latest turn's actions in view.
+   */
+  readonly latest?: boolean;
   /**
    * The person's message that opened this row's turn (`turnSteps.ts`), set
    * on every row of a whole turn: its step parts fold with the turn
@@ -396,6 +402,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         <div
           data-vex-message-role="assistant"
           data-time-hover-root=""
+          data-vex-latest={latest ? "" : undefined}
           className="vex-reply"
           {...turnSeams(turnMark, agentWorking)}
         >
@@ -431,6 +438,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-vex-message-role="assistant"
           data-vex-stopped=""
           data-time-hover-root=""
+          data-vex-latest={latest ? "" : undefined}
           className="vex-reply"
           {...turnSeams(turnMark, agentWorking)}
         >

@@ -98,6 +98,27 @@ export function TranscriptRows({
   // one.
   const traces = useMemo(() => turnTraces(rows), [rows]);
   const turnClock = useTurnClock(sessionId);
+  // The latest message of each speaker: the person's newest, and Vex's
+  // newest answer after it. Their keys always show (VEX Cloud's
+  // `TurnActions` and `UserMessage`); every other row's on hover.
+  const latestKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      if (row === undefined) continue;
+      if (row.variant === "user") {
+        keys.add(entryKey(row));
+        break;
+      }
+      if (
+        (row.variant === "assistant" || row.variant === "assistant_stopped") &&
+        keys.size === 0
+      ) {
+        keys.add(entryKey(row));
+      }
+    }
+    return keys;
+  }, [rows]);
   // The newest turn's rows that arrived live: what proves it is running.
   const lastLiveRows = useMemo(() => {
     if (settledIds === null || traces.lastAnchorId === null) return 0;
@@ -171,6 +192,7 @@ export function TranscriptRows({
                   agentWorking={workingAgentEntryKey === entryKey(row)}
                   turnMark={markKeys.has(entryKey(row))}
                   sessionId={sessionId}
+                  latest={latestKeys.has(key)}
                   turnAnchorId={anchorId}
                   turnSteps={thinkingHead?.steps}
                   turnOutcome={thinkingHead?.outcome}

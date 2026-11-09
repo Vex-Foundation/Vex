@@ -360,14 +360,52 @@ html[data-still] .vex-latest {
   text-transform: uppercase;
 }
 
-/* The turn's clock and message keys, under the prose, revealed on hover. */
+/* The turn's clock and message keys, under the prose (VEX Cloud's
+ * `.vx-tx-acts`): a row 32 high, 6 out to the left so the first glyph stands
+ * on the answer's edge, the keys 2 apart, the clock 8 before them. Revealed
+ * on hover over 200 ms; the latest turn's always show. */
 .vex-reply__tail {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 20px;
-  margin-top: 4px;
+  gap: 2px;
+  height: 32px;
+  margin: 2px 0 0 -6px;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-reply__tail > .vex-time-reveal {
+  margin: 0 8px 0 6px;
+}
+/* A message key: a square on no fill, its glyph in ink 2, the cell's wash and
+ * ink under the pointer, the 2px focus ring inside. 28 with a 14 glyph; 32
+ * with a 16 glyph under Vex's answer. */
+.vex-msg-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-msg-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-msg-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-reply__tail .vex-msg-key {
+  width: 32px;
+  height: 32px;
+}
+.vex-reply__tail .vex-msg-key > svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* "Stopped", a status in H3's grammar (section 2.2): the small outline square
@@ -1391,12 +1429,13 @@ html[data-still] .vex-trace-head__chev {
   [data-time-hover-root] .vex-time-reveal,
   [data-time-hover-root] .vex-action-reveal {
     opacity: 0;
-    transition: opacity var(--vex-duration-fast) var(--vex-ease-standard);
+    transition: opacity 200ms var(--vex-ease-standard);
   }
   [data-time-hover-root]:hover .vex-time-reveal,
   [data-time-hover-root]:focus-within .vex-time-reveal,
   [data-time-hover-root]:hover .vex-action-reveal,
-  [data-time-hover-root]:focus-within .vex-action-reveal {
+  [data-time-hover-root]:focus-within .vex-action-reveal,
+  .vex-reply[data-vex-latest] .vex-reply__tail > :is(.vex-time-reveal, .vex-action-reveal) {
     opacity: 1;
   }
 }
