@@ -1,8 +1,8 @@
 /**
  * THE TITLE BAR: the header's title cell (docs/design/H3-DESKTOP.md section
- * 1.3; its contents are still R3-MINIMAL.md section 3's). The Vex key's cell
- * beside it is the header's own (`ShellHeader`, `VexKey`), on the Lighter
- * desk as everywhere else.
+ * 1.3; its contents are still R3-MINIMAL.md section 3's). The cells after it
+ * (Needs you, the network, the VEX cell over Vex's column) are the header's
+ * own (`ShellHeader`).
  *
  *   - the TITLE cell, over the chat, says where you are: the session title
  *     with its mode ("Agent · Restricted", and the mission badge for a
@@ -13,9 +13,10 @@
  *     The cell ends in the cluster (gap 8): the page keys (a page's own keys
  *     such as Portfolio's refresh, through `pageKeysSlot.tsx`; export; a
  *     close key for a page with no other way back), the Studio host status
- *     and Notices (only while notices exist). Needs you has no header control
- *     (docs/design/H3-DESKTOP.md section 4.8): the console carries it, and the
- *     header only says a rise (`NeedsYouAnnouncer`).
+ *     and Notices (only while notices exist). Needs you is not in this cell:
+ *     D2 gives it a cell of its own after the title (`NeedsYouHeadCell`,
+ *     docs/design/H3-DESKTOP.md section 6.2), and this cell says a rise
+ *     (`NeedsYouAnnouncer`).
  *
  * The header (`ShellHeader.tsx`) lays the cells out and reserves the window
  * chrome; the title cell is a window drag region (`.vex-drag`) and every

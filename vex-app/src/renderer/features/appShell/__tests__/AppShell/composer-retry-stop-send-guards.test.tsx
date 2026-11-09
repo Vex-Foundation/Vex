@@ -236,11 +236,11 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop agent" });
-    // The header's Vex key names the live turn (Thinking or Working).
+    // The header's VEX cell carries the live turn (Thinking or Working).
     await waitFor(() =>
       expect(
         container
-          .querySelector('[data-vex-area="vex-key"]')
+          .querySelector('[data-vex-area="vex-head-cell"]')
           ?.getAttribute("data-vex-state"),
       ).toMatch(/^(thinking|working)$/),
     );
