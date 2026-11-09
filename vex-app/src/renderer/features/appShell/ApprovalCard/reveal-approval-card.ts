@@ -1,10 +1,12 @@
 /**
  * REVIEW TAKES YOU TO THE CARD (row S6b-07, docs/design/H3-DESKTOP.md
  * sections 1.5 and A.3): the Vex console's Needs you row has a REVIEW key,
- * and pressing it brings the waiting approval's card into view and gives the
- * card focus, so the next key a keyboard user presses acts on that card and a
- * screen reader announces it by its title (the card is a `role="region"`
- * named by its sentence, focusable with `tabIndex={-1}`).
+ * and pressing it brings the waiting approval's card into view and puts the
+ * focus on the card's Reject (C3-A-14, Cloud's `decisionTarget`), in the
+ * chat's dock when the band is docked there: the least destructive key, so
+ * the next key a keyboard user presses can only refuse, never approve. A
+ * folded row, or a card whose decision is already running, takes the focus
+ * itself (a `role="region"`, focusable with `tabIndex={-1}`).
  *
  * ONE EXPORTED HELPER, for whoever draws a Review key. The console
  * (`features/vex/VexSidebar.tsx`, `openNeedsYouItem`) calls it after it has
@@ -66,12 +68,39 @@ export function findApprovalCard(approvalId: string, root: ParentNode = document
   return copies.reduce((best, node) => (rank(node) < rank(best) ? node : best));
 }
 
-/** Scroll this card into view and focus it. */
-function bringToCard(card: HTMLElement): void {
+/**
+ * The card's reject key, wherever its band is drawn (C3-A-14, Cloud's
+ * `decisionTarget`): in the chat's dock, the docked footer named by the
+ * card's sentence (`aria-labelledby` on the footer, `aria-describedby` on the
+ * card); otherwise the card's own footer. While a reason is typed the reject
+ * key is "Reject and send". Never the approve key, and never a key that
+ * cannot act: then `null`, and the card itself takes the focus.
+ */
+export function rejectKeyOf(card: HTMLElement, root: ParentNode = document): HTMLButtonElement | null {
+  const REJECT = '[data-vex-key="reject"], [data-vex-key="send"]';
+  const named = card.getAttribute("aria-describedby");
+  const docked = card.hasAttribute("data-vex-decision-docked") && named !== null
+    ? Array.from(root.querySelectorAll<HTMLElement>('[data-vex-area="approval-foot"][data-docked]')).find(
+        (foot) => foot.getAttribute("aria-labelledby") === named,
+      ) ?? null
+    : null;
+  const foot = docked ?? card.querySelector<HTMLElement>('[data-vex-area="approval-foot"]');
+  const key = foot?.querySelector<HTMLButtonElement>(REJECT) ?? null;
+  if (key === null || key.disabled || key.getAttribute("data-vex-key") === "approve") return null;
+  return key;
+}
+
+/**
+ * Scroll this card into view and focus its reject key (Cloud's Review lands
+ * on Reject, the least destructive choice), or the card when it has none to
+ * offer: a folded row, or a decision already running.
+ */
+function bringToCard(card: HTMLElement, root: ParentNode): void {
   if (typeof card.scrollIntoView === "function") {
     card.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }
-  card.focus({ preventScroll: true });
+  const reject = card.dataset["vexApprovalLayout"] === "row" ? null : rejectKeyOf(card, root);
+  (reject ?? card).focus({ preventScroll: true });
 }
 
 /**
@@ -89,7 +118,7 @@ export function revealApprovalCard(approvalId: string, options: RevealApprovalCa
     handle = null;
     const card = findApprovalCard(approvalId, root);
     if (card !== null) {
-      bringToCard(card);
+      bringToCard(card, root);
       return;
     }
     frames += 1;
