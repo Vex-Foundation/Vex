@@ -325,6 +325,8 @@ describe("New chat and the search mode", () => {
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
 
+    // "Chat", never "session", in every word a person reads (Appendix A.2).
+    expect(screen.getByRole("tablist", { name: "Filter chats" })).not.toBeNull();
     const tabs = screen.getAllByRole("tab");
     // A tab's name is its word; the count beside it is decoration.
     expect(tabs.map((t) => t.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);

@@ -74,7 +74,7 @@ export function SessionModeTabs({
   readonly onChange: (next: SessionModeFilter) => void;
 }): JSX.Element {
   return (
-    <div role="tablist" aria-label="Filter sessions" className="vex-ls-tabs">
+    <div role="tablist" aria-label="Filter chats" className="vex-ls-tabs">
       {SESSION_MODE_FILTERS.map((filter) => (
         <button
           key={filter.value}
