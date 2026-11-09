@@ -445,10 +445,22 @@ describe("composer capsule - send cell", () => {
     expect(stop.className).toContain("vex-composer-key");
     expect(stop.className).toContain("vex-composer-stop");
     expect(stop.querySelector(".vex-composer-stop__mark")).not.toBeNull();
+    // STOP's square is 14 (VEX Cloud's `.vx-cmp-stop`).
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-stop__mark \{[^}]*width: 14px;[^}]*height: 14px;/);
     // A stop being acknowledged is the disabled key: the cell fill, muted.
     expect(CONSOLE_CSS).toMatch(
       /\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
     );
+  });
+});
+
+describe("composer capsule - the status strip's cells", () => {
+  it("raw-CSS contract: a cell's words 24 in and 16 from its rule; the context key 16 in, 24 from the edge, reaching 12 up", () => {
+    // VEX Cloud's `.vx-cmp-cell` (0 16 0 24), its budget cell at the strip's
+    // end (0 24 0 16), and a key cell's 44 target on the 32 strip.
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-strip__cell \{[^}]*padding: 0 16px 0 24px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context \{[^}]*position: relative;[^}]*padding: 0 24px 0 16px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context::before \{[^}]*position: absolute;[^}]*inset: -12px 0 0;/);
   });
 });
 
