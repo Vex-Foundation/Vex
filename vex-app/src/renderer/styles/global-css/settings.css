@@ -1,24 +1,13 @@
 /* THE SETTINGS PAGE in H3 cells (docs/design/H3-DESKTOP.md sections 1.4, 1.9,
- * 2.3, 2.4 and 4.9; R3-MINIMAL.md section 9.6 before it). H3 draws no
- * Settings plate: the page follows the page frame, with its nav built from
- * the chats column's nav and its sections from the console's cells.
+ * 2.3, 2.4 and 4.9; R3-MINIMAL.md section 9.6 before it).
  *
- * One page sheet (overlay.css) with two panes: the nav (264 wide, 210 under
- * 1180, padding 22 12 0 14) in four groups, and the section (padding 28 44 0,
- * 22 28 under 1180, one column of at most 680). The nav and the section scroll
- * on their own, so the nav never leaves while a long section moves. Radius 0,
- * no shadow, no blur; every colour is an alias.
- *   - the nav: group heads are H3's group heads (12 caps tracked, muted, as
- *     TODAY); rows are 40 high on H3's nav pitch with the icon and the name in
- *     caps (13); the selected row takes H3's selected-row fill (the alias
- *     `--vex-alias-row-selected`, the one fill that fades, from the nav's left
- *     edge to the ground) and ink;
- *   - a section: its name as a 20 sentence (H3's card sentence), the lead in
- *     ink 2, its blocks headed by the 13 caps label (600), its rows in one
- *     framed cell, its links ink and underlined;
- *   - the switch is H3's: 36 x 20, a 1px light border, the thumb a light
- *     square at the right when on (section 2.4); never the blue, which is
- *     only for primary keys.
+ * One page sheet (overlay.css) with two panes: the nav (248 wide, 210 under
+ * 1180) in four groups, and the section (padding 24 24 56, one column of at
+ * most 760). The nav and the section scroll on their own, so the nav never
+ * leaves while a long section moves. Radius 0, no shadow, no blur; every
+ * colour is an alias. The switch is H3's: 36 x 20, a 1px light border, the
+ * thumb a light square at the right when on (section 2.4); never the blue,
+ * which is only for primary keys.
  *
  * THE PLATE IS VEX CLOUD'S BUILT SETTINGS (owner decision 2026-11-09,
  * H3-DESKTOP section 4.9, look only; Cloud's `settings.css` and the page kit,
