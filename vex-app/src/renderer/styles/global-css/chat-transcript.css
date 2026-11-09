@@ -869,7 +869,9 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   padding: 0 22px;
   border: 0;
   border-right: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-interactive-solid);
+  /* No fill: Dismiss is not the row's primary key (VEX Cloud's
+   * `.vx-fail-keys > .vx-key:not([data-variant="primary"])`). */
+  background: none;
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -879,7 +881,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   cursor: pointer;
 }
 .vex-turn-error__key:hover {
-  background: var(--vex-alias-interactive-active);
+  background: var(--vex-alias-interactive-hover);
 }
 .vex-turn-error__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
