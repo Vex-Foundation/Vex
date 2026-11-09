@@ -130,13 +130,26 @@
   display: flex;
   flex-direction: column;
 }
+/* The Save band (VEX Cloud's `.vx-savebar`, D6-8; owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9): a band at least 56 high under the rule, the keys
+ * as its end cells, each at least 148 wide, the band's height, its left rule
+ * on. A Save that will not act is held (the kit's held key: no fill, a muted
+ * word), so a clean form shows no blue. */
 .vex-wzs__actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
-  gap: 10px;
+  min-height: 56px;
   margin-top: 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-wzs__actions > [data-vex-button] {
+  height: auto;
+  min-height: 56px;
+  min-width: 148px;
+  border-width: 0 0 0 1px;
+  border-left-color: var(--vex-alias-rule);
 }
 .vex-wzs__meta {
   display: inline-flex;

@@ -174,7 +174,16 @@ export function WizardStepPanel({
 
   if (host.host === "settings") {
     const status = settingsStatusForStep(panelDataAttr.kind, env ?? null);
-    const actions = footer ? <div className="vex-wzs__actions">{footer}</div> : null;
+    // The Save band (VEX Cloud's `SaveFooter`, `.vx-savebar`; owner decision
+    // 2026-11-09, H3-DESKTOP section 4.9): a band at least 56 high under a
+    // rule, the step's keys as end cells of at least 148 with their left
+    // rule. Save keeps its own enablement: held, never blue, while it will
+    // not act.
+    const actions = footer ? (
+      <div className="vex-wzs__actions" data-vex-save-band="">
+        {footer}
+      </div>
+    ) : null;
     return (
       <div {...dataAttrs} className="vex-wzs">
         <header className="vex-set__head" data-vex-settings-head>

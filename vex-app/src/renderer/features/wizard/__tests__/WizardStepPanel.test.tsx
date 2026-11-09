@@ -214,6 +214,25 @@ describe("WizardStepPanel in Settings (back-edit, no host)", () => {
     expect(screen.getByRole("link", { name: /Your data stays yours/ })).toBeTruthy();
   });
 
+  it("stands the step's keys in the Save band (Cloud's SaveFooter)", () => {
+    const { container } = render(
+      <WizardStepPanel
+        panelDataAttr={{ kind: "apikeys", value: "form" }}
+        flowMode="back-edit"
+        env={makeEnv()}
+        title="Connect your API keys"
+        description="Each key unlocks one tool."
+        formProps={{ onSubmit: noop }}
+        footer={<button type="submit">Save changes</button>}
+      >
+        <span />
+      </WizardStepPanel>,
+    );
+    const band = container.querySelector("form > [data-vex-save-band]");
+    expect(band?.classList.contains("vex-wzs__actions")).toBe(true);
+    expect(band?.contains(screen.getByRole("button", { name: "Save changes" }))).toBe(true);
+  });
+
   it("takes the section's own name and hint where the step's title is a state sentence", () => {
     const vault = settingsSectionFor("keystore");
     render(
