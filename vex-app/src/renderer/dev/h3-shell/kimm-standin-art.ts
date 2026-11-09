@@ -3,7 +3,8 @@
  * (`standins/manifest.ts`) in the shape every Kimm surface draws from
  * (`KimmArtSet`, `components/vex/kimm/kimm-assets.ts`), so the harness can
  * hand them to the real shell through `KimmArtProvider`, beside the art the
- * app itself ships (plan row S4-18; `?kimm=shipped` shows that instead).
+ * app itself ships (plan row S4-18). Since S4-18 the shipped art is the
+ * harness default; `?kimm=standins` shows these instead.
  *
  * HARNESS ONLY, like the manifest it reads: nothing outside `dev/h3-shell/`
  * imports this module, and the build check refuses a production build that

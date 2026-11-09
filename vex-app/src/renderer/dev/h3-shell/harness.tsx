@@ -44,10 +44,11 @@
  *                            page class, the Lighter desk's included (each
  *                            state's own default otherwise)
  *   ?os=mac|win|linux        the window chrome (mac)
- *   ?kimm=standins|shipped   Kimm's art: the dev stand-ins cropped from the
- *                            mockup (`kimm-standin-art.ts`, the default), or
- *                            the art as the app ships it (VEX Cloud's
- *                            renders in public/art/kimm/)
+ *   ?kimm=shipped|standins   Kimm's art: the art as the app ships it (VEX
+ *                            Cloud's renders in public/art/kimm/, the
+ *                            default, since S4-18), or the dev stand-ins
+ *                            cropped from the mockup (`kimm-standin-art.ts`;
+ *                            they carry the mockup's own Hide Vex plate)
  *   ?plate=<id>              one of our own H3 plates (`plates/index.ts`)
  *                            instead of a state: a design proposal for a
  *                            surface H3 does not draw, never the product
@@ -117,7 +118,7 @@ const OS: WindowOs = pick<WindowOs>("os", ["mac", "win", "linux"], "mac");
 const VEX = params.get("vex");
 const STATE = stateById(params.get("state"));
 const KIMM_ART =
-  pick("kimm", ["standins", "shipped"], "standins") === "shipped" ? KIMM_SHIPPED_ART : KIMM_STANDIN_ART;
+  pick("kimm", ["shipped", "standins"], "shipped") === "standins" ? KIMM_STANDIN_ART : KIMM_SHIPPED_ART;
 const PLATE = plateById(params.get("plate"));
 const STAGE = stageById(params.get("stage"));
 

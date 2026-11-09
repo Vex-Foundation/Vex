@@ -8,8 +8,8 @@
  * `StagePlate` (her column) and the product's own screen component, exactly
  * as `App` mounts them, and a stage only decides what the process boundary
  * answers and where the stores point. Nothing above the bridge is faked; the
- * only harness art is Kimm's stand-ins (`?kimm=standins`, the default), as
- * for every state.
+ * art is the app's own; Kimm's stand-ins only on `?kimm=standins`, as for
+ * every state.
  */
 
 import type { JSX } from "react";
