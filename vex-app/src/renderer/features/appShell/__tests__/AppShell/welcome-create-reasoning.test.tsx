@@ -305,7 +305,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("option", { name: "Low" }));
     expect(selector.textContent).toContain("Low");
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });
@@ -357,7 +357,7 @@ describe("AppShell", () => {
 
     // The control slot shows the quiet inert placeholder, never the real
     // selector, while the query is unresolved — and Send is NOT blocked.
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).toBeNull();
     const send = screen.getByRole("button", { name: "Send message" });
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });

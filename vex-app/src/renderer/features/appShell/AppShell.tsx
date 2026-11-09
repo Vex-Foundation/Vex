@@ -288,7 +288,7 @@ function ShellFrame({
       return;
     }
     requestAnimationFrame(() => {
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session draft"]')
+      document.querySelector<HTMLTextAreaElement>('textarea[data-vex-composer-field]')
         ?.focus({ preventScroll: true });
     });
   }, [activeSessionId, onCreate, setSidebarNarrowExpanded]);

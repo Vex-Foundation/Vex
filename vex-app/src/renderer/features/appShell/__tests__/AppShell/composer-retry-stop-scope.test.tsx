@@ -248,7 +248,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("Mission no retry");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "mission goal" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -294,7 +294,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("Session A");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "msg for A" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("button", { name: "Retry sending the message" });

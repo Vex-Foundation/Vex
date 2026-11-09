@@ -123,7 +123,7 @@ export function useLighterDesk(deps: LighterDeskDeps = {}) {
   // The composer lives in the BOOK rail; wait for it to mount after opening.
   useEffect(() => {
     if (!focusComposer) return;
-    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session draft"]');
+    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-vex-composer-field]');
     if (textarea === null) return;
     textarea.focus({ preventScroll: true });
     setFocusComposer(false);

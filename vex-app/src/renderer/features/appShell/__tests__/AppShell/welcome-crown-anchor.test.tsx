@@ -184,7 +184,7 @@ function expectAnchoredStructure(container: HTMLElement): void {
   ).toBe(true);
   // The growing instrument lives INSIDE the band; its field slot wears the
   // transitioned-height class.
-  const field = screen.getByLabelText("Session draft");
+  const field = screen.getByLabelText("Ask Vex");
   expect(band.contains(field)).toBe(true);
   const slot = container.querySelector(".vex-composer-grow");
   expect(slot).not.toBeNull();
@@ -210,7 +210,7 @@ describe("SessionPanel welcome - crown anchored above a rising growth band", () 
       screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
-      "Session draft",
+      "Ask Vex",
     ) as HTMLTextAreaElement;
     expect(field.value).toBe(
       QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
@@ -248,7 +248,7 @@ describe("SessionPanel welcome - crown anchored above a rising growth band", () 
       screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
-      "Session draft",
+      "Ask Vex",
     ) as HTMLTextAreaElement;
     expect(document.activeElement).toBe(field);
     expect(field.selectionStart).toBe(field.value.length);

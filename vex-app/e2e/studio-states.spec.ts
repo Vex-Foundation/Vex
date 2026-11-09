@@ -1912,7 +1912,7 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   // same defect as the open, one surface along.
   await expect
     .poll(() => activeElementLabel(page), { timeout: 30_000 })
-    .toBe("textarea:Session draft");
+    .toBe("textarea:Ask Vex");
   await shot(page, "restore2-03-agent-mode-focus-in-draft");
 
   await page

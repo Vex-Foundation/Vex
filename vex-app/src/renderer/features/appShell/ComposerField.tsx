@@ -122,7 +122,11 @@ export function ComposerField({
           // "newline" and "pass" fall through to the native insertion.
         }}
         rows={1}
-        aria-label="Session draft"
+        // Named in VEX Cloud's words, and stable: the shown placeholder changes
+        // with the moment, the field's name does not. Code finds the field by
+        // `data-vex-composer-field`, never by its name.
+        aria-label="Ask Vex"
+        data-vex-composer-field=""
         role="combobox"
         aria-expanded={activeDescendant !== undefined}
         aria-autocomplete="list"

@@ -224,7 +224,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Quick chat");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, {
       target: { value: "Research $TAO liquidity and thesis" },
     });
@@ -297,7 +297,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Enter send");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "gm vex" } });
     fireEvent.keyDown(draft, { key: "Enter" });
 
@@ -315,7 +315,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Shift enter");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "line one" } });
     fireEvent.keyDown(draft, { key: "Enter", shiftKey: true });
 
@@ -337,7 +337,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Pending guard");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "first" } });
     fireEvent.keyDown(draft, { key: "Enter" });
     await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));

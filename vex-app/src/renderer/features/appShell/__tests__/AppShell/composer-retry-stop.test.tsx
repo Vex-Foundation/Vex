@@ -237,7 +237,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("Timed-out chat");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "bridge in one shot" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -274,7 +274,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("Retry chat");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "do the thing" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -317,7 +317,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("Retry guard");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "retry me" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     const retry = await screen.findByRole("button", {
@@ -360,7 +360,7 @@ describe("AppShell", () => {
 
     renderShell();
     await screen.findByText("No retry");
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "keep me" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 

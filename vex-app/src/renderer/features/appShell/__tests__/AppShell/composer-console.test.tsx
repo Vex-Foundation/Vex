@@ -184,7 +184,7 @@ beforeEach(() => {
 });
 
 function draftField(): HTMLTextAreaElement {
-  return screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+  return screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
 }
 
 /** Type into the field with the caret reported at the end (onSelect). */
@@ -520,7 +520,7 @@ describe("composer capsule - placeholder + starter chips", () => {
     expect(screen.getByRole("button", { name: "Check wallet balances" })).toBeTruthy();
     // Over the composer (docs/design/H3-DESKTOP.md section 1.7), so they come
     // before the field in reading and focus order too.
-    const field = screen.getByLabelText("Session draft");
+    const field = screen.getByLabelText("Ask Vex");
     expect(
       slot !== null && slot.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();

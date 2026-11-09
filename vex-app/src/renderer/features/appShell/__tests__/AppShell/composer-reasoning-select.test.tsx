@@ -152,7 +152,7 @@ function pick(optionLabel: string): void {
 }
 
 async function submitText(text: string): Promise<void> {
-  fireEvent.change(screen.getByLabelText("Session draft"), {
+  fireEvent.change(screen.getByLabelText("Ask Vex"), {
     target: { value: text },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));

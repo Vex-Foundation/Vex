@@ -294,7 +294,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByRole("combobox", { name: "Reasoning effort" });
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "untouched default" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });
@@ -324,7 +324,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("option", { name: "Low" }));
     expect(selector.textContent).toContain("Low");
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });
@@ -368,7 +368,7 @@ describe("AppShell", () => {
     fireEvent.click(selector);
     fireEvent.click(screen.getByRole("option", { name: "Low" }));
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "LP rebalance" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });

@@ -299,7 +299,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     const send = screen.getByRole("button", { name: "Send message" });
     // Enabled in welcome with a draft — it is the create entry point now.
@@ -316,7 +316,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });

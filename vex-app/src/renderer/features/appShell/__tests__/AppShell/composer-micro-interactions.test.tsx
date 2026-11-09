@@ -126,7 +126,7 @@ beforeEach(() => {
 });
 
 function draftField(): HTMLTextAreaElement {
-  return screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+  return screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
 }
 
 function typeDraft(value: string): void {
