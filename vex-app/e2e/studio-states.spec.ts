@@ -501,9 +501,13 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
 
   /* ---- 15: three terminals, told apart by name ------------------------ */
 
-  await tabs.getByRole("button", { name: "New terminal" }).click();
+  // The + key is a cell of the tabs row beside the tablist since H3 (a tablist
+  // holds tabs only), so it is found in the centre, where N2 proves it is the
+  // one control of that name.
+  const newTerminal = centre.getByRole("button", { name: "New terminal" });
+  await newTerminal.click();
   await expect(tabs.getByRole("tab", { name: /Terminal 2/ })).toBeVisible();
-  await tabs.getByRole("button", { name: "New terminal" }).click();
+  await newTerminal.click();
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toBeVisible();
   // The strip at rest is a list of NAMES: no split control sits beside a tab.
   await expect(tabs.getByRole("button", { name: /^Split/ })).toHaveCount(0);
