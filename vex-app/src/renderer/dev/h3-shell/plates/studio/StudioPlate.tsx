@@ -129,10 +129,12 @@ export function StudioPlate({ scene }: { readonly scene: StudioPlateScene }): JS
   const rail = cols.chatsRail;
   // The drawer is the rail's: with the column open the sections are in it.
   const drawer = rail && scene.drawer === true;
+  // The solver is D2's now (docs/design/H3-DESKTOP.md section 6): the plate
+  // lays its parts on D2's tracks, Vex's column at the right, as Studio
+  // itself does; what each part draws is the plate approved under H3.
   const headColumns = shellHeadTemplateColumns({
     chats: cols.chats,
     vex: cols.vex > 0 ? cols.vex : null,
-    vexBetween: true,
   });
   const frameStyle: CSSProperties & Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns: h3GridTemplateColumns(cols),

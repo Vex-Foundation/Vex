@@ -63,11 +63,10 @@ interface Shape {
   readonly mode: RuntimeMode;
   readonly empty?: boolean;
   readonly rail?: boolean;
-  readonly vexBetween?: boolean;
   readonly chats?: number;
 }
 
-function header({ mode, empty = false, rail = false, vexBetween = false, chats = 264 }: Shape): JSX.Element {
+function header({ mode, empty = false, rail = false, chats = 264 }: Shape): JSX.Element {
   return (
     <QueryClientProvider client={client}>
       <ShellHeader
@@ -75,7 +74,7 @@ function header({ mode, empty = false, rail = false, vexBetween = false, chats =
         activeSessionId={empty ? null : "s-1"}
         empty={empty}
         vex={empty ? null : { open: true, onToggle: () => undefined }}
-        columns={shellHeadTemplateColumns({ chats: rail ? 56 : chats, vex: null, vexBetween })}
+        columns={shellHeadTemplateColumns({ chats: rail ? 56 : chats, vex: null })}
         chatsRail={rail}
         onToggleSidebar={() => undefined}
       />
@@ -141,7 +140,7 @@ describe("the header", () => {
           activeSessionId="s-1"
           empty={false}
           vex={{ open: false, onToggle }}
-          columns={shellHeadTemplateColumns({ chats: 248, vex: 432, vexBetween: true })}
+          columns={shellHeadTemplateColumns({ chats: 248, vex: 280 })}
           chatsRail={false}
           onToggleSidebar={() => undefined}
         />
@@ -204,7 +203,7 @@ describe("the header", () => {
           activeSessionId="s-1"
           empty={false}
           vex={{ open: true, onToggle: () => undefined }}
-          columns={shellHeadTemplateColumns({ chats: 76, vex: 432, vexBetween: false, reserveInVex: true })}
+          columns={shellHeadTemplateColumns({ chats: 76, vex: 432 })}
           chatsRail
           onToggleSidebar={() => undefined}
           deskHead={<span data-testid="desk-head">Lighter</span>}
@@ -236,8 +235,6 @@ describe("the running head, and the approvals sync in it, mounted once", () => {
       // the chats column folds to its rail and opens again
       { mode: "agent", rail: true },
       { mode: "agent", chats: 224 },
-      // the Vex key moves between the chats and the chat
-      { mode: "agent", vexBetween: true },
       // every mode, and back
       { mode: "studio" },
       { mode: "lighter" },

@@ -710,6 +710,11 @@
   --vex-h3-strip-h: 56px;
   --vex-h3-band-under: 1024px;
   --vex-h3-rail-w: 76px;
+  /* D2 (section 6; owner decision 2026-11-09): the shell's Vex column stands
+   * at the RIGHT edge, a fixed 280 from 1024 up (`D2_VEX_WIDTH`), whatever
+   * the window; `--vex-h3-vex-w` above stays the stages' (wake, checks,
+   * wizard), which keep H3's middle column. */
+  --vex-d2-vex-w: 280px;
   /* THE WIDE ZOOM (section 1.11; VEX Cloud's `--vx-zoom`, the mockup's
    * `--z`): clamp(1, window / 1760, 1.5), written on <html> by
    * `lib/wide-zoom.ts`; 1 until it runs. The transcript, the composer dock,
