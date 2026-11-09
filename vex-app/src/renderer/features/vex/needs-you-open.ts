@@ -7,9 +7,11 @@
  *     focuses it;
  *   - one raised elsewhere opens its session (mode first, then the selection,
  *     then the page closed, as the approvals inbox always has);
- *   - an approval with no session (a Studio project's) opens the Needs you
- *     page on its own card (`approvalId`), whose Reject takes the focus, as
- *     R3's header control did;
+ *   - a Studio project's approval (it carries `projectId`, and its
+ *     `sessionId` is the project's backing session, which is no chat) or an
+ *     approval with no session opens the Needs you page on its own card
+ *     (`approvalId`), whose Reject takes the focus, as R3's header control
+ *     did; it never leaves Studio for the backing session;
  *   - a mission opens its session;
  *   - a withdrawal this app did not start opens the funding page.
  *
@@ -27,7 +29,7 @@ export function openNeedsYouItem(item: NeedsYouItem): void {
     ui.setShellRoute({ kind: "vexCloudFunding", origin: null });
     return;
   }
-  if (item.sessionId === null) {
+  if (item.sessionId === null || (item.kind === "approval" && item.projectId !== null)) {
     ui.setShellRoute({ kind: "needsYou", origin: null, approvalId: item.approvalId });
     return;
   }
@@ -44,13 +46,17 @@ export function openNeedsYouItem(item: NeedsYouItem): void {
 
 /**
  * Whether an item's card is in the transcript beside the console: an approval
- * raised in the chat open in the agent shell. Its key points down at it.
+ * raised in the chat open in the agent shell. Its key points down at it. A
+ * Studio project's approval never is: its backing session is no chat.
  */
 export function needsYouItemIsHere(
   item: NeedsYouItem,
   where: { readonly runtimeMode: string; readonly activeSessionId: string | null },
 ): boolean {
   return (
-    item.kind === "approval" && where.runtimeMode !== "studio" && item.sessionId === where.activeSessionId
+    item.kind === "approval" &&
+    item.projectId === null &&
+    where.runtimeMode !== "studio" &&
+    item.sessionId === where.activeSessionId
   );
 }
