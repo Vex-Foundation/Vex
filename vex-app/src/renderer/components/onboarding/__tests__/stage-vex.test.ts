@@ -13,7 +13,9 @@ import {
   stageVexExit,
   stageVexFace,
   stageVexFaceClear,
+  stageVexLockMood,
   stageVexPipelineReady,
+  stageVexSettle,
   stageVexUnlocked,
   stageVexView,
   stageVexWoken,
@@ -81,6 +83,27 @@ describe("stageVexView", () => {
   });
 });
 
+describe("stageVexLockMood", () => {
+  it("rests while the lock screen waits, after a launch and after Lock Vex alike", () => {
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+    stageVexWoken();
+    stageVexPipelineReady();
+    // The stage says hi beside a ready desk; her lock screen panel rests until the vault opens.
+    expect(stageVexView(getStageVex()).mood).toBe("hi");
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+    stageVexEnd();
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+  });
+
+  it("is concerned as the stage maps it, and says hi once the vault opens", () => {
+    stageVexConcerned(true, 28);
+    expect(stageVexLockMood(getStageVex())).toBe(stageVexView(getStageVex()).mood);
+    stageVexConcerned(false);
+    stageVexUnlocked();
+    expect(stageVexLockMood(getStageVex())).toBe("hi");
+  });
+});
+
 describe("formatCountdown", () => {
   it("sets seconds as minutes and two digits", () => {
     expect(formatCountdown(28)).toBe("0:28");
@@ -109,6 +132,15 @@ describe("the stage store", () => {
       countdown: null,
       exit: "idle",
     });
+  });
+
+  it("settles a spent crossfade without ending the launch", () => {
+    stageVexWoken();
+    stageVexExit();
+    stageVexSettle();
+    expect(getStageVex().exit).toBe("idle");
+    expect(getStageVex().launching).toBe(true);
+    expect(getStageVex().woken).toBe(true);
   });
 
   it("keeps one state object while nothing changes", () => {

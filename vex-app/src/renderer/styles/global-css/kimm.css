@@ -351,6 +351,40 @@
   text-transform: uppercase;
 }
 
+/* ---- her panel on the lock screen (section 4.13) ----
+ * `KimmPanel.tsx`: her glyph field edge to edge and her still for her mood,
+ * no key and no strip. The ground is the tall baked frame her stage takes
+ * (`field-still-wide.webp`, which holds its own fall to the page) at every
+ * width, until the live field has painted. Her figure stands on the panel's
+ * foot, its height the panel's less 64 so her head clears the window's top
+ * strip, centred; the foot cuts her where her still ends. */
+.vex-kimm-panel {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-base);
+  pointer-events: none;
+}
+.vex-kimm-panel__ground {
+  position: absolute;
+  inset: 0;
+  background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
+}
+.vex-kimm-panel[data-kimm-field] .vex-kimm-panel__ground {
+  background: var(--vex-alias-bg-base);
+}
+.vex-kimm-panel__figure {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: auto;
+  max-width: none;
+  height: calc(100% - 64px);
+  transform: translateX(-50%);
+  user-select: none;
+}
+
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
  * Reduced motion and Save-Data open and close her at once. Her wipe, its
  * scan head and her drop are Web Animations, which no sheet can collapse:

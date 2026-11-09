@@ -1,6 +1,7 @@
 /* THE STAGE IN H3: the screens before the shell (docs/design/H3-DESKTOP.md
  * section 4.9; the harness plates `?plate=stage-*`, approved as drawn by the
- * owner on 2026-11-04).
+ * owner on 2026-11-04). The unlock is the one screen before the shell that
+ * stands on no stage: the lock screen's split (`.vex-lock`, section 4.13).
  *
  * One frame for every screen before the shell, on the shell's seams: the
  * header row 76, the bottom row 72, and the columns by the column rule
@@ -485,7 +486,8 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 }
 /* Links are ink with an underline (section 2.3), never blue. */
 .vex-pre__foot :is(a, button),
-.vex-pre .vex-fr-link {
+.vex-pre .vex-fr-link,
+.vex-lock .vex-fr-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -503,7 +505,8 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
   cursor: pointer;
 }
 .vex-pre__foot :is(a, button):focus-visible,
-.vex-pre .vex-fr-link:focus-visible {
+.vex-pre .vex-fr-link:focus-visible,
+.vex-lock .vex-fr-link:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: 4px;
   box-shadow: none;
@@ -1000,106 +1003,126 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- The unlock (the plates `stage-unlock`, `stage-unlock-locked`) -------
- * The chat's grammar: the greeting bubble and its two notes at the top, the
- * forgot link a row with an arrow at the foot of the body, then the status
- * strip ("Master password") and the bottom row: the password where the
- * chat's field goes, Show where the attach key goes, Unlock where SEND goes.
- * The reset panel takes the form's place with its own bottom row. */
-.vex-unl__form,
-.vex-unl__panel {
+/* ---- The lock screen (section 4.13; owner decision 2026-11-09) ----------
+ * The unlock stands on no stage: one split, Kimm's panel at the left
+ * (`KimmPanel`, kimm.css) and one centred column at the right. The panel is
+ * half the window from 1440 up and 40% at the 1000 floor (400), linear
+ * between, never under 380. The window's top strip is a drag region over
+ * both halves (the mac lights over her top left, the caption overlay at the
+ * top right), and the column starts under it. The one blue is Unlock. */
+.vex-lock {
+  --vex-pre-rule: 1px solid var(--vex-alias-rule);
+  --vex-lock-kimm-w: max(380px, min(50vw, calc(400px + (100vw - 1000px) * 0.7273)));
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--vex-lock-kimm-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+.vex-lock__head {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--head-h);
+}
+.vex-lock__kimm {
+  grid-column: 1;
+  grid-row: 1;
+}
+.vex-lock__side {
+  position: relative;
   display: flex;
+  box-sizing: border-box;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
   flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  padding: var(--head-h) 32px 64px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.vex-lock__col {
+  box-sizing: border-box;
+  width: min(400px, 100%);
+}
+.vex-lock__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 40px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-lock__label {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-lock__title {
+  margin: 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 40px;
+}
+.vex-lock__lead {
+  margin: 12px 0 32px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 15px;
+  line-height: 22px;
+}
+.vex-lock__foot {
+  position: absolute;
+  bottom: 24px;
+  left: 32px;
+  display: flex;
 }
 .vex-unl__form[hidden] {
   display: none;
 }
 .vex-unl__fields {
   display: flex;
-  flex: none;
   flex-direction: column;
 }
-/* The greeting is the chat's own (`.vex-welcome`, composer.css): it holds the
- * top of the body, and its foot margin pushes the rest to the bottom. */
-.vex-unl__aside {
-  margin: 0;
-  padding: 14px 24px;
-  border-top: var(--vex-pre-rule);
+.vex-unl__lab {
+  margin: 0 0 10px;
   color: var(--vex-alias-label-secondary);
-  font-size: 14px;
-  line-height: 20px;
-}
-/* A failure, the throttle, a failed reset: a square beside the sentence. */
-.vex-unl__alert {
-  display: flex;
-  box-sizing: border-box;
-  min-height: 48px;
-  align-items: center;
-  gap: 13px;
-  padding: 12px 24px;
-  border-top: var(--vex-pre-rule);
-  color: var(--vex-alias-label-primary);
-  font-size: 14px;
-  line-height: 20px;
-}
-.vex-unl__alert > [role="alert"] {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.vex-unl__forgot {
-  display: flex;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 48px;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 24px;
-  border: 0;
-  border-top: var(--vex-pre-rule);
-  background: none;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 20px;
-  text-align: left;
-  cursor: pointer;
-}
-.vex-unl__forgot:enabled:hover {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-unl__forgot:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -4px;
-}
-.vex-unl__forgot:disabled {
-  cursor: not-allowed;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-pre-strip > .vex-unl__lab {
-  margin: 0;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
-/* The field cell: the lock glyph, the dots in the figure face, Show as its
- * own key cell; the signing stroke on the cell's foot while the unlock runs. */
+/* The field: a 56-high cell on the field fill, a 1px rule round it, the dots
+ * in the figure face, Show as its own key cell at the right; the signing
+ * stroke on the cell's foot while the unlock runs. */
 .vex-unl__field {
   position: relative;
   display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
+  box-sizing: border-box;
+  height: 56px;
   align-items: stretch;
+  border: var(--vex-pre-rule);
+  background: var(--vex-alias-field);
 }
-.vex-unl__glyph {
-  flex: none;
-  align-self: center;
-  margin-left: 24px;
-  color: var(--vex-alias-label-tertiary);
+.vex-unl__field:focus-within {
+  border-color: var(--vex-alias-rule-chosen);
 }
-/* The field is the cell itself, as the composer's is: no frame of its own. */
+.vex-unl__field:has(input[aria-invalid="true"]) {
+  border-color: var(--vex-alias-state-error-mark);
+}
 .vex-unl__field .vex-password {
   display: flex;
   height: auto;
@@ -1113,7 +1136,7 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
   min-width: 0;
   height: 100%;
   flex: 1 1 auto;
-  padding: 0 16px;
+  padding: 0 20px;
   border: 0;
   outline: none;
   background: transparent;
@@ -1160,27 +1183,45 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 .vex-unl__stroke {
   position: absolute;
   right: 0;
-  bottom: 0;
+  bottom: -1px;
   left: 0;
   height: 2px;
   pointer-events: none;
   background: var(--vex-alias-label-primary);
 }
-/* Unlock, where SEND stands: the key cell while the field is empty, the one
- * blue once anything is typed and while the unlock is in flight; held (the
- * cell fill, muted words) while the throttle runs. */
+/* A failure, the throttle, a failed reset: one ink line, a square beside the
+ * sentence, the logs at the right. */
+.vex-unl__alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-unl__alert > [role="alert"] {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.vex-unl__alert > .vex-fr-link {
+  flex: none;
+  font-size: 13px;
+}
+/* Unlock, the full-width key under the field: the key cell while the field
+ * is empty, the one blue once anything is typed and while the unlock is in
+ * flight; held (the cell fill, muted words) while the throttle runs. */
 .vex-unl__go {
   display: flex;
   box-sizing: border-box;
-  width: 200px;
-  height: auto;
-  flex: none;
+  width: 100%;
+  height: 56px;
   align-items: center;
   justify-content: center;
   gap: 12px;
+  margin: 16px 0 0;
   padding: 0 16px;
   border: 0;
-  border-left: var(--vex-pre-rule);
   background: var(--vex-alias-interactive-solid);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
@@ -1194,7 +1235,6 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 }
 .vex-unl__go[data-armed="true"]:enabled,
 .vex-unl__go[data-busy] {
-  border-left-color: transparent;
   background: var(--vex-alias-button-accent-fill);
   color: var(--vex-alias-button-accent-ink);
 }
@@ -1214,28 +1254,59 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 }
 .vex-unl__go:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
-/* "Set up a new vault?": its words in the work column, its keys in its row. */
-.vex-unl__panel-body {
-  max-width: 712px;
-  padding: 28px 24px 24px;
+/* The way to a new vault: a quiet row under the key, its arrow at the right. */
+.vex-unl__forgot {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 24px 0 0;
+  padding: 0;
+  border: 0;
+  border-top: var(--vex-pre-rule);
+  background: none;
   color: var(--vex-alias-label-secondary);
-  font-size: 15px;
-  line-height: 22px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.vex-unl__forgot:enabled:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-unl__forgot:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-unl__forgot:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+/* "Set up a new vault?": in the form's place in the column, its keys a row
+ * of two cells under its words. */
+.vex-unl__panel-body {
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 21px;
 }
 .vex-unl__panel-title {
   margin: 0;
   color: var(--vex-alias-label-primary);
-  font-size: 33px;
+  font-size: 24px;
   font-weight: 600;
-  line-height: 40px;
+  line-height: 32px;
 }
 .vex-unl__panel-body p {
   margin: 0 0 12px;
 }
 .vex-unl__panel-body .vex-unl__panel-sub {
-  margin: 12px 0 20px;
+  margin: 8px 0 20px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-unl__ack {
@@ -1271,6 +1342,23 @@ html[data-still] .vex-pre-sq[data-sq="running"] {
 .vex-unl__ack input:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: 3px;
+}
+.vex-unl__panel-acts {
+  display: flex;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  margin: 24px 0 0;
+  border: var(--vex-pre-rule);
+}
+.vex-unl__panel-acts > .vex-pre-key {
+  min-width: 0;
+  flex: 0 0 136px;
+}
+.vex-unl__panel-acts > .vex-pre-danger {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 @media (prefers-reduced-motion: reduce) {
   .vex-unl__go {

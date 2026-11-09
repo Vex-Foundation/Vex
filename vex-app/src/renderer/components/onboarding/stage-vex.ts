@@ -1,13 +1,15 @@
 /**
  * What Vex shows on the pre-shell stage (`docs/design/H3-DESKTOP.md section 4.9`): one small
  * external store between her column on the stage (mounted once by `App`, `StagePlate`) and the
- * screens that stand beside it (the gate, the unlock, the first run), so she never restarts while
- * the screens change beside her. The Vex key over her column says the state's word; her section
- * shows its mood.
+ * screens that stand beside it (the gate, the first run), so she never restarts while the screens
+ * change beside her. The Vex key over her column says the state's word; her section shows its mood.
+ * The unlock stands on no stage (section 4.13): it reads the same flags for her panel's mood
+ * (`stageVexLockMood`) and for which unlock it is (`launching`), and writes the concern and the
+ * unlock.
  *
  *   waking     the launch pipeline is still running: "Waking up" (she rests)
  *   ready      the desk is awake, or the vault just unlocked: "Ready" (she says hi)
- *   sleeping   the desk was locked: "Sleeping" (she rests; the title cell says "Locked")
+ *   sleeping   the desk was locked: "Sleeping" (she rests)
  *   concerned  a wrong password, a throttle or the vault reset panel: "Concerned", with the
  *              throttle's seconds
  *   a face     a screen beside her says what she shows for what it is doing (the first run:
@@ -99,7 +101,7 @@ export function stageVexView(state: StageVexState): StageVexView {
   }
   // A screen speaks for her once her stage stands for the launch.
   if (state.face !== null && (!state.launching || state.woken)) return state.face;
-  // Ready: the unlock after a launch says hi (the plate `stage-unlock`).
+  // Ready: the desk is awake (the wake's last words before it hands off).
   const ready: StageVexView = { state: "ready", word: "Ready", note: null, mood: kimmMoodOf("ready") };
   if (state.unlocked) return ready;
   if (state.launching) {
@@ -107,9 +109,9 @@ export function stageVexView(state: StageVexState): StageVexView {
     // The wake: she rests while the desk starts (the plate `stage-wake`).
     return { state: "waking", word: "Waking up", note: null, mood: kimmMoodOf("waking") };
   }
-  // After Lock Vex she sleeps and rests (the plate `stage-unlock-locked`, approved as drawn), so
-  // the map's held for a locked vault (`kimmMoodOf`'s `locked`) is not asked for on the stage. The
-  // lock is the title cell's word ("Local vault · Locked"), so nothing follows hers.
+  // After the launch, a stage that stands before the shell finds the desk asleep, and she rests,
+  // so the map's held for a locked vault (`kimmMoodOf`'s `locked`) is not asked for on the stage.
+  // The lock screen draws her in its own panel (`stageVexLockMood`).
   return { state: "sleeping", word: "Sleeping", note: null, mood: kimmMoodOf("sleeping") };
 }
 
@@ -198,9 +200,31 @@ export function useStageFace(face: StageVexView): void {
   );
 }
 
+/**
+ * Her mood on the lock screen's own panel (`UnlockScreen.tsx`, docs/design/H3-DESKTOP.md section
+ * 4.13): the unlock stands on no stage and no Vex key speaks for her there, so the panel reads the
+ * same flags with a simpler clock. She rests while the screen waits for the password, is concerned
+ * (as the stage maps it, `kimmMoodOf("concerned")`) over a wrong password, a throttle or the vault
+ * reset panel, and says hi once the vault has opened.
+ */
+export function stageVexLockMood(state: StageVexState): KimmMood {
+  if (state.concerned) return kimmMoodOf("concerned");
+  if (state.unlocked) return kimmMoodOf("ready");
+  return kimmMoodOf("sleeping");
+}
+
 /** The stage to shell crossfade starts: her stage lifts away. */
 export function stageVexExit(): void {
   update({ exit: "reveal" });
+}
+
+/**
+ * Her stage has gone from the window without leaving the launch (the gate lifted away over the
+ * unlock, which stands on no stage): the crossfade is spent, so a stage that stands again starts
+ * whole, and the launch's own story is kept.
+ */
+export function stageVexSettle(): void {
+  update({ exit: "idle" });
 }
 
 /** The stage left the launch or the screens: the next stage starts from a locked desk. */
