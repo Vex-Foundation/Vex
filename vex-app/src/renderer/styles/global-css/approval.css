@@ -680,12 +680,28 @@
   background: var(--vex-alias-interactive-active);
 }
 .vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"] {
+  position: relative;
+  isolation: isolate;
   min-width: 200px;
   color: var(--vex-alias-button-accent-ink);
   background: var(--vex-alias-button-accent-fill);
 }
-.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"]:enabled:hover {
+/* Its blue hover rises from the key's foot, as the docked key's does (VEX
+ * Cloud's --vx-blue-fill-hover): a layer under the word, never a swap of the
+ * key's fill. A look only; the armed key takes no rising fill. */
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--vex-alias-button-accent-hover);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
+  pointer-events: none;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"]:enabled:not([data-armed]):hover::before {
+  transform: scaleY(1);
 }
 .vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed],
 .vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed]:enabled:hover {
