@@ -363,14 +363,37 @@ describe("composer capsule - send cell", () => {
     expect(send.getAttribute("type")).toBe("submit");
     // The word in sentence case (the sheet sets the caps) beside the
     // three-by-three dot glyph, 20 square, which is decoration.
-    expect(send.textContent).toBe("Send");
+    expect(send.querySelector(".vex-composer-key__word")?.textContent).toBe("Send");
     const glyph = send.querySelector("svg");
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     expect(glyph?.getAttribute("width")).toBe("20");
     expect(glyph?.querySelectorAll("circle")).toHaveLength(9);
-    expect(send.disabled).toBe(true);
-    typeDraft("buy the dip");
+    // Held, not disabled (VEX Cloud's SubmitButton, dock contract section
+    // 3): the key keeps its place in the tab order and focus through a send.
     expect(send.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-disabled")).toBe(false);
+  });
+
+  it("a held SEND keeps focus, says why it is held, and its press sends nothing", () => {
+    render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
+    send.focus();
+    expect(document.activeElement).toBe(send);
+    expect(send.tabIndex).toBe(0);
+    const reason = document.getElementById(send.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe("Write a message to send");
+    expect(send.getAttribute("aria-keyshortcuts")).toBe("Enter");
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    send.form?.addEventListener("submit", submitted);
+    fireEvent.click(send);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(send);
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("raw-CSS contract: the send cell is 138 wide and the row's 72, the one blue fill, white caps 13", () => {
@@ -387,7 +410,7 @@ describe("composer capsule - send cell", () => {
       /\.vex-composer-send::before,\s*\.vex-composer-stop::before \{[^}]*background: var\(--vex-alias-button-accent-hover\);[^}]*transform: scaleY\(0\);[^}]*transform-origin: bottom;[^}]*transition: transform var\(--vex-duration-key-fill\)/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send:hover:not\(:disabled\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
+      /\.vex-composer-send:hover:not\(:disabled, \[aria-disabled="true"\]\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
     );
     expect(CONSOLE_CSS).not.toMatch(
       /\.vex-composer-send:hover:not\(:disabled\),\s*\.vex-composer-stop:hover:not\(:disabled\) \{[^}]*background-color/,
@@ -396,7 +419,7 @@ describe("composer capsule - send cell", () => {
     // muted word, never the blue: a blue key that does nothing is a trust
     // regression. No dotted outline, no transparent key.
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send:disabled,\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
+      /\.vex-composer-send:is\(:disabled, \[aria-disabled="true"\]\),\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
     );
     expect(CONSOLE_CSS).not.toMatch(/dotted/);
     // The dots are faint at rest and white under the pointer.
@@ -404,7 +427,7 @@ describe("composer capsule - send cell", () => {
       /\.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-label-faint\);/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-key:hover:not\(:disabled\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
+      /\.vex-composer-key:hover:not\(:disabled, \[aria-disabled="true"\]\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
   });
 

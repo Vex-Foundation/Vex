@@ -234,7 +234,8 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
  * stops at the rule, which stays the ground's.
  *
  * HELD (VEX Cloud's EC-04): while there is nothing to send, SEND is
- * disabled and says so by its look, the cell fill with a muted word and the
+ * held (`aria-disabled`, so it keeps its place in the tab order) and says so
+ * by its look, the cell fill with a muted word and the
  * faint dots, no blue and no hover; a blue key that does nothing would be a
  * trust regression. A stop being acknowledged is the same held key. */
 .vex-composer-key {
@@ -279,11 +280,11 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
   pointer-events: none;
 }
-.vex-composer-send:hover:not(:disabled)::before,
+.vex-composer-send:hover:not(:disabled, [aria-disabled="true"])::before,
 .vex-composer-stop:hover:not(:disabled)::before {
   transform: scaleY(1);
 }
-.vex-composer-send:disabled,
+.vex-composer-send:is(:disabled, [aria-disabled="true"]),
 .vex-composer-stop:disabled {
   background-color: var(--vex-alias-bg-layer-3);
   color: var(--vex-alias-label-tertiary);
@@ -293,7 +294,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   flex: none;
   color: var(--vex-alias-label-faint);
 }
-.vex-composer-key:hover:not(:disabled) .vex-composer-key__glyph {
+.vex-composer-key:hover:not(:disabled, [aria-disabled="true"]) .vex-composer-key__glyph {
   color: var(--vex-alias-button-accent-ink);
 }
 .vex-composer-stop__mark {
