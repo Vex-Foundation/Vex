@@ -1328,18 +1328,26 @@
 }
 
 /* ---- Markets (the Watchlist page) in H3 rows --------------------------
- * docs/design/H3-DESKTOP.md sections 2.2 to 2.4 and 4.9 (`WatchlistScreen`):
- * the lead line, the follow form, then each list as one framed cell. The
- * followed tokens: a caps head row (13, muted) and rows 56 high, a grid of
- * the name over its muted chain and pool, the price and the 24 hour change
- * in mono at the right (the change in the gain or loss colour), and the
- * row's keys as cells, the rule on their left, 13 caps. An alert row is the
- * status mark, its words, where it came from and its key. Section heads are
- * the 13 caps label, 600. */
+ * docs/design/H3-DESKTOP.md sections 2.2 to 2.4 and 4.9 (`WatchlistScreen`).
+ * The plate is VEX Cloud's built watchlist (owner decision 2026-11-09, look
+ * only; Cloud's `WatchlistPage` and `WatchlistRow`, W5 8f701ca2):
+ *   - the lead, then from a 900 page two columns, 1.25 to 1, 24 apart:
+ *     Following at the left, the alerts at the right; one column under 900;
+ *   - a section head is the 12 caps name (600) and its count after it, 12
+ *     muted in tabular figures, 12 above the list;
+ *   - a list stands on the card ground in one rule frame: a caps head 34
+ *     high (11, muted), rows 56 high and 16 in, the name (15) over its chain
+ *     and pool (12, muted), the price (13) over the 24 hour change (12, in
+ *     the gain or loss colour), then the row's keys as cells, the rule on
+ *     their left, 13 caps;
+ *   - the follow form is a framed box on the card ground, 16 in;
+ *   - an alert row is the status mark, its words, where it came from and its
+ *     key. */
 .vex-mk {
+  container: vex-mk / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
@@ -1347,24 +1355,42 @@
   max-width: 760px;
   margin: 0;
   font-size: 14px;
+  line-height: 1.5;
   color: var(--vex-alias-label-secondary);
+}
+.vex-mk__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@container vex-mk (width >= 900px) {
+  .vex-mk__cols {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+}
+.vex-mk__col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 24px;
 }
 .vex-mk__ink {
   color: var(--vex-alias-label-primary);
 }
 .vex-mk__muted {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mk__sec {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .vex-mk__hrow {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  gap: 10px;
 }
 .vex-mk__h {
   margin: 0;
@@ -1374,6 +1400,11 @@
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
+.vex-mk__count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-mk__note {
   margin: 0;
   font-size: 14px;
@@ -1381,6 +1412,12 @@
 }
 .vex-mk__table {
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-mk__box {
+  padding: 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 .vex-mk__item + .vex-mk__item,
 .vex-mk__row--head + .vex-mk__item,
@@ -1390,11 +1427,11 @@
 .vex-mk__row {
   display: grid;
   /* The keys column is fixed so the head row's columns line up over it. */
-  grid-template-columns: minmax(0, 1fr) 160px 100px 236px;
+  grid-template-columns: minmax(0, 1fr) 150px 236px;
   align-items: stretch;
-  column-gap: 18px;
+  column-gap: 12px;
   min-height: 56px;
-  padding-left: 18px;
+  padding-left: 16px;
 }
 .vex-mk__row > * {
   display: flex;
@@ -1402,7 +1439,7 @@
   min-width: 0;
 }
 .vex-mk__row--head {
-  min-height: 40px;
+  min-height: 34px;
   font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -1412,23 +1449,30 @@
   justify-content: flex-end;
   text-align: right;
 }
-.vex-mk__row > .vex-mk__name {
+.vex-mk__row > .vex-mk__name,
+.vex-mk__row > .vex-mk__fig {
   flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
+  gap: 2px;
+}
+.vex-mk__row > .vex-mk__name {
+  align-items: flex-start;
+}
+.vex-mk__row > .vex-mk__fig {
+  align-items: flex-end;
 }
 .vex-mk__label {
   font-size: 15px;
 }
 .vex-mk__sub {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mk__price {
-  font-size: 14px;
+  font-size: 13px;
 }
 .vex-mk__change {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--vex-alias-label-secondary);
 }
 .vex-mk [data-trade="up"] {
@@ -1475,15 +1519,15 @@
   outline-offset: -2px;
 }
 .vex-mk__form {
-  padding: 16px 18px;
+  padding: 16px;
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-mk__alert {
   display: flex;
-  min-height: 52px;
+  min-height: 56px;
   align-items: stretch;
-  gap: 18px;
-  padding-left: 18px;
+  gap: 12px;
+  padding-left: 16px;
 }
 .vex-mk__alert > :not(.vex-mk__key) {
   display: flex;
@@ -1495,6 +1539,7 @@
   font-size: 15px;
 }
 .vex-mk__link {
+  margin-left: auto;
   padding: 0;
   border: 0;
   background: none;
