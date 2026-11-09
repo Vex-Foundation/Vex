@@ -127,6 +127,32 @@ html[data-still] .vex-latest {
   zoom: var(--vex-zoom);
 }
 
+/* THE FLOW RHYTHM (VEX Cloud's spec 10.10, `FLOW_GAP`; `flowRhythm.ts`):
+ * the column has no gap of its own; each row's gap comes from what it shows
+ * at its edges, the larger edge winning: 6 between rows and trace cards, 12
+ * around text or a card and above the live turn, 16 around the turn's head.
+ * A row the fold hides, and a row that joins the card above, take 0. The
+ * band over the first row stands 12 above it; the turn's stats line 6 under
+ * its turn. */
+[data-vex-flow] > [data-vex-gap="6"] {
+  margin-top: 6px;
+}
+[data-vex-flow] > [data-vex-gap="12"] {
+  margin-top: 12px;
+}
+[data-vex-flow] > [data-vex-gap="16"] {
+  margin-top: 16px;
+}
+[data-vex-flow] > [data-vex-area="stream-preview"]:not(:first-child) {
+  margin-top: 12px;
+}
+[data-vex-flow] > [data-vex-turn-stats] {
+  margin-top: 6px;
+}
+[data-vex-flow] .vex-earlier {
+  margin-bottom: 12px;
+}
+
 /* The earlier-messages band (`EarlierBand`; VEX Cloud's `.vx-tx-earlier`,
  * H3's `.t-earlier`): 36 high on the 1px rule under it, caps 11 tracked in
  * ink 2, the swatch 10 from the words; Retry a 28 key at the band's end in
@@ -185,8 +211,7 @@ html[data-still] .vex-latest {
 
 /* The day line (VEX Cloud's `.vx-tx-day`, H3's `.t-day`): caps 11 tracked,
  * muted, centred between two hairlines that fade from the chosen rule (24%)
- * to nothing, 14 from the word. The row stack's 18 gap plus 8 here is the 26
- * above it; the gap below is the 18. */
+ * to nothing, 14 from the word, 8 under its flow gap. */
 .vex-day {
   display: flex;
   align-items: center;
@@ -495,38 +520,160 @@ html[data-still] .vex-latest {
  *  TOOL STEPS                                                   *
  * ============================================================ */
 
-/* docs/design/H3-DESKTOP.md section 1.7, the thinking frame's TOOL rows. A
- * turn's steps are one framed cell in the 1px rule, the column's full width,
- * 12 under the prose above them; the row stack's gap is the space after
- * them. Right under the turn's thinking row the steps close its frame: one
- * cell, the head and then the steps, as H3 draws THINKING over its rows. A
- * row that only continues the run above it takes back the gap and its own
- * top rule, so the steps of one run read as one framed list. */
-.vex-steps {
-  margin-top: 12px;
+/* THE TRACE CARD AND ITS STEPS (docs/design/H3-DESKTOP.md section 1.7; VEX
+ * Cloud's built trace, `.vx-trace`, `.vx-trace-steps` and `.vx-trace-step`).
+ * Each group of a turn's steps is a card on the card ground in the 1px rule,
+ * the turn's head over its first; the card's steps are one list with no rule
+ * between them and a 1px rail through their nodes at x 19 (white at 10%,
+ * from 18 under the list's top to 18 over its foot). A step is a grid of the
+ * node (12), its kind in caps 10 at 0.1em (64), its text, its time or word,
+ * and the chevron (16), 14 apart, padded 9 by 14. A tool's title is caps
+ * 11.5 at 0.06em, a summary 12.5, the time 10.5 at 0.04em. What a step
+ * opens to (its links, its well, a thought's trace) stands under it on the
+ * text column's edge. The live frame's head (`.vex-live-row`) keeps the
+ * plain `.vex-step` row. */
+.vex-trace {
+  min-width: 0;
   border: 1px solid var(--vex-alias-rule);
   background: var(--vex-alias-card);
 }
-.vex-reply > .vex-steps:first-child,
-.vex-reply > [data-vex-trace-group]:first-child > [data-vex-trace-body] > .vex-steps:first-child {
-  margin-top: 0;
+/* A headless group folded away leaves nothing, not an empty frame. */
+.vex-trace[data-shut]:not(:has(> .vex-trace-head)) {
+  border: 0;
 }
-.vex-think + .vex-steps {
-  /* Collapses with the thinking row's 12 below it, to nothing. */
-  margin-top: -12px;
-  border-top: 0;
+.vex-trace-steps {
+  position: relative;
+  margin: 0;
+  padding: 3px 0;
+  list-style: none;
 }
-[data-vex-run-continues] {
-  margin-top: -18px;
-}
-[data-vex-run-continues] .vex-steps {
-  margin-top: 0;
-  border-top: 0;
-}
-/* Every row of the frame after its first stands on the rule. */
-.vex-steps > [data-vex-message-role="tool"] + [data-vex-message-role="tool"],
-.vex-steps__members > [data-vex-message-role="tool"] + [data-vex-message-role="tool"] {
+.vex-trace-head + [data-vex-trace-body] > .vex-trace-steps {
   border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-trace-steps::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 19px;
+  width: 1px;
+  background: color-mix(in srgb, var(--vex-alias-label-primary) 10%, transparent);
+}
+/* A fold's members are steps of the same list, on the same rail. */
+.vex-trace-steps .vex-trace-steps {
+  padding: 0;
+}
+.vex-trace-steps .vex-trace-steps::before {
+  content: none;
+}
+.vex-trace-step {
+  min-width: 0;
+}
+.vex-trace-step .vex-step {
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+}
+.vex-trace-step .vex-step:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+/* A stamp beside the step's key (Waiting for approval, Confirmed). */
+.vex-trace-step .vex-step > :not(.vex-step__grid) {
+  margin-right: 14px;
+}
+/* Two classes, so the grid outranks the plain row's and key's flex, and the
+ * thought row's own (`.vex-reasoned__row`) further down. */
+:is(.vex-step, .vex-step__key).vex-step__grid {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 12px 64px minmax(0, 1fr) auto 16px;
+  column-gap: 14px;
+  align-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 9px 14px;
+  text-align: left;
+}
+.vex-step__grid > .vex-step__fill {
+  width: auto;
+}
+/* The node covers the rail. */
+.vex-trace-step .vex-step-node {
+  background-color: var(--vex-alias-card);
+}
+.vex-trace-step .vex-step-node:is([data-step-node="done"]) {
+  background-color: var(--vex-alias-label-secondary);
+}
+.vex-step__kind {
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-step__text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.vex-step__end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+.vex-trace-step .vex-step__name {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+}
+.vex-trace-step .vex-step__summary {
+  font-size: 12.5px;
+}
+.vex-trace-step .vex-step__num {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  letter-spacing: var(--tracking-figure);
+}
+.vex-trace-step .vex-step__word {
+  font-size: 10.5px;
+}
+/* The chevron turns while its step is open. */
+.vex-step__grid > .vex-step__chev svg {
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-step__grid[aria-expanded="true"] > .vex-step__chev svg,
+.vex-step__grid:has([aria-expanded="true"]) > .vex-step__chev svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-step__grid > .vex-step__chev svg {
+    transition: none;
+  }
+}
+html[data-still] .vex-step__grid > .vex-step__chev svg {
+  transition: none;
+}
+/* What a step opens to, on the text column's edge (14 + 12 + 14 + 64 + 14). */
+.vex-trace-step :is(.vex-step__links, .vex-step-well) {
+  margin: 0 14px 9px 118px;
+  border-top: 0;
+}
+.vex-trace-step .vex-step__links {
+  padding: 0;
+}
+.vex-trace-step .vex-step-well {
+  padding: 10px 12px 12px;
+}
+.vex-trace-step .vex-reasoned__body {
+  padding: 0 14px 12px 118px;
+  border-top: 0;
+}
+.vex-trace-step .vex-steps__members {
+  border-top: 0;
 }
 
 /* One step: 40 high, 16 in; the square (its slot 10), the venue mark, the
@@ -1126,9 +1273,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
  * chevron. The whole row is the key: the label is the button, and its hit
  * area stretches over the row. Opened, the trace sits under the row's rule. */
 .vex-think {
-  margin-bottom: 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-card);
+  min-width: 0;
 }
 /* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label.
  * It takes the figures' 0.04em (VEX Cloud's `.rz-ms`). */
@@ -1234,13 +1379,12 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 
 /* ── The turn's trace head (`SessionTranscript/TurnTrace.tsx`) ───────────
  * VEX Cloud's built trace (`styles/thread.css`, `.vx-trace-head`): one head
- * per turn over every step of it, a cell 40 high on the card ground in the
- * 1px rule, 16 in. The glyph in its 10 slot, the label in caps 11 tracked in
+ * per turn over every step of it, 40 high at the top of its card, 14 in. The
+ * glyph in the node's 12 slot, over the rail, the label in caps 11 tracked in
  * ink 2 (muted while the turn runs), the steps at the right in 11 muted at
  * the figures' tracking, then the chevron, which turns (300 ms) while the
- * steps go at once. No summary of the trace. The first step part under it
- * shares its rule, so the head and the steps read as one card; folded, the
- * head stands alone, 12 over what follows it. A stopped or failed turn's
+ * steps go at once. No summary of the trace. The card's steps stand under
+ * its rule; folded, the card is the head alone. A stopped or failed turn's
  * head is a label: no key, no chevron. */
 .vex-trace-head {
   display: flex;
@@ -1249,9 +1393,9 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   box-sizing: border-box;
   width: 100%;
   min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-card);
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
   color: var(--vex-alias-label-secondary);
   font: inherit;
   font-size: 11px;
@@ -1381,17 +1525,25 @@ html[data-still] .vex-trace-cells[data-tone="run"] > i {
 html[data-still] .vex-trace-head__chev {
   transition: none;
 }
-/* The first step part under the head shares the head's rule. */
-.vex-trace-head + [data-vex-trace-body] > :first-child {
-  margin-top: -1px;
+.vex-trace-head .vex-step__fill {
+  justify-content: center;
+  width: 12px;
 }
-/* Folded, the head stands alone, 12 over the answer or what follows it. */
-[data-vex-trace-group][data-shut]:has(> .vex-trace-head):not(:last-child) {
+/* A card stands 12 from the prose around it; a headless card folded away
+ * takes no room. */
+.vex-reply [data-vex-trace-group]:not(:last-child) {
   margin-bottom: 12px;
 }
-/* A row of nothing but steps, in a folded turn, takes its gap back. */
-[data-vex-trace-shut] {
-  margin-top: -18px;
+.vex-reply :not(.sr-only) + [data-vex-trace-group] {
+  margin-top: 12px;
+}
+.vex-reply .vex-trace[data-shut]:not(:has(> .vex-trace-head)) {
+  margin: 0;
+}
+/* A row that only continues the steps above it joins their card: no gap
+ * (`flowRhythm.ts`) and no rule between the two lists. */
+[data-vex-run-continues] .vex-trace {
+  border-top: 0;
 }
 
 /* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */

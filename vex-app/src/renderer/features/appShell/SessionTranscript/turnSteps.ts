@@ -102,12 +102,23 @@ export function foldsWhole(entry: TranscriptEntry): boolean {
   if (entry.variant === "tool" && entry.toolKind === "result") return true;
   if (entry.variant === "tool" && entry.content.length > 0) return false;
   if (entry.variant !== "tool" && entry.variant !== "tool_group") return false;
-  return rowActs(entry).every(
+  return !actsCarryCards(entry);
+}
+
+/** Whether a row's acts carry a card under their steps: a receipt, a mission's result, an analysis. */
+export function actsCarryCards(entry: TranscriptEntry): boolean {
+  return rowActs(entry).some(
     (act) =>
-      receiptTxRef(act) === null &&
-      readMissionStopResult(act) === null &&
-      readTechnicalAnalysisResult(act) === null,
+      receiptTxRef(act) !== null ||
+      readMissionStopResult(act) !== null ||
+      readTechnicalAnalysisResult(act) !== null,
   );
+}
+
+/** Whether a row draws any tool step (a call, a fold of calls, an orphan result). */
+export function drawsToolSteps(entry: TranscriptEntry): boolean {
+  if (entry.variant === "tool" && entry.toolKind === "result") return true;
+  return rowActs(entry).length > 0;
 }
 
 /** Every whole turn in `rows`: its head, and which turn each row is in. */

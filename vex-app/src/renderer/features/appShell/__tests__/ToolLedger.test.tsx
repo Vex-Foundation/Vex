@@ -343,8 +343,13 @@ describe("ToolGroupRow", () => {
         ]),
       }),
     );
-    const header = screen.getByRole("button", { name: /3 tool calls/ });
-    expect(header.textContent).toBe("3 tool calls · Search web, File read");
+    // The name is the fold's words alone: the kind column (TOOL) is a
+    // drawing, hidden from assistive technology.
+    const header = screen.getByRole("button", { name: "3 tool calls · Search web, File read" });
+    expect(header.querySelector(".vex-step__title")?.textContent).toBe(
+      "3 tool calls · Search web, File read",
+    );
+    expect(header.querySelector(".vex-step__kind")?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("prints the time spent only when every member was measured", () => {

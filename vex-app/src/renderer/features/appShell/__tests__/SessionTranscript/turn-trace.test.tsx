@@ -8,6 +8,8 @@
  * every row of the turn.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TranscriptRows } from "../../SessionTranscript/TranscriptRows.js";
@@ -90,8 +92,8 @@ describe("the turn's trace head", () => {
     expect(bodies(container)).toHaveLength(2);
     for (const body of bodies(container)) expect(body.getAttribute("hidden")).toBe("until-found");
     expect(screen.getByText("answer 12")).toBeTruthy();
-    // The row of nothing but steps takes its gap back while folded.
-    expect(container.querySelector('[data-vex-entry-id="11"]')?.hasAttribute("data-vex-trace-shut")).toBe(true);
+    // The head's row stands, folded to its head; the answer's row stands.
+    expect(container.querySelector('[data-vex-entry-id="11"]')?.hasAttribute("data-vex-trace-shut")).toBe(false);
     expect(container.querySelector('[data-vex-entry-id="12"]')?.hasAttribute("data-vex-trace-shut")).toBe(false);
   });
 
@@ -100,7 +102,6 @@ describe("the turn's trace head", () => {
     fireEvent.click(head(container));
     expect(head(container).getAttribute("aria-expanded")).toBe("true");
     for (const body of bodies(container)) expect(body.hasAttribute("hidden")).toBe(false);
-    expect(container.querySelector('[data-vex-entry-id="11"]')?.hasAttribute("data-vex-trace-shut")).toBe(false);
     fireEvent.click(head(container));
     for (const body of bodies(container)) expect(body.getAttribute("hidden")).toBe("until-found");
   });
@@ -226,5 +227,91 @@ describe("the turn's fold while it runs", () => {
       vi.advanceTimersByTime(FOLD_DELAY_MS);
     });
     expect(head(view.container).getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("the trace's steps (VEX Cloud's .vx-trace-steps)", () => {
+  it("draws each group as one card holding one list, a step per item, with its kind", () => {
+    const { container } = render(draw(TURN, new Set([10, 11, 12]), false));
+    fireEvent.click(head(container));
+    const cards = container.querySelectorAll(".vex-trace[data-vex-trace-group]");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card.querySelectorAll(":scope > [data-vex-trace-body] > ol.vex-trace-steps")).toHaveLength(1);
+    }
+    // Row 11: its thought and its call, one list; row 12: the answer's thought.
+    const first = cards[0]?.querySelector("ol.vex-trace-steps");
+    expect([...(first?.children ?? [])].map((li) => li.getAttribute("data-vex-trace-kind"))).toEqual([
+      "model",
+      "tool",
+    ]);
+    expect([...(first?.children ?? [])].every((li) => li.tagName === "LI")).toBe(true);
+    expect(first?.querySelectorAll(".vex-step__kind")).toHaveLength(2);
+  });
+
+  it("keeps each step's name: the kind column is a drawing", () => {
+    render(draw(TURN, new Set([10, 11, 12]), false));
+    fireEvent.click(screen.getByRole("button", { name: "Thought, 3 steps" }));
+    // A thought's key is its label; a tool's key its title (and its word).
+    expect(screen.getAllByRole("button", { name: "Thought" })).toHaveLength(2);
+    const tool = document.querySelector<HTMLElement>('[data-vex-trace-kind="tool"] button');
+    expect(tool?.getAttribute("aria-expanded")).toBe("false");
+    expect(tool?.querySelector(".vex-step__kind")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("raw-CSS contract: the rail at x 19, no rule between steps, the 12 / 64 / text / time / 16 grid", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-trace-steps::before \{[^}]*top: 18px;[^}]*bottom: 18px;[^}]*left: 19px;[^}]*width: 1px;/);
+    expect(css).toMatch(
+      /:is\(\.vex-step, \.vex-step__key\)\.vex-step__grid \{[^}]*grid-template-columns: 12px 64px minmax\(0, 1fr\) auto 16px;[^}]*column-gap: 14px;[^}]*padding: 9px 14px;/,
+    );
+    expect(css).toMatch(/\.vex-step__kind \{[^}]*font-size: 10px;[^}]*letter-spacing: 0\.1em;[^}]*text-transform: uppercase;/);
+    expect(css).toMatch(/\.vex-trace \{[^}]*border: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-card\);/);
+    // No rule between two steps of a list.
+    expect(css).not.toMatch(/\[data-vex-message-role="tool"\] \+ \[data-vex-message-role="tool"\] \{/);
+  });
+});
+
+describe("the flow rhythm around the trace (VEX Cloud's 6 / 12 / 16)", () => {
+  const gap = (container: HTMLElement, id: number) =>
+    container.querySelector(`[data-vex-entry-id="${String(id)}"]`)?.getAttribute("data-vex-gap");
+
+  it("stands the head 16 under the message, hides a folded row of steps, and the answer 12 under", () => {
+    const rows = [user(10), call(11, "check the wallet"), call(12, null), answer(13, null)];
+    const { container } = render(draw(rows, new Set([10, 11, 12, 13]), false));
+    expect(gap(container, 11)).toBe("16");
+    // Row 12 holds nothing but steps: folded, it takes no gap.
+    const hidden = container.querySelector('[data-vex-entry-id="12"]');
+    expect(hidden?.hasAttribute("data-vex-trace-shut")).toBe(true);
+    expect(gap(container, 12)).toBe("0");
+    // Under the folded head, the answer: the head's 16 wins over its 12.
+    expect(gap(container, 13)).toBe("16");
+    // Opened, the row of steps joins the card above; the answer 12 under it.
+    fireEvent.click(head(container));
+    expect(gap(container, 12)).toBe("0");
+    expect(container.querySelector('[data-vex-entry-id="12"]')?.hasAttribute("data-vex-run-continues")).toBe(true);
+    expect(gap(container, 13)).toBe("12");
+  });
+
+  it("raw-CSS contract: the column has no gap of its own; rows take 6, 12 or 16", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\[data-vex-flow\] > \[data-vex-gap="6"\] \{\s*margin-top: 6px;/);
+    expect(css).toMatch(/\[data-vex-flow\] > \[data-vex-gap="12"\] \{\s*margin-top: 12px;/);
+    expect(css).toMatch(/\[data-vex-flow\] > \[data-vex-gap="16"\] \{\s*margin-top: 16px;/);
+    expect(css).toMatch(/\[data-vex-flow\] > \[data-vex-area="stream-preview"\]:not\(:first-child\) \{\s*margin-top: 12px;/);
+    // The old beat and its negative take-backs are gone.
+    expect(css).not.toMatch(/margin-top: -18px/);
+    const source = readFileSync(
+      join(process.cwd(), "src/renderer/features/appShell/SessionTranscript.tsx"),
+      "utf8",
+    );
+    expect(source).not.toContain("gap-[18px]");
+    expect(source).toContain('data-vex-flow=""');
   });
 });

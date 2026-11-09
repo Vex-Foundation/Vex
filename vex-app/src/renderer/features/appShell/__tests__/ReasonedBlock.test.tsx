@@ -79,15 +79,21 @@ describe("ReasonedBlock", () => {
     expect(container.querySelector("[data-vex-thinking-head]")).toBeNull();
   });
 
-  it("draws H3's dot-grid glyph once settled and the running node while streaming", () => {
-    const settled = render(createElement(ReasonedBlock, { reasoning: "t" }));
-    expect(settled.container.querySelector("[data-vex-think-glyph]")).not.toBeNull();
-    expect(settled.container.querySelector(".vex-step-node")).toBeNull();
+  it("is a MODEL step: the done node once settled, the running node while streaming, its name the label", () => {
+    const settled = render(createElement(ReasonedBlock, { reasoning: "t\nmore" }));
+    expect(
+      settled.container.querySelector('.vex-step-node[data-step-node="done"]'),
+    ).not.toBeNull();
+    const kind = settled.container.querySelector(".vex-step__kind");
+    expect(kind?.textContent).toBe("Model");
+    expect(kind?.getAttribute("aria-hidden")).toBe("true");
+    // The key's name stays the label alone; the summary sits beside it.
+    expect(screen.getByRole("button", { name: "Thought" })).toBeTruthy();
+    expect(settled.container.querySelector(".vex-step__grid")).not.toBeNull();
     settled.unmount();
     const running = render(
       createElement(ReasonedBlock, { reasoning: "t", running: true }),
     );
-    expect(running.container.querySelector("[data-vex-think-glyph]")).toBeNull();
     expect(
       running.container.querySelector('.vex-step-node[data-step-node="running"]'),
     ).not.toBeNull();

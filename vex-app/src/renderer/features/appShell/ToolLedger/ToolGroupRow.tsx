@@ -1,5 +1,5 @@
 /**
- * THE FOLD (S5): finished steps in ONE quiet row of the steps' frame
+ * THE FOLD (S5): finished steps in ONE quiet step of the trace's list
  * (docs/design/H3-DESKTOP.md section 1.7): "{n} tool calls · {titles}" (each
  * title carries its venue, "Market data · DexScreener") in 13 muted, the time
  * spent in the tools in the mono 12 at the right, then the chevron, as every
@@ -19,10 +19,8 @@
  */
 
 import { useId, useMemo, useRef, useState, type JSX } from "react";
-import {
-  LineChevronDown,
-  LineChevronUp,
-} from "../../../components/icons/line/index.js";
+import { LineChevronDown } from "../../../components/icons/line/index.js";
+import { TraceKind, TraceStepItem } from "../SessionTranscript/TurnTrace.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
@@ -96,7 +94,6 @@ export function ToolGroupRow({
       // Semantic contract: the fold container is a tool row too.
       data-vex-message-role="tool"
       data-vex-tool-fold=""
-      className="vex-steps"
     >
       <div className="vex-step vex-step--quiet flex items-center">
         <button
@@ -105,29 +102,33 @@ export function ToolGroupRow({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="vex-step__key"
+          className="vex-step__key vex-step__grid"
         >
-          {/* An empty square slot, so the fold's words start on the same
-              edge as its members' titles. */}
+          {/* An empty node slot, so the fold's words start on the same edge
+              as its members' titles. */}
           <span aria-hidden className="vex-step__fill" />
-          <span className="vex-step__title">
-            <span className="tabular-nums">{group.calls.length} tool calls</span>
-            {titles.length > 0 ? ` · ${titles}` : null}
+          <TraceKind kind="tool" />
+          <span className="vex-step__text">
+            <span className="vex-step__title">
+              <span className="tabular-nums">{group.calls.length} tool calls</span>
+              {titles.length > 0 ? ` · ${titles}` : null}
+            </span>
+            {failed > 0 ? (
+              <span data-vex-tool-fold-failed="" className="vex-step__failed">
+                <StepNode state="failed" />
+                {failed} failed
+              </span>
+            ) : null}
           </span>
-          {failed > 0 ? (
-            <span data-vex-tool-fold-failed="" className="vex-step__failed">
-              <StepNode state="failed" />
-              {failed} failed
-            </span>
-          ) : null}
-          <span aria-hidden className="vex-step__spacer" />
-          {durationText !== null ? (
-            <span data-vex-tool-duration="" className="vex-step__num">
-              {durationText}
-            </span>
-          ) : null}
+          <span className="vex-step__end">
+            {durationText !== null ? (
+              <span data-vex-tool-duration="" className="vex-step__num">
+                {durationText}
+              </span>
+            ) : null}
+          </span>
           <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+            <LineChevronDown size={14} />
           </span>
         </button>
         {matchedApprovalId !== null ? (
@@ -140,15 +141,18 @@ export function ToolGroupRow({
         triggerRef={triggerRef}
         className="vex-steps__members"
       >
-        {/* Member steps, each its own ruled row under the fold. The rows
-            carry no entrance keyframe: the reveal is the expand itself. */}
-        {group.calls.map((call) => (
-          <ToolActRow
-            key={call.toolCallId}
-            act={call}
-            pendingApprovalId={pendingApprovals?.get(call.toolCallId) ?? null}
-          />
-        ))}
+        {/* Member steps: their own list under the fold, on the trace's rail.
+            The rows carry no entrance keyframe: the reveal is the expand. */}
+        <ol className="vex-trace-steps">
+          {group.calls.map((call) => (
+            <TraceStepItem key={call.toolCallId} kind="tool">
+              <ToolActRow
+                act={call}
+                pendingApprovalId={pendingApprovals?.get(call.toolCallId) ?? null}
+              />
+            </TraceStepItem>
+          ))}
+        </ol>
       </ExpandRegion>
     </div>
   );
