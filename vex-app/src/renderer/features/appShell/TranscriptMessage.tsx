@@ -346,7 +346,8 @@ export const TranscriptMessage = memo(function TranscriptMessage({
     turnSteps === undefined || turnOutcome === undefined
       ? null
       : { steps: turnSteps, outcome: turnOutcome, thoughtMs: thoughtMs ?? null };
-  const thought = (row.reasoning ?? "").length > 0;
+  const thought =
+    row.variant !== "tool_group" && (row.reasoning ?? "").length > 0;
   switch (row.variant) {
     case "user": {
       // A desk message carries the market scope, the desk's values and the
