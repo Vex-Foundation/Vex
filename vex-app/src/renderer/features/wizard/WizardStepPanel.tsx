@@ -174,20 +174,32 @@ export function WizardStepPanel({
 
   if (host.host === "settings") {
     const status = settingsStatusForStep(panelDataAttr.kind, env ?? null);
-    const actions = footer ? <div className="vex-wzs__actions">{footer}</div> : null;
+    // The Save band (VEX Cloud's `SaveFooter`, `.vx-savebar`; owner decision
+    // 2026-11-09, H3-DESKTOP section 4.9): a band at least 56 high under a
+    // rule, the step's keys as end cells of at least 148 with their left
+    // rule. Save keeps its own enablement: held, never blue, while it will
+    // not act.
+    const actions = footer ? (
+      <div className="vex-wzs__actions" data-vex-save-band="">
+        {footer}
+      </div>
+    ) : null;
     return (
       <div {...dataAttrs} className="vex-wzs">
+        {/* The section head as `SettingsHead` draws it (Cloud's built
+            PageHeader, H3-DESKTOP section 4.9): the name a hidden h2, the
+            status word first in the lead row. */}
         <header className="vex-set__head" data-vex-settings-head>
-          <h2 className="vex-set__title">
-            {settingsTitle ?? title}
+          <h2 className="vex-set__title sr-only">{settingsTitle ?? title}</h2>
+          <p className="vex-set__lead">
             {status === null ? null : (
               <span className="vex-set__stw" data-vex-settings-head-status>
                 <Swatch state={settingsStatusSwatch(status.tone)} size={10} />
                 {status.word}
               </span>
             )}
-          </h2>
-          <p className="vex-set__lead">{settingsDescription ?? description}</p>
+            <span data-vex-settings-head-lead>{settingsDescription ?? description}</span>
+          </p>
         </header>
         {formProps ? (
           <form

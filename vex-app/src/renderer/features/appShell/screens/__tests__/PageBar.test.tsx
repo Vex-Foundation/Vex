@@ -68,6 +68,15 @@ describe("UpdatedStamp", () => {
     expect(time?.getAttribute("title")).toBe("3 Nov 2026, 14:30:05");
   });
 
+  it("stands the stepping hatch before the stamp while a read runs, and none at rest", () => {
+    const view = render(<UpdatedStamp at={AT} reading />);
+    const stamp = document.querySelector('[data-vex-area="page-updated"]');
+    expect(stamp?.querySelector(".vex-stripes")?.getAttribute("aria-hidden")).toBe("true");
+    expect(stamp?.textContent).toBe("Updated 14:30");
+    view.rerender(<UpdatedStamp at={AT} />);
+    expect(document.querySelector('[data-vex-area="page-updated"] .vex-stripes')).toBeNull();
+  });
+
   it.each([0, null, undefined, Number.NaN])("draws nothing for a read that has not answered (%s)", (at) => {
     render(<UpdatedStamp at={at} />);
     expect(document.querySelector('[data-vex-area="page-updated"]')).toBeNull();
@@ -75,6 +84,15 @@ describe("UpdatedStamp", () => {
 });
 
 describe("PageBar", () => {
+  it("puts the first read's words, after the hatch, in the stamp's slot, hidden from assistive tech", () => {
+    render(<PageBar updatedAt={0} loading="Loading your portfolio…" />);
+    const slot = document.querySelector('[data-vex-area="page-loading"]');
+    expect(slot?.textContent).toBe("Loading your portfolio…");
+    expect(slot?.getAttribute("aria-hidden")).toBe("true");
+    expect(slot?.querySelector(".vex-stripes")).not.toBeNull();
+    expect(document.querySelector('[data-vex-area="page-updated"]')).toBeNull();
+  });
+
   it("draws the tabs, then the stamp and the keys at its end", () => {
     render(
       <PageBar

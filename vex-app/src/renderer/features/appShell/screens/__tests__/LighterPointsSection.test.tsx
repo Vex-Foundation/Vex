@@ -104,6 +104,10 @@ describe("LighterPointsSection", () => {
   it("reads on mount and says so while it waits", () => {
     render(<LighterPointsSection renderTradingSetup={() => null} />);
     expect(screen.getByText("Reading the campaign from Lighter…")).not.toBeNull();
+    // The H3 loading word: the stepping hatch before the words.
+    expect(
+      document.querySelector('[data-vex-lighter-points-state="loading"] .vex-loading-word .vex-stripes'),
+    ).not.toBeNull();
     expect(pending).toHaveLength(1);
   });
 

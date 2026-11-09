@@ -50,6 +50,7 @@ import {
   unresolvedStateLabel,
   unresolvedUnreadableNote,
 } from "./lighter-trading-setup-copy.js";
+import { LoadingWord } from "../../../../components/ui/cover.js";
 
 export interface LighterTradingSetupSectionProps {
   readonly environment: LighterIntegrationEnvironment;
@@ -155,8 +156,8 @@ export function LighterTradingSetupSection({
 
       <div className="mt-5">
         {overview.isPending ? (
-          <p className="text-[13px] leading-[20px] text-ink-secondary" data-vex-lighter-leverage-loading>
-            {LEVERAGE_LOADING}
+          <p className="m-0" data-vex-lighter-leverage-loading>
+            <LoadingWord word={LEVERAGE_LOADING} />
           </p>
         ) : overview.data === undefined || !overview.data.ok ? (
           <p className="text-[13px] leading-[20px] text-warning" data-vex-lighter-leverage-failed>

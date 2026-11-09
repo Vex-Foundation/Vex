@@ -285,6 +285,16 @@ describe("WatchlistPage - Cloud's built watchlist as the plate (owner decision 2
   });
 });
 
+describe("WatchlistPage - the first read", () => {
+  it("is the word over three cover rows, never a figure", () => {
+    alerts.getWatchlist.mockReturnValue(new Promise(() => undefined));
+    renderPage();
+    const status = screen.getByRole("status", { name: "Reading your watchlist…" });
+    expect(status.querySelectorAll("[data-vex-cover-rows] > li")).toHaveLength(3);
+    expect(screen.queryByText(/\$/)).toBeNull();
+  });
+});
+
 describe("WatchlistScreen - the frame", () => {
   it("draws no page head and stamps its row with the time the engine priced the list", async () => {
     const { WatchlistScreen } = await import("../screens/WatchlistScreen.js");

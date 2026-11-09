@@ -273,6 +273,17 @@ describe("PositionBlock scope input", () => {
   });
 });
 
+/**
+ * The chain read warning, once the first read has answered: while it runs the
+ * block's one status is the loading one (its covers), so wait for that to go.
+ */
+async function chainWarning(): Promise<HTMLElement> {
+  await waitFor(() =>
+    expect(screen.queryByRole("status", { name: "Loading your portfolio…" })).toBeNull(),
+  );
+  return screen.findByRole("status");
+}
+
 describe("chain read uncertainty", () => {
   it("shows the stale chain and both timestamps beside cached portfolio value", async () => {
     const staleSince = "2026-09-08T20:37:00.000Z";
@@ -294,7 +305,7 @@ describe("chain read uncertainty", () => {
     );
     const { container } = renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("Solana: stale since");
     expect(warning.textContent).toContain("Totals include last known values");
     expect(container.querySelector(`time[datetime="${lastSuccessAt}"]`)).not.toBeNull();
@@ -320,7 +331,7 @@ describe("chain read uncertainty", () => {
     );
     renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("new tokens on this chain may be missing since");
     expect(warning.textContent).toContain("Reason: http_403");
     expect(warning.textContent).not.toContain("Some balances are stale");
@@ -344,7 +355,7 @@ describe("chain read uncertainty", () => {
     );
     renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("public explorer refuses automated reads");
     expect(warning.textContent).toContain(
       "Blockscout base URL override in Settings > API keys > Chain endpoints",
@@ -364,7 +375,7 @@ describe("chain read uncertainty", () => {
     );
     renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("Latest snapshot is partial (1 unresolved chain reads)");
     expect(warning.textContent).toContain("P&L is unavailable");
   });

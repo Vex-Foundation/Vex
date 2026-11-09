@@ -81,7 +81,8 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
 const { KeystoreStep } = await import("../KeystoreStep.js");
 
 function renderStep(
-  completedSteps: ReadonlyArray<WizardStepId> = []
+  completedSteps: ReadonlyArray<WizardStepId> = [],
+  flowMode: "first-pass" | "back-edit" = "first-pass",
 ): ReturnType<typeof render> {
   const qc = new QueryClient({
     defaultOptions: {
@@ -91,7 +92,7 @@ function renderStep(
   });
   return render(
     <QueryClientProvider client={qc}>
-      <KeystoreStep completedSteps={completedSteps} onAdvance={mockOnAdvance} flowMode="first-pass" />
+      <KeystoreStep completedSteps={completedSteps} onAdvance={mockOnAdvance} flowMode={flowMode} />
     </QueryClientProvider>
   );
 }
@@ -179,6 +180,18 @@ describe("KeystoreStep", () => {
     fireEvent.click(view.getByRole("button", { name: /Save and continue/i }));
     await view.findByText(/at least 10 characters/i);
     expect(mockKeystoreMutate).not.toHaveBeenCalled();
+  });
+
+  it("in Settings, holds Save changes in the Save band while the form is clean, and frees it for a strong password", () => {
+    mockUseEnvState.mockReturnValue(envQueryFor(false));
+    mockUseMasterPasswordStrength.mockReturnValue(strongStrength());
+    const view = renderStep([], "back-edit");
+    const save = view.getByRole("button", { name: "Save changes" }) as HTMLButtonElement;
+    // Cloud's SaveFooter: the key is the band's end cell, held (never blue) while clean.
+    expect(save.closest("[data-vex-save-band]")).not.toBeNull();
+    expect(save.disabled).toBe(true);
+    fillPasswords(view, "correct-horse-battery", "correct-horse-battery");
+    expect(save.disabled).toBe(false);
   });
 
   it("disables submit while the password is under the length floor, even with a strong score", () => {

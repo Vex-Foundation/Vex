@@ -354,6 +354,10 @@ describe("PortfolioScreen - the chrome", () => {
     renderPage();
     const region = screen.getByRole("region", { name: "Portfolio" });
     expect(region.getAttribute("aria-busy")).toBe("true");
+    // The first read's words stand in the stamp's slot, after the hatch.
+    expect(document.querySelector('[data-vex-area="page-loading"]')?.textContent).toBe(
+      "Loading your portfolio…",
+    );
     act(() => answerFirst(answer({ scope: "global" })));
     await within(header()).findByText("$1,234.56");
     expect(region.getAttribute("aria-busy")).toBeNull();

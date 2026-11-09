@@ -68,6 +68,8 @@ import {
   type PortfolioPageScope,
 } from "./portfolio/portfolio-page-scope.js";
 import { LoadFailedBlock, RefreshFailedNotice } from "../screens/RefreshNotice.js";
+import { PageLoading } from "../screens/PageLoading.js";
+import { Cover } from "../../../components/ui/cover.js";
 import { NOT_AVAILABLE, usdDeltaFigure, usdFigure } from "./portfolio/portfolio-format.js";
 import { snapshotAge } from "./portfolio/snapshot-age.js";
 
@@ -83,7 +85,22 @@ export function PositionBlock({
 
   let main: JSX.Element;
   if (read.loading) {
-    main = <CardStateNote tone="loading">Loading your portfolio…</CardStateNote>;
+    // The page's one loading status, in its own shape (H3-DESKTOP sections 1.9
+    // and 5.6): the wallet total's tile with its label and a parked cover
+    // where the figure will stand. The words stand in the tabs row's stamp
+    // slot; the only tile drawn is the one every answer has.
+    main = (
+      <PageLoading label="Loading your portfolio…" wordInBar>
+        <dl className="vex-pf-tiles" data-count="1" aria-hidden="true">
+          <div className="vex-pf-tile" data-vex-tile="total">
+            <dt className="vex-pf-tile__l">Wallet total</dt>
+            <dd className="vex-pf-tile__fig">
+              <Cover width="40%" height="24px" />
+            </dd>
+          </div>
+        </dl>
+      </PageLoading>
+    );
   } else if (portfolio === null && read.failed) {
     // Nothing was ever read for this scope: the block, with Retry.
     main = (

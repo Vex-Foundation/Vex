@@ -179,10 +179,18 @@ async function typeAmount(value: string): Promise<void> {
 }
 
 describe("page states", () => {
-  it("loading is a word, never figures", () => {
+  it("loading is the word over the Balance box's covers, never figures", () => {
     bridge.account.mockReturnValue(new Promise(() => undefined));
     renderPage();
-    expect(screen.getByText("Checking Vex Inference")).toBeTruthy();
+    const status = screen.getByRole("status", { name: "Checking Vex Inference…" });
+    expect(status.querySelector(".vex-stripes")).not.toBeNull();
+    const box = screen.getByTestId("funding-balance-loading");
+    expect([...box.querySelectorAll(".vex-inf-fig__k")].map((k) => k.textContent)).toEqual([
+      "Available",
+      "Withdrawable now",
+    ]);
+    expect(box.querySelectorAll(".vex-cover").length).toBeGreaterThan(0);
+    expect(box.textContent).not.toMatch(/\d/);
   });
 
   it("signed out points at Settings and offers no form", async () => {

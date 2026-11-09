@@ -348,18 +348,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The states of a section: a word and a quiet line while it loads, one
+/* The states of a section: the hatch, its word and cover rows while it loads, one
  * muted sentence when it is empty, the ink callout when it fails. */
+/* A section's first read: the hatch and its word over two cover rows (the
+ * page kit's `CoverRows`, `book.css`), 12 apart. */
 .vex-mem-loading {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 0;
-  font-size: 14px;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-mem-loading .vex-loader {
-  width: 120px;
+  flex-direction: column;
+  gap: 12px;
 }
 .vex-mem-empty {
   margin: 0;

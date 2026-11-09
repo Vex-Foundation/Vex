@@ -204,6 +204,8 @@ export interface KeptPortfolioRead {
   readonly at: number;
   /** The newest read failed: refused by main, timed out or thrown. */
   readonly failed: boolean;
+  /** A read is running now (the first, a poll, a Retry). */
+  readonly fetching: boolean;
   /** Runs the read again. */
   readonly retry: () => Promise<unknown>;
 }
@@ -229,6 +231,7 @@ export function useKeptPageScopePortfolio(scope: PortfolioPageScope): KeptPortfo
     portfolio: kept.value,
     at: kept.at,
     failed: kept.failed,
+    fetching: query.isFetching,
     retry: query.refetch,
   };
 }

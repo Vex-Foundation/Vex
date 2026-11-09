@@ -16,6 +16,7 @@ const styles = resolve(here, "../../../../../styles");
 const read = (rel: string): string => readFileSync(resolve(styles, rel), "utf8");
 
 const settings = read("global-css/settings.css");
+const wizard = read("global-css/wizard.css");
 const overlay = read("global-css/overlay.css");
 const manifest = read("globals.css");
 
@@ -121,6 +122,15 @@ describe("settings.css", () => {
     expect(rule(settings, ".vex-mcp-box__h")).toContain("min-height: 44px");
     expect(rule(settings, ".vex-mcp-tool")).toContain("padding: 10px 16px");
     expect(rule(settings, ".vex-mcp-tools__h")).toMatch(/font-size: 11px;[\s\S]*text-transform: uppercase/);
+  });
+
+  it("draws the Settings Save band as Cloud's savebar: 56 under a rule, keys as 148 end cells", () => {
+    expect(rule(wizard, ".vex-wzs__actions")).toMatch(
+      /align-items: stretch;[\s\S]*min-height: 56px;[\s\S]*border-top: 1px solid var\(--vex-alias-rule\);/,
+    );
+    expect(rule(wizard, ".vex-wzs__actions > [data-vex-button]")).toMatch(
+      /height: auto;[\s\S]*min-width: 148px;[\s\S]*border-width: 0 0 0 1px;/,
+    );
   });
 
   it("draws the Lock Vex row's chord in mono 12 muted", () => {

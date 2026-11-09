@@ -44,6 +44,7 @@ import {
   VERSION_LABELS,
   VERSION_UNKNOWN,
 } from "./local-runtime-copy.js";
+import { LoadingWord } from "../../../../components/ui/cover.js";
 
 const SECTION = "vex-set__sec border-t border-rule pt-5";
 const BODY = "vex-set__note mt-2";
@@ -143,8 +144,12 @@ export function LocalRuntimeSection(): JSX.Element {
         <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_VERSIONS_HEADING}</h3>
         {info !== null ? (
           <FactList label={LOCAL_RUNTIME_VERSIONS_HEADING} rows={versionRows(info)} />
+        ) : infoFailed ? (
+          <p className={BODY}>{INFO_FAILED}</p>
         ) : (
-          <p className={BODY}>{infoFailed ? INFO_FAILED : INFO_LOADING}</p>
+          <p className={BODY}>
+            <LoadingWord word={INFO_LOADING} />
+          </p>
         )}
       </section>
 
@@ -152,8 +157,12 @@ export function LocalRuntimeSection(): JSX.Element {
         <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_DATA_HEADING}</h3>
         {info !== null ? (
           <FactList label={LOCAL_RUNTIME_DATA_HEADING} rows={sizeRows(info)} />
+        ) : infoFailed ? (
+          <p className={BODY}>{INFO_FAILED}</p>
         ) : (
-          <p className={BODY}>{infoFailed ? INFO_FAILED : INFO_LOADING}</p>
+          <p className={BODY}>
+            <LoadingWord word={INFO_LOADING} />
+          </p>
         )}
       </section>
 

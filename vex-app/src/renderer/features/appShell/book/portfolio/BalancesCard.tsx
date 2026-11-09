@@ -43,6 +43,7 @@ import {
   originOf,
 } from "./PortfolioCard.js";
 import { BalancesTable } from "./BalancesTable.js";
+import { CoverRows } from "../../screens/PageLoading.js";
 import {
   useKeptPageScopePortfolio,
   type PortfolioPageScope,
@@ -89,7 +90,8 @@ export function BalancesCard({
       }
     >
       {read.loading ? (
-        <CardStateNote tone="loading">Loading…</CardStateNote>
+        // Decoration under the page's one loading status (PositionBlock's).
+        <CoverRows rows={3} />
       ) : portfolio === null && read.failed ? (
         <CardStateNote tone="warn">Couldn&apos;t load your balances.</CardStateNote>
       ) : onlyDust ? (

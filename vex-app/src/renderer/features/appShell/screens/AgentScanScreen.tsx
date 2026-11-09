@@ -51,6 +51,7 @@ import { ShellScreen } from "./ShellScreen.js";
 import { PageBar } from "./PageBar.js";
 import { useKeptRead } from "./kept-read.js";
 import { LoadFailedBlock, RefreshFailedNotice } from "./RefreshNotice.js";
+import { CoverRows, PageLoading } from "./PageLoading.js";
 import {
   activeFilterCount,
   AgentScanFilterBar,
@@ -262,7 +263,13 @@ export function AgentScanScreen({
   const retry = query.refetch;
   let body: JSX.Element;
   if (query.isLoading) {
-    body = <FeedNote tone="quiet">Loading…</FeedNote>;
+    // The first read in the feed's shape (H3-DESKTOP section 1.9): the word
+    // over five cover rows, one status.
+    body = (
+      <PageLoading label="Loading activity…">
+        <CoverRows rows={5} />
+      </PageLoading>
+    );
   } else if (kept.value === null && kept.failed) {
     // Nothing was read for these filters: the block, with Retry. A timeout
     // is NEVER rendered as an empty history.
@@ -337,7 +344,7 @@ export function AgentScanScreen({
       // (the four filter menus narrow the feed, they do not switch pages),
       // and "Updated" at the fetch time of the rows on screen (after a failed
       // refresh, the time of the rows kept, never the failure's).
-      bar={<PageBar updatedAt={kept.at} />}
+      bar={<PageBar updatedAt={kept.at} reading={query.isFetching && !query.isLoading} />}
     >
       <div className="flex min-h-0 w-full flex-1 flex-col">
         <p className="vex-scan-lead">{screenSubtitle(scope)}</p>
