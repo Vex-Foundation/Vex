@@ -1,6 +1,6 @@
 /**
  * GlobalApprovals tests: the app-wide approvals' sync. The count and the list
- * are `features/vex/__tests__/NeedsYouControl.test.tsx`; the cards a Review
+ * are the console's (`features/vex/__tests__/VexConsole.test.tsx`); the cards a Review
  * key opens are the Needs you page
  * (`screens/__tests__/NeedsYouScreen.test.tsx`), which replaced the review
  * dialog.

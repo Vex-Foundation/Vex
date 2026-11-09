@@ -104,11 +104,11 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   through `goUpToPage`. Else the Studio project or the session title with "Agent ·
   Restricted" and the mission badge (`MissionRail`). The agent welcome has none.
 - Right cluster: a page close key (top-level page outside agent mode), export,
-  the Studio host word, Notices (while any exist), Needs you, the token chip.
-- `features/vex/NeedsYouControl.tsx`: on every screen and mode; checking, none,
-  some (count capped at 99+) and a failed read ("Needs you · ?", Retry). Its
-  panel is the Vex sidebar's `NeedsYouList`. Review never decides: an on-screen
-  card is scrolled to with Reject focused, other approvals open the Needs you page.
+  the Studio host word, Notices (while any exist), the token chip.
+- Needs you lives in the Vex console (`features/vex/VexConsole.tsx`, the console
+  line under 1024); `NeedsYouAnnouncer` in the header says a rise in its count.
+  Review never decides: an on-screen card is scrolled to with Reject focused,
+  other approvals open the Needs you page.
 - Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
   timer, and "n mission running" only while Vex is hidden. It toggles Vex
   (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + B

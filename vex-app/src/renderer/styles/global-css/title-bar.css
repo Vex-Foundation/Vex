@@ -260,8 +260,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   letter-spacing: -0.01em;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-tb-needs__key,
-.vex-tb-needs__retry,
 .vex-tb-chip,
 .vex-tb-pill,
 .vex-tb-key {
@@ -270,8 +268,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
     border-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 :is(
-    .vex-tb-needs__key,
-    .vex-tb-needs__retry,
     .vex-tb-chip,
     .vex-tb-pill,
     .vex-tb-key,
@@ -283,8 +279,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .vex-tb-needs__key,
-  .vex-tb-needs__retry,
   .vex-tb-chip,
   .vex-tb-pill,
   .vex-tb-key {
@@ -353,56 +347,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   background: var(--vex-alias-interactive-active);
 }
 
-/* ── Needs you · N: 32 high, 13 / 500; the frame is ink while N is above 0
- * (or unknown), the quiet rule at 0 ─────────────────────────────────────── */
-.vex-tb-needs {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-}
-.vex-tb-needs__frame {
-  display: inline-flex;
-  height: 32px;
-  align-items: stretch;
-  border: 1px solid var(--vex-alias-rule);
-}
-.vex-tb-needs__frame[data-pending] {
-  border-color: var(--vex-alias-rule-ink);
-}
-.vex-tb-needs__key {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.vex-tb-needs__key:hover,
-.vex-tb-needs__key[aria-expanded="true"] {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-tb-needs__retry {
-  padding: 0 10px 0 2px;
-  border: 0;
-  background: transparent;
-  color: var(--vex-alias-accent-primary);
-  font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.vex-tb-needs__retry:enabled:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.vex-tb-needs__retry:disabled {
-  color: var(--vex-alias-label-tertiary);
-}
-
 /* ── The token chip: 32 high, 0 10 0 5, the quiet rule, 13; transparent by
  * day, paper 2 at night; pressed (Vex open) takes the rule and the selection
  * fill ───────────────────────────────────────────────────────────────────── */
@@ -462,15 +406,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   outline: none;
 }
 
-/* Needs you: 380 wide under its control, padding 6 0, a 12 / 500 muted head
- * and the shared list's rows with a quiet rule between each. */
-.vex-tb-pop--needs {
-  top: calc(100% + 2px);
-  right: 0;
-  width: 380px;
-  max-width: calc(100vw - 24px);
-  padding: 6px 0;
-}
 .vex-tb-pop__head {
   margin: 0;
   padding: 6px 14px 4px;
@@ -478,13 +413,6 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   font-weight: 500;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-tb-pop--needs [data-vex-needs-you-item] {
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-tb-pop--needs [data-vex-area="needs-you-list"] > :is(p, [role="status"]) {
-  padding: 6px 14px 4px;
-}
-
 /* Notices: 420 wide, 12 from the column's right edge and 6 under the row. */
 .vex-tb-pop--notices {
   top: 50px;
@@ -602,12 +530,12 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
 .vex-shell-head .vex-running-head__flank {
   align-self: stretch;
 }
-.vex-shell-head :is(.vex-tb-needs, .vex-tb-notices) {
+.vex-shell-head .vex-tb-notices {
   position: relative;
   align-self: stretch;
   align-items: center;
 }
-.vex-shell-head :is(.vex-tb-pop--needs, .vex-tb-pop--notices) {
+.vex-shell-head .vex-tb-pop--notices {
   top: calc(100% + 1px);
   right: 0;
 }
@@ -617,12 +545,12 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
  * header's height behind a rule, its text 24 in: the status square (grey
  * running and starting, ink locked, red unavailable; StudioHostStatusWord)
  * and the state at 14 in caps, over the figure at 12 in caps, muted. It sits
- * flush against the network cell's rule unless another cell (Needs you,
- * Notices) follows it in the cluster. */
+ * flush against the network cell's rule unless another cell (Notices)
+ * follows it in the cluster. */
 .vex-shell-head .vex-tb-host {
   align-self: stretch;
 }
-.vex-shell-head .vex-running-head__flank:not(:has(.vex-tb-needs, .vex-tb-notices)) > .vex-tb-host {
+.vex-shell-head .vex-running-head__flank:not(:has(.vex-tb-notices)) > .vex-tb-host {
   margin-right: -16px;
 }
 .vex-tb-hostcell {
