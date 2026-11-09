@@ -748,6 +748,25 @@ describe("TranscriptMessage operator acknowledgement (M6)", () => {
     expect(node?.getAttribute("role")).toBeNull();
     expect(node?.getAttribute("aria-live")).toBeNull();
   });
+
+  it("draws a runtime note as a runtime line: the hud square, then the words, on the column's left", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "notice", content: "Run resumed" }), noticeTone: "runtime" },
+      }),
+    );
+    const node = container.querySelector('[data-vex-notice-tone="runtime"]');
+    expect(node?.firstElementChild?.className).toBe("vex-notice__sq");
+    expect(node?.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(node?.textContent).toBe("Run resumed");
+    expect(node?.parentElement?.className).not.toContain("justify-center");
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-notice \{[^}]*padding-left: 16px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/);
+    expect(css).toMatch(/\.vex-notice__sq \{[^}]*width: 6px;[^}]*height: 6px;/);
+  });
 });
 
 describe("TranscriptMessage mission stop result (Kairos E-1 follow-up)", () => {

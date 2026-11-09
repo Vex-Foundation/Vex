@@ -1371,15 +1371,34 @@ html[data-still] .vex-trace-head__chev {
 
 /* ── Notices and markers ─────────────────────────────────────────────────── */
 
-/* A runtime notice: 12 muted, centred; never caps. */
+/* A runtime line (VEX Cloud's `.vx-tx-sys`, H3's `.t-sys`): 16 in, the 6px
+ * hud square 10 before the words, the words in caps 11 tracked, muted. */
 .vex-notice {
-  max-width: 80%;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: center;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-notice__sq {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+  background-color: var(--vex-alias-state-running-mark);
+}
+@media (forced-colors: active) {
+  .vex-notice__sq {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }
 /* A turn error in the flow: the ink cross, "Error" in ink 500, the message 13
  * ink 2. Never red. */

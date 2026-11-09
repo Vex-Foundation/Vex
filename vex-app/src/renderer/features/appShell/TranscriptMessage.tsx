@@ -584,7 +584,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       );
     case "notice":
       return (
-        <div data-vex-message-role="system" className="flex justify-center">
+        <div data-vex-message-role="system" className="flex">
           <NoticeBody tone={row.noticeTone ?? "runtime"}>
             {row.content}
           </NoticeBody>
@@ -728,7 +728,9 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
 }
 
 /**
- * Runtime/error notice. A runtime notice is 12 muted, centred. An error
+ * Runtime/error notice. A runtime notice is a runtime line (VEX Cloud's
+ * `RuntimeLine`, H3's `.t-sys`): the 6px hud square, then the words in caps
+ * 11 muted, 16 in from the column's left edge. An error
  * notice wears the turn-error ROW grammar (A20, in the flow, not a box): the
  * ink cross, "Error" in ink 500, the persisted sanitized message at 13 ink 2,
  * never red.
@@ -797,7 +799,8 @@ function NoticeBody({
       data-vex-notice-tone={tone}
       className="vex-notice"
     >
-      {children}
+      <span aria-hidden="true" className="vex-notice__sq" />
+      <span>{children}</span>
     </div>
   );
 }
