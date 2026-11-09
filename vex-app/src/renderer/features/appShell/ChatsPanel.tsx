@@ -21,6 +21,13 @@
  *   div.vex-chats-scrim        over the rest of her column; a press on it
  *                              is a press outside, which closes the panel
  *
+ * FOCUS. Opening sends focus inside: to the first chat, or to the search
+ * field when the press was Search or the list has no chat yet. Closing hands
+ * focus that was inside back to the rail's key. While it is open, what it
+ * lies over rests so Tab never leaves it for what it covers (Cloud's W3
+ * review, `nav-parts.tsx`): the frame makes Vex's column inert (her console,
+ * her section and, under 1024, the band) and, where it covers, the chat.
+ *
  * Esc (focus in the panel or on its key), a press anywhere outside the panel
  * and its keys, and a row's press close it. Nothing here writes the stored
  * fold: the panel is the visit's own, and it closes when the window grows
@@ -54,9 +61,11 @@ import { isWindowResizing } from "../../lib/wide-zoom.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import {
-  SessionsEmptyPlaceholder,
-  SessionsErrorPlaceholder,
-  SessionsLoadingPlaceholder,
+  ChatsEmptyLine,
+  ChatsFailedLine,
+  ChatsLoadingLine,
+  chatsFailedWords,
+  SearchAnnouncer,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import { SessionSearchField } from "./SessionRows/SessionSearch.js";
@@ -113,10 +122,15 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
   } = useSessionRowActions();
   const [searchText, setSearchText] = useState("");
 
-  const rows = useMemo(() => {
-    if (!query.data?.ok) return [];
-    return filterSessionsByTitle(filterSessionsByWorkspace(query.data.data, null), searchText);
-  }, [query.data, searchText]);
+  const allRows = useMemo(
+    () => (query.data?.ok ? filterSessionsByWorkspace(query.data.data, null) : []),
+    [query.data],
+  );
+  const rows = useMemo(() => filterSessionsByTitle(allRows, searchText), [allRows, searchText]);
+  const refetchList = query.refetch;
+  const retry = useCallback((): void => {
+    void refetchList();
+  }, [refetchList]);
   const groups = useMemo(() => groupSessions(rows), [rows]);
 
   const handleSelect = useCallback(
@@ -130,11 +144,9 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
     [setActiveSessionId, setShellRoute, onClose],
   );
 
-  // Esc in the field clears a typed query first, then closes the panel.
-  const onFieldClose = useCallback((): void => {
-    if (searchText !== "") setSearchText("");
-    else onClose();
-  }, [searchText, onClose]);
+  // Esc in the field clears a typed query first (the field's own); with an
+  // empty field it passes on, and the panel's Esc below closes it.
+  const clearSearch = useCallback((): void => setSearchText(""), []);
 
   const panelRef = useRef<HTMLElement | null>(null);
   const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -150,12 +162,14 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
     const panel = panelRef.current;
     const scrim = scrimRef.current;
     if (panel === null || scrim === null) return undefined;
-    // Focus: the press that opened it says where; a close hands focus that
-    // was inside back to the rail's key.
+    // Focus: the press that opened it says where; a list with no chat in it
+    // yet (loading, failed or empty) hands it to the search field, as Cloud's
+    // panel does, so focus always lands inside. A close hands focus that was
+    // inside back to the rail's key.
     if (open) {
       const target = focus === "search"
         ? searchRef.current
-        : panel.querySelector<HTMLElement>(".vex-ls-row__select");
+        : panel.querySelector<HTMLElement>(".vex-ls-row__select") ?? searchRef.current;
       target?.focus({ preventScroll: true });
     } else if (panel.contains(document.activeElement)) {
       panelKey()?.focus({ preventScroll: true });
@@ -243,15 +257,20 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
   }, [open, onClose]);
 
   const drawn = open || closing;
+  // The list's states in the column's own lines and words (section 1.4).
   const listBody = query.isLoading ? (
-    <SessionsLoadingPlaceholder sidebarOpen />
+    <ChatsLoadingLine />
   ) : query.data && query.data.ok === false ? (
-    <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
+    <ChatsFailedLine
+      message={chatsFailedWords(query.data.error.message)}
+      onRetry={retry}
+      retrying={query.isFetching}
+    />
   ) : query.isError ? (
-    <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
+    <ChatsFailedLine onRetry={retry} retrying={query.isFetching} />
   ) : query.data && query.data.ok ? (
     rows.length === 0 ? (
-      <SessionsEmptyPlaceholder sidebarOpen />
+      <ChatsEmptyLine searching={allRows.length > 0} />
     ) : (
       <SidebarSessionGroups
         groups={groups}
@@ -262,6 +281,7 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         onRename={handleRename}
         pendingPinId={pendingPinId}
         highlight={searchText}
+        searching={searchText.trim() !== ""}
       />
     )
   ) : null;
@@ -295,14 +315,17 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         <SessionSearchField
           value={searchText}
           onChange={setSearchText}
-          onClose={onFieldClose}
-          inputRef={(el) => {
-            searchRef.current = el;
-          }}
+          onClear={clearSearch}
+          inputRef={searchRef}
         />
         <div className="vex-scroll vex-ls-sessions vex-chats-panel__list min-h-0 flex-1 overflow-y-auto overflow-x-clip">
           {listBody}
         </div>
+        {/* The search's result, spoken once the query rests. */}
+        <SearchAnnouncer
+          query={open ? searchText.trim() : ""}
+          count={query.data?.ok === true ? rows.length : null}
+        />
         <SessionDeleteDialog
           session={removeTarget}
           blockedOutcome={removeBlocked}

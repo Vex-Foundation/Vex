@@ -72,7 +72,7 @@ async function pickTheme(page: Page, theme: Theme): Promise<void> {
     const tour = document.querySelector("[data-vex-setup-tour]");
     if (tour instanceof HTMLElement) tour.style.display = "none";
   });
-  await page.getByRole("button", { name: /Open menu/ }).click();
+  await page.getByRole("button", { name: /account and settings/i }).click();
   await page.getByRole("menuitem", { name: /Settings/ }).click();
   await expect(page.locator("[data-vex-settings-preferences]")).toBeVisible();
   await page.locator("[data-vex-settings-appearance]").scrollIntoViewIfNeeded();
