@@ -2038,6 +2038,20 @@ describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
     }
   });
 
+  it("reads a last row whose foot only dips into the cue's band: no cue claims a line on screen", () => {
+    // The last row from 441 to 475: its foot 4 into the band (471 to 500), its middle above it.
+    renderScrolled();
+    const drawn = drawnRows().length;
+    cleanup();
+    const restore = layoutStacked(475 - (drawn - 1) * 34);
+    try {
+      renderScrolled();
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
   it("lays the cue over the view and takes no room: absolute over the keys", () => {
     const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
       /\/\*[\s\S]*?\*\//g,

@@ -42,13 +42,17 @@ function isDrawn(row: HTMLElement): boolean {
 }
 
 /**
- * The drawn rows of `card` that the view cuts at `end` (a viewport y): any
- * row whose foot is under it, whether partly or wholly out of view.
+ * The drawn rows of `card` out of view at `end` (a viewport y): any row whose
+ * foot the view cuts, and any row more than half under the `band` the cue
+ * covers above `end`. A row whose foot only dips into the band is still read,
+ * so the cue never claims a line that is on screen.
  */
-export function rowsBelow(card: HTMLElement, end: number): number {
-  return Array.from(card.querySelectorAll<HTMLElement>(ROWS)).filter(
-    (row) => isDrawn(row) && row.getBoundingClientRect().bottom > end + 1,
-  ).length;
+export function rowsBelow(card: HTMLElement, end: number, band = 0): number {
+  return Array.from(card.querySelectorAll<HTMLElement>(ROWS)).filter((row) => {
+    if (!isDrawn(row)) return false;
+    const box = row.getBoundingClientRect();
+    return box.bottom > end + 1 || (box.top + box.bottom) / 2 > end - band;
+  }).length;
 }
 
 /** The nearest ancestor that scrolls its content on the y axis, or null. */
@@ -96,12 +100,12 @@ export function useRowsBelow(
     const measure = (): void => {
       frame = 0;
       // The cue covers the last 29 of the view when it shows (it takes no
-      // room of its own), so a row ending in that band counts as out of view
-      // whether or not the cue is up yet. One rule, never read from the cue's
-      // own state: a row in the band always calls the cue, so the count
-      // cannot flip between two stable answers with the load's timing.
+      // room of its own), so a row more than half under that band counts as
+      // out of view whether or not the cue is up yet. One rule, never read
+      // from the cue's own state, so the count cannot flip between two stable
+      // answers with the load's timing.
       const end = visibleEnd(card, scroller, dock);
-      setBelow(rowsBelow(card, end - CLIP_CUE_PX));
+      setBelow(rowsBelow(card, end, CLIP_CUE_PX));
     };
     const schedule = (): void => {
       if (frame !== 0) return;
