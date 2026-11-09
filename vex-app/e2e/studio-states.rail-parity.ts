@@ -8,8 +8,8 @@
  * and every grep a CI job runs stay exactly what they were.
  *
  * WHY A REGISTRATION FUNCTION and not a second spec: the walk shares the
- * screenshot pass (`shot`) and the theme picker (`pickTheme`) with the other
- * sections, and those stay owned by the spec that defines the capture
+ * screenshot pass (`shot`) and the one-theme check (`expectTheOneTheme`) with
+ * the other sections, and those stay owned by the spec that defines the capture
  * contract. They are handed in rather than duplicated, so a capture pass
  * photographs every section under one rule.
  *
@@ -31,7 +31,8 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
  * shadow, no blur), and its sections (her state, Needs you, This project) sit
  * on it. The claims are measured in the same shape
  * studio-terminal-surface.spec.ts proves its own for the pane, in Studio, in
- * both themes:
+ * the app's one theme (dark only since plan row S1-04, docs/design/
+ * H3-DESKTOP.md section 4.5):
  *
  *  - THE PAGE IS PAPER. The column paints an opaque ground and blurs nothing
  *    behind it.
@@ -40,7 +41,7 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
  *  - LEGIBILITY. Every ink token the sections use is measured against the
  *    section AS PAINTED, at the pixel closest to the ink (the worst case),
  *    with the section's own text hidden for the read so the paper is what is
- *    sampled. Primary ink must clear 7:1 in both themes; every other token is
+ *    sampled. Primary ink must clear 7:1; every other token is
  *    recorded (the numbers are what a token retune would be judged against).
  */
 
@@ -325,15 +326,17 @@ function expectOnPaper(surface: SurfaceGlaze): void {
 export interface RailParityWalk {
   /** Photograph a state, if this run is a capture pass; a no-op otherwise. */
   readonly shot: (page: Page, name: string) => Promise<void>;
-  /** Switch the app to one explicit theme, so a capture names what it shows. */
-  readonly pickTheme: (page: Page, theme: "chronos" | "celeris") => Promise<void>;
+  /** Assert the app's one theme (dark only, S1-04); there is none to pick. */
+  readonly expectTheOneTheme: (page: Page) => Promise<void>;
+  /** That theme's name, so a capture names what it shows. */
+  readonly theme: string;
   /** Where a capture pass writes; empty means assert, photograph nothing. */
   readonly shotsDir: string;
 }
 
 export function registerRailParityScenarios(
   test: typeof vexTest,
-  { shot, pickTheme, shotsDir }: RailParityWalk,
+  { shot, expectTheOneTheme, theme, shotsDir }: RailParityWalk,
 ): void {
   /**
    * UX-2: the states the rail findings are argued from (B4, I6, I2, A7, A3).
@@ -352,7 +355,7 @@ export function registerRailParityScenarios(
    *    vitest; what is proven here is that they REPLACE the browsing region on a
    *    real rail rather than sitting under it off-screen.
    *
-   * `VEX_UX_THEME` picks the theme; a capture pass runs it once per theme.
+   * The app is dark only, so the walk asserts and captures its one theme.
    */
   test("UX-2 rail and explorer: the spine, the pane, the seam and the search", async ({
     vexDb,
@@ -369,8 +372,7 @@ export function registerRailParityScenarios(
     const reached = await enterStudio(page);
     test.skip(!reached, TOUR_SKIP_REASON);
 
-    const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-    await pickTheme(page, theme);
+    await expectTheOneTheme(page);
 
     const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
     await expect(sidebar).toBeVisible();
@@ -573,7 +575,7 @@ export function registerRailParityScenarios(
     await page.setViewportSize({ width: 1000, height: 900 });
     await shot(page, `${theme}-33-narrow-1000px`);
 
-    /* ---- 34: THE PAPER, as painted, in both themes ---------------------- */
+    /* ---- 34: THE PAPER, as painted, in the one theme --------------------- */
 
     // Back to the walk's viewport; the auto-collapse above was a temporary
     // constraint, so the sidebar's stored preference returns with the width.
@@ -581,7 +583,6 @@ export function registerRailParityScenarios(
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
     await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
     await expect(projectBlock).toBeVisible();
-    const other: "chronos" | "celeris" = theme === "chronos" ? "celeris" : "chronos";
     const surfaces: SurfaceGlaze[] = [];
 
     // The column's own motion (her canvas aside) must have settled before the
@@ -593,14 +594,6 @@ export function registerRailParityScenarios(
     await settled();
     await shot(page, `${theme}-34-vex-sidebar-paper`);
     surfaces.push(await measureSurface(page, vex, "vex-sidebar", theme, shotsDir));
-
-    // The OTHER theme: the same column, the same measurement.
-    await pickTheme(page, other);
-    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
-    await expect(projectBlock).toBeVisible();
-    await settled();
-    await shot(page, `${other}-34-vex-sidebar-paper`);
-    surfaces.push(await measureSurface(page, vex, "vex-sidebar", other, shotsDir));
 
     if (shotsDir !== "") {
       fs.writeFileSync(
