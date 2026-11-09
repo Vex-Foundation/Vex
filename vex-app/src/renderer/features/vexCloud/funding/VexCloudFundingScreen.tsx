@@ -39,6 +39,8 @@ import { PageBar } from "../../appShell/screens/PageBar.js";
 import { formatMicroUsdEstimate } from "@shared/vex-cloud-money.js";
 import { formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
 import { clockFromMs } from "../../appShell/book/portfolio/portfolio-format.js";
+import { PageLoading } from "../../appShell/screens/PageLoading.js";
+import { Cover, CoverText } from "../../../components/ui/cover.js";
 import { CashbackTab } from "./CashbackTab.js";
 import { DepositTab } from "./DepositTab.js";
 import { AutoTopUpTab } from "./AutoTopUpTab.js";
@@ -95,7 +97,29 @@ export function VexCloudFundingPage(): JSX.Element {
   const [tab, setTab] = useState<FundingTab>("deposit");
   const result = accountQuery.data;
 
-  if (accountQuery.isLoading) return <EmptyBlock scope="Vex Inference" title="Checking Vex Inference" loading />;
+  if (accountQuery.isLoading) {
+    // The first read in the Balance box's shape (H3-DESKTOP section 1.9):
+    // its head and the two labels stay, covers park where the figures will
+    // stand. Never a figure.
+    return (
+      <PageLoading label="Checking Vex Inference…">
+        <section className="vex-inf-bal" aria-hidden="true" data-testid="funding-balance-loading">
+          <div className="vex-inf-bal__h">
+            <span className="vex-inf-bal__t">Balance</span>
+          </div>
+          <div className="vex-inf-figs vex-inf-figs--load">
+            {["Available", "Withdrawable now"].map((label) => (
+              <div key={label} className="vex-inf-fig">
+                <span className="vex-inf-fig__k">{label}</span>
+                <Cover width="50%" height="20px" />
+                <CoverText width="70%" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </PageLoading>
+    );
+  }
   if (result === undefined || !result.ok) {
     return (
       <div className="flex flex-col gap-5" data-testid="funding-page-unavailable">
