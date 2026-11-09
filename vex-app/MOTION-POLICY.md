@@ -106,6 +106,15 @@ here is a defect:
   in view blinks in phase (`StateSquare` pins its animation to document time
   zero). Reduced motion and Save-Data hold it still as half a square, so it
   never reads as the solid Filled square (`ui-primitives/marks.css`).
+- The loading hatch, 1200ms a cycle (`--vex-duration-blink-hatch`,
+  `DURATION_BLINK_HATCH_MS`) on `steps(2, end)`: the 14px hatch beside a
+  loading word (`.vex-stripes`, `LoadingHatch`) steps its opacity from 1 to
+  0.25 and back on the running square's keyframe at half its pace. It is VEX
+  Cloud's built `--vx-blink-hatch` (`docs/design/H3-DESKTOP.md` section 5.6),
+  a cross-app contract. It is mounted only while a real load lasts, so its
+  loop ends with the wait. Reduced motion and Save-Data hold it still at full
+  ink (`ui-primitives/marks.css`); the parked cover beside it never moves at
+  all.
 
 ### The easing family
 

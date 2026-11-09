@@ -754,6 +754,12 @@ Cloud's v99 rail tooltip (`.vx-tip`, D2-25): the dark plate (`--color-h3-tooltip
 ### 5.5 Menus
 Every list that opens from a key is one material (Cloud's D2-5, `menu-material.css`): the card ground (`--color-h3-card`, Cloud's `--vx-card`, #030405) in the 24% lifted rule, never an ink border and no shadow (`ui-primitives/menu.css`). The rows, their heights and their keys are unchanged in this pass; Cloud's row grammar (actions in 13px caps, values in 14px words, 40 high rows) is left for the menu's own restyle.
 
+### 5.6 Loading
+VEX Cloud's loading marks (its status contract and `styles/rows.css`; `components/ui/cover.tsx`, `ui-primitives/marks.css`). Loading is never a pulse, never a sweep and never a figure.
+- **The parked cover** (`Cover`, `.vex-cover`): a value still loading is a 12 high bar on the raised fill with the scan's 1px head parked at its left edge. It holds the box the value will take. **In a line of text** (`CoverText`, Cloud's `SkeletonText`) the cover is centred in the text's own line box (`height: 1lh`), so the row keeps its height when the words land.
+- **The loading hatch** (`LoadingHatch`, `.vex-stripes`): 14 square, 135 degree strokes in ink 2, 1px every 4px, blinking on two steps once every 1200ms (`--vex-duration-blink-hatch`, Cloud's `--vx-blink-hatch`). It stands only while a load lasts. Under reduced motion and Save-Data it holds still at full ink. **The loading word** (`LoadingWord`): the hatch, 10, then the word in ink at 14.
+- The place that holds covers names itself as loading once (one `role="status"`); the covers and the hatch are decoration.
+
 ---
 
 ## Appendix A. Words, keys and taglines
