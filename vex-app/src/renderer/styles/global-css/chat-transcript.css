@@ -372,13 +372,60 @@ html[data-still] .vex-latest {
 .vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(.vex-code-block, .vex-md-table):last-child {
   margin-bottom: 0;
 }
-/* A table's head cells in an answer are labels: caps 11, tracked, muted, as
- * VEX Cloud sets its table heads (`.tbl th`). */
+/* Out of the bubble, each block keeps its own ground: the code's well, the
+ * table's card. */
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-code-block {
+  background: var(--vex-alias-field);
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-md-table {
+  background: var(--vex-alias-card);
+}
+/* A table in an answer (VEX Cloud's `.md-table-scroll`): a cell on the card
+ * ground in the 1px rule. Its head 36 high, caps 11 tracked, muted; its
+ * cells at least 42 high, 14 / 1.45 in ink 2, 10 by 16 in, each row on the
+ * rule but the last; the first column in ink, unwrapped. A right-aligned
+ * column holds figures: the mono 12.5, tabular. */
+.vex-reply .vex-md-table {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  font-variant-numeric: tabular-nums;
+}
+.vex-reply .vex-md-table table {
+  font-size: 14px;
+}
+.vex-reply .vex-md-table :is(th, td) {
+  padding: 10px 16px;
+}
 .vex-reply .vex-chat-prose th {
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
   font-size: 11px;
   font-weight: 400;
+  line-height: 1.3;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-reply .vex-md-table td {
+  height: 42px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-reply .vex-md-table tr:last-child > td {
+  border-bottom: 0;
+}
+.vex-reply .vex-md-table td:first-child {
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-reply .vex-md-table td.text-right {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
 /* The turn's clock and message keys, under the prose (VEX Cloud's
@@ -1505,22 +1552,69 @@ html[data-still] .vex-trace-head__chev {
   color: var(--vex-alias-code-token-parameter);
 }
 
-/* A fenced block in chat: the paper 2 well with a quiet rule, its head 12
- * muted (the language and Copy, sentence case), the code in the mono 12.5. */
+/* A fenced block (VEX Cloud's `.md-code-block`): the well in the 1px rule;
+ * over it a sticky 40 bar on the card ground under its rule, the language in
+ * caps 11 tracked, muted, 16 in, then Wrap and Copy as 40 cells in ink 2,
+ * each with its left rule, the cell's wash and ink under the pointer; the
+ * code in the mono 12.5. Wrapped, long lines fold instead of scrolling. */
 .vex-code-block {
-  overflow: hidden;
-  border: 1px solid var(--vex-alias-rule-quiet);
+  border: 1px solid var(--vex-alias-rule);
   background: var(--vex-alias-field);
 }
 .vex-code-block__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  gap: 12px;
+  height: 40px;
+  padding: 0 0 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-style: normal;
+  line-height: 1;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-code-block__lang {
+  min-width: 0;
+  overflow: hidden;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-code-block__keys {
+  display: flex;
+  flex: none;
+  align-self: stretch;
+}
+.vex-code-block__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-code-block__key:hover,
+.vex-code-block__key[aria-pressed="true"] {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-code-block__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-code-block[data-wrap] .vex-code-block__pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

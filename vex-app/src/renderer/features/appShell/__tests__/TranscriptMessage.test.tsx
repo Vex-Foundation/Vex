@@ -985,3 +985,35 @@ describe("TranscriptMessage the person's message (VEX Cloud's UserMessage)", () 
     expect(css).toContain(".vex-you[data-vex-latest] [data-vex-copy-message]");
   });
 });
+
+describe("TranscriptMessage code and tables in the cell form (VEX Cloud's markdown)", () => {
+  const css = (): string =>
+    readFileSync(join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"), "utf8");
+
+  it("heads a code block with a sticky 40 bar: the language, then Wrap and Copy as 40 cells", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "```ts\nconst a = 1;\n```" }),
+      }),
+    );
+    const block = container.querySelector(".vex-code-block");
+    expect(block?.querySelector(".vex-code-block__lang")?.textContent).toBe("ts");
+    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    expect(wrap.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute("aria-pressed")).toBe("true");
+    expect(block?.hasAttribute("data-wrap")).toBe(true);
+    expect(screen.getByRole("button", { name: "Copy code" }).className).toBe("vex-code-block__key");
+    expect(css()).toMatch(/\.vex-code-block__head \{[^}]*position: sticky;[^}]*height: 40px;[^}]*background: var\(--vex-alias-card\);/);
+    expect(css()).toMatch(/\.vex-code-block__key \{[^}]*width: 40px;[^}]*border-left: 1px solid var\(--vex-alias-rule\);/);
+  });
+
+  it("sets a table on the card ground: a 36 head in caps, 42 cells in ink 2, the first column in ink", () => {
+    const sheet = css();
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table \{[^}]*border: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-card\);/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-chat-prose th \{[^}]*height: 36px;[^}]*text-transform: uppercase;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td \{[^}]*height: 42px;[^}]*font-size: 14px;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td:first-child \{[^}]*white-space: nowrap;/);
+    expect(sheet).toContain(".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-md-table {");
+  });
+});
