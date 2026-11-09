@@ -95,7 +95,7 @@ import {
 import { VexConsoleStrip, type VexConsoleLineBand } from "./VexConsoleStrip.js";
 import { KIMM_SHORTCUT, VexPortraitPlate } from "./VexPortraitPlate.js";
 import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
-import { kimmMoodOf } from "./kimm-mood.js";
+import { useKimmShellMood } from "./useKimmShellMood.js";
 import { TAGLINES, taglineMomentOf } from "./TaglineCell.js";
 import { registerVexCloser } from "./vex-hide.js";
 import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
@@ -229,10 +229,11 @@ function VexBand({ open, onClose }: { readonly open: boolean; readonly onClose: 
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
   const { state } = useVexPresence();
+  const mood = useKimmShellMood(state);
   const line = TAGLINES[taglineMomentOf({ runtimeMode, activeSessionId, pageOpen, state })];
   return (
     <KimmSection
-      mood={kimmMoodOf(state)}
+      mood={mood}
       open={open}
       onOpenChange={(next) => {
         if (!next) {

@@ -21,7 +21,7 @@ import { KIMM_HINT_MS, KimmHint } from "../../components/vex/kimm/KimmHint.js";
 import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { studioPlatform } from "../appShell/studio/keybindings-labels.js";
-import { kimmMoodOf } from "./kimm-mood.js";
+import { useKimmShellMood } from "./useKimmShellMood.js";
 import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import type { VexState } from "./vex-state.js";
 import { vexToggleAriaShortcut, vexToggleShortcutLabel } from "./vex-toggle-shortcut.js";
@@ -98,10 +98,11 @@ export function VexPortraitPlate({ state, open, onHide }: VexPortraitPlateProps)
     announceVexSection(next);
   };
   const hint = useKimmFirstCloseHint(open);
+  const mood = useKimmShellMood(state);
   return (
     <>
       <KimmSection
-        mood={kimmMoodOf(state)}
+        mood={mood}
         open={open}
         onOpenChange={onOpenChange}
         shortcut={KIMM_SHORTCUT}

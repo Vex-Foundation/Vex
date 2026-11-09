@@ -62,6 +62,7 @@ import { Keycaps } from "../../components/ui/keycaps.js";
 import { StateSquare } from "../../components/ui/state-square.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { studioPlatform, type StudioPlatform } from "../appShell/studio/keybindings-labels.js";
+import { useKimmShellMood } from "./useKimmShellMood.js";
 import { useVexPresence } from "./useVexPresence.js";
 import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
@@ -93,9 +94,11 @@ export interface VexKeyProps {
 export function VexKey({ open, onToggle, platform = studioPlatform, held = null }: VexKeyProps): JSX.Element {
   const presence = useVexPresence();
   const waiting = presence.needsYou.status === "ready" ? presence.needsYou.count : null;
+  const mood = useKimmShellMood(presence.state);
   return (
     <>
       <VexKeyView
+        mood={mood}
         open={open}
         onToggle={onToggle}
         platform={platform}
