@@ -353,8 +353,8 @@ describe("SidebarProfile foot", () => {
     expect(cell).toMatch(/column-gap: 12px;/);
     // Open: the chosen row's wash over the rail's ground.
     expect(cell).toMatch(/--prof-sel: var\(--vex-alias-row-selected\), var\(--vex-alias-sidebar-fill\);/);
-    // Hover: Cloud's cell hover, white at 5%.
-    expect(block(".vex-prof:hover")).toMatch(/color-mix\(in srgb, var\(--color-white\) 5%, transparent\)/);
+    // Hover: Cloud's cell hover, 5% (the ink, as no primitive is named here).
+    expect(block(".vex-prof:hover")).toMatch(/color-mix\(in srgb, var\(--vex-alias-label-primary\) 5%, transparent\)/);
     expect(block(".vex-prof__chev")).toMatch(/color: var\(--vex-alias-label-tertiary\);/);
     expect(block('.vex-prof[aria-expanded="true"] .vex-prof__chev')).toMatch(/transform: rotate\(180deg\);/);
     // From 1920 the name steps up to 15 with the column's words.

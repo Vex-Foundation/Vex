@@ -1050,8 +1050,9 @@ html[data-os="mac"] .vex-ls-railhead {
  * The scrim lies beside it over the rest of Vex's column (her column's
  * track less the panel); where the panel covers what is read (under 1024,
  * a page with her column folded to its strip) it runs to the window's
- * edge. It is Cloud's --vx-scrim, oklch(3% 0.004 264 / 50%): black at half,
- * composed from the black token. A press on it closes the panel. */
+ * edge. It is Cloud's --vx-scrim, oklch(3% 0.004 264 / 50%): the ground at
+ * half (an alias composed in place, as the sheets may name no primitive). A
+ * press on it closes the panel. */
 .vex-shell-frame > .vex-chats-panel {
   position: absolute;
   z-index: 19;
@@ -1098,7 +1099,7 @@ html[data-os="mac"] .vex-ls-railhead {
   width: max(0px, calc(var(--vex-vex-track) - var(--vex-h3-chats-w)));
   padding: 0;
   border: 0;
-  background: color-mix(in srgb, var(--color-black) 50%, transparent);
+  background: color-mix(in srgb, var(--vex-alias-bg-base) 50%, transparent);
   cursor: default;
   opacity: 0;
   visibility: hidden;

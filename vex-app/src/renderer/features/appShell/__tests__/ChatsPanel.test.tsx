@@ -221,9 +221,9 @@ describe("the panel's ground and scrim (VEX Cloud's left.css)", () => {
     expect(sheet("tokens.css")).toMatch(/--color-h3-ground: #010203;/);
   });
 
-  it("dims the rest of her column at half black, not the dialog's 60%", () => {
+  it("dims the rest of her column at half, not the dialog's 60%", () => {
     const scrim = block(".vex-shell-frame > .vex-chats-scrim");
-    expect(scrim).toMatch(/background: color-mix\(in srgb, var\(--color-black\) 50%, transparent\);/);
+    expect(scrim).toMatch(/background: color-mix\(in srgb, var\(--vex-alias-bg-base\) 50%, transparent\);/);
     expect(scrim).not.toMatch(/bg-mask-1/);
   });
 });
