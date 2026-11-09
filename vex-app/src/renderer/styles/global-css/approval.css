@@ -561,12 +561,18 @@
 }
 
 /* THE CLIP CUE (Cloud's `.vx-tk-more`, `ApprovalCard/clip-cue.tsx`): while
- * rows of the card are out of view, "{n} more lines below" is the footer's
- * first row, over the keys and never over a row: 29 high, sans 11 caps,
- * tracked, ink 2. In the card's own footer it runs edge to edge over the
- * keys; docked, it is the dock's first row. `aria-hidden`: every row is in
- * the card's reading order already. */
+ * rows of the card are out of view, "{n} more lines below" lies right over
+ * the keys: 29 high, sans 11 caps, tracked, ink 2, on the card ground with a
+ * rule over it. It is an overlay on the foot of the view, where the cut rows
+ * are, and takes no layout room: the docked row and the card keep their
+ * height, so the cue never moves the card or takes the room it is given.
+ * `aria-hidden`: every row is in the card's reading order already. */
 .vex-appr__more-cue {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   box-sizing: border-box;
@@ -577,18 +583,9 @@
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-secondary);
-}
-.vex-appr__foot:has(> .vex-appr__more-cue):not([data-docked]) {
-  flex-wrap: wrap;
-}
-.vex-appr__foot:not([data-docked]) > .vex-appr__more-cue {
-  flex: 0 0 calc(100% + 2 * var(--vex-appr-inset));
-  margin: -12px calc(-1 * var(--vex-appr-inset)) 0;
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-.vex-appr__foot[data-docked] > .vex-appr__more-cue {
-  grid-area: cue;
-  border-bottom: 1px solid var(--vex-alias-rule);
+  pointer-events: none;
+  background: var(--vex-alias-card);
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
 /* THE REASON FIELD (Cloud's instruction field, `CustomRow` and
@@ -755,11 +752,11 @@
   display: none;
 }
 .vex-appr__foot[data-docked] {
-  position: static;
+  /* Relative, not static: the clip cue lies over the view from here. */
+  position: relative;
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr) 200px;
   grid-template-areas:
-    "cue cue cue"
     "reason reason reason"
     "fail fail fail"
     "reject gate approve";
@@ -918,7 +915,6 @@
   .vex-appr__foot[data-docked] {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "cue cue"
       "reason reason"
       "fail fail"
       "gate gate"

@@ -2211,7 +2211,9 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       // An empty failure line is out of the layout, so a card with no failure keeps the row's measures.
       expect(rule(".vex-appr__fail:empty")).toContain("position: absolute");
       expect(rule(".vex-appr__fail")).toContain("padding: 10px var(--vex-appr-inset)");
-      expect(row).toContain("position: static");
+      // Relative, so the clip cue can lie over the view from the row; it takes no room.
+      expect(row).toContain("position: relative");
+      expect(row).not.toContain('"cue');
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
       // Cloud's instruction row: at least 56 high, 16 around the words.
       expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("min-height: 56px");

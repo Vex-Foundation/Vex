@@ -384,6 +384,54 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
   });
 });
 
+describe("ApprovalsRegion keeps the card's top under the header (the money rule)", () => {
+  /** A chat's scrollport, 572 high, whose sticky seat holds the docked row, 113 high; the tail space 0. */
+  function renderInChat(seatHeight: number): HTMLElement {
+    pendingState = { data: { ok: true, data: [makeSummary()] } };
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-vex-conversation-scroll") ? 572 : 0;
+    });
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-vex-composer-seat") ? seatHeight : 0;
+    });
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <div data-vex-conversation-scroll="">
+            <div>
+              <ApprovalsRegion sessionId={SESSION} />
+              <div data-vex-transcript-tail="" />
+            </div>
+            <div data-vex-composer-seat="" />
+          </div>
+        </QueryClientProvider>,
+      );
+    } finally {
+      scrollHeight.mockRestore();
+      offsetHeight.mockRestore();
+    }
+    return document.querySelector<HTMLElement>("[data-vex-area='approvals-region']") as HTMLElement;
+  }
+
+  it("holds the stack to the room above the seat, as well as 75vh", () => {
+    const region = renderInChat(113);
+    // 572 less the seat (the docked row) and the content's 16 foot.
+    expect(region.style.maxHeight).toBe("min(75vh, 443px)");
+  });
+
+  it("keeps a floor of room, so a card is never squeezed out of sight", () => {
+    const region = renderInChat(540);
+    expect(region.style.maxHeight).toBe("min(75vh, 120px)");
+  });
+
+  it("leaves 75vh alone outside a chat (no scrollport, no seat)", () => {
+    pendingState = { data: { ok: true, data: [makeSummary()] } };
+    renderRegion();
+    const region = document.querySelector<HTMLElement>("[data-vex-area='approvals-region']");
+    expect(region?.style.maxHeight).toBe("");
+  });
+});
+
 describe("the closed card's sheet (Cloud's RefusalCard band)", () => {
   const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
     /\/\*[\s\S]*?\*\//g,

@@ -30,7 +30,7 @@
  * Dismiss; it never holds the dock, so the composer comes back at once.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
@@ -54,6 +54,52 @@ function byCreatedAt(a: ApprovalSummaryDto, b: ApprovalSummaryDto): number {
  */
 const REFETCH_INTERVAL_MS = 60_000;
 
+/** The session content's own padding under the region (`pb-4`, `SessionPanel`). */
+const CONTENT_FOOT_PX = 16;
+/** The least room the stack keeps, so a card is never squeezed out of sight. */
+const ROOM_FLOOR_PX = 120;
+
+/**
+ * THE ROOM THE STACK IS GIVEN (the money rule, docs/design/H3-DESKTOP.md
+ * sections 3.6 and 4.3). The region is bounded at 75vh, but in a chat the
+ * composer seat under it is a sticky floor of the same scrollport, and while
+ * a card waits the seat holds the card's docked decision row (the reason
+ * field and the band). 75vh alone does not see that row, so at a short
+ * window (1280 x 720) the stack plus the docked row overran the scrollport
+ * and the card's top strip slid under the header, where the toast stands.
+ * So the region's height is also held to the scrollport's height less the
+ * seat (whatever it holds), the content's foot padding and the tail space:
+ * with the chat at its floor, the card's top never goes above the
+ * scrollport's top, the header's rule. Measured, and measured again whenever
+ * the scrollport, the seat or the tail changes size; outside a chat (the
+ * Needs you page, a dialog) nothing is found and 75vh stands alone.
+ */
+function useRoomAboveSeat(regionRef: { readonly current: HTMLElement | null }, active: boolean): number | null {
+  const [room, setRoom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const region = regionRef.current;
+    const scroll = region?.closest<HTMLElement>("[data-vex-conversation-scroll]") ?? null;
+    const seat = scroll?.querySelector<HTMLElement>("[data-vex-composer-seat]") ?? null;
+    if (!active || region === null || scroll === null || seat === null) {
+      setRoom(null);
+      return;
+    }
+    const tail = scroll.querySelector<HTMLElement>("[data-vex-transcript-tail]");
+    const measure = (): void => {
+      const next = Math.max(ROOM_FLOOR_PX, scroll.clientHeight - seat.offsetHeight - CONTENT_FOOT_PX - (tail?.offsetHeight ?? 0));
+      setRoom((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroll);
+    observer.observe(seat);
+    if (tail !== null) observer.observe(tail);
+    return () => observer.disconnect();
+  }, [regionRef, active]);
+  return room;
+}
+
 export interface ApprovalsRegionProps {
   readonly sessionId: string;
 }
@@ -70,6 +116,7 @@ export function ApprovalsRegion({
     refetchInterval: REFETCH_INTERVAL_MS,
   });
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const regionRef = useRef<HTMLElement | null>(null);
   // The chat's decision-row seat, when the panel offers one (the shell's
   // chat; `ApprovalCard/approval-dock.tsx`).
   const dock = useApprovalDock();
@@ -156,6 +203,9 @@ export function ApprovalsRegion({
     seenIdsRef.current = next;
   }, [view]);
 
+  const shown = view !== null && view.kind === "rows" && (view.rows.length > 0 || closed.size > 0);
+  const room = useRoomAboveSeat(regionRef, shown);
+
   if (view === null) return null;
   if (view.kind === "error") {
     return (
@@ -179,6 +229,7 @@ export function ApprovalsRegion({
 
   return (
     <section
+      ref={regionRef}
       data-vex-area="approvals-region"
       // NO VEIL (docs/design/R3-MINIMAL.md sections 8.1 and 12): nothing dims
       // the session while an approval waits; the card is the one framed thing
@@ -192,7 +243,11 @@ export function ApprovalsRegion({
       // live-state disclosure runs to about 18 rows) on screen, and the
       // card's sticky footer keeps Reject and the action button in view while
       // it scrolls. 10px below the stack.
+      //
+      // And never taller than the room above the seat (`useRoomAboveSeat`):
+      // the docked decision row must not push the card's top under the header.
       className="max-h-[75vh] shrink-0 overflow-y-auto pb-2.5"
+      style={room === null ? undefined : { maxHeight: `min(75vh, ${String(room)}px)` }}
     >
       {stack.map(({ summary, closed: isClosed }) =>
         isClosed ? (
