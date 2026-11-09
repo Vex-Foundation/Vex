@@ -502,7 +502,9 @@ export function registerRailParityScenarios(
     await expect(
       vex.locator('[data-vex-area="vex-open-activity"][data-vex-activity-scope="project"]'),
     ).toBeVisible();
-    await expect(vex.locator('[data-vex-area="kimm-section"]')).toBeAttached();
+    // D2 (docs/design/H3-DESKTOP.md section 6): Kimm stands at the column's
+    // top as her portrait card, over the console, never over it.
+    await expect(vex.locator('[data-vex-area="vex-portrait-card"]')).toBeVisible();
 
     // NO MONEY IN VEX'S COLUMN: no card, no tab strip, no board surface.
     await expect(vex.locator("[data-vex-portfolio-section]")).toHaveCount(0);
@@ -598,22 +600,11 @@ export function registerRailParityScenarios(
     await expect(projectBlock).toBeVisible();
     const surfaces: SurfaceGlaze[] = [];
 
-    // Her section lies over the console's rest while she is open, so she is
-    // hidden first (her own Hide Vex key) and every section of the console is
-    // painted on the column's ground. The column itself stays: only her
-    // section closes (docs/design/H3-DESKTOP.md section 1.5).
-    const kimm = vex.locator('[data-vex-area="kimm-section"]');
-    if ((await kimm.getAttribute("data-kimm-open")) === "true") {
-      await vex.locator('[data-vex-area="kimm-key"]').first().click();
-    }
-    await expect(kimm).toHaveAttribute("data-kimm-open", "false");
+    // In D2 her portrait card stands above the console and covers none of it
+    // (docs/design/H3-DESKTOP.md section 6), so the console's sections are
+    // read on the column's ground with her shown: the photograph is of the
+    // console at rest.
     await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
-    // The close wipe (420ms) must have ended before the paper is photographed,
-    // and the first close's hint ("Show Vex" and its keys, S4-15), which
-    // stands under the Vex key over the Needs you head for 2.4s, must have
-    // gone: the photograph is of the console at rest.
-    await page.waitForTimeout(900);
-    await expect(page.locator('[data-vex-area="kimm-hint"]')).toHaveCount(0, { timeout: 10_000 });
     await page.evaluate(() => {
       const focused = document.activeElement;
       if (focused instanceof HTMLElement) focused.blur();
