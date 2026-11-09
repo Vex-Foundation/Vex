@@ -129,10 +129,14 @@ describe("board surface tokens", () => {
     // own any more: R3's 20 28 override is gone, and the frame (book.css)
     // gives every page the whole column with 24 at each edge.
     expect(boardCss).not.toContain(".vex-ov:has(.vex-bd)");
+    // The frame caps other pages' blocks at 1136 on the reading line; the
+    // Board, awaiting its own plate (section 4.9), keeps the whole column.
     const frame = ruleBody(bookCss, '.vex-ov[data-frame="h3"][data-width]');
-    expect(frame).toContain("--vex-ov-max: none");
     expect(frame).toContain("--vex-ov-pad: 24px");
     expect(frame).toContain("--vex-ov-top: 24px");
+    expect(bookCss).toMatch(
+      /\.vex-ov\[data-frame="h3"\]\[data-width\]:has\(> \.vex-ov__scroll > \.vex-ov__body > \.vex-bd\)[^{]*\{[^}]*--vex-ov-in: 24px;[^}]*--vex-ov-max: none;/,
+    );
   });
 
   it("draws the shared chip pressed in the one blue, never a hue of its own", () => {
