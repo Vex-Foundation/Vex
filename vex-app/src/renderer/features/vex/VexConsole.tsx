@@ -24,17 +24,14 @@
  * D2'S COLUMN (docs/design/H3-DESKTOP.md section 6.3; `VexColumn.tsx`) stands
  * the top block under Kimm's portrait card, her state row and THIS CHAT, and
  * OPEN ACTIVITY at its foot. The chat's AI permission left the column for
- * the composer's strip (section 6.5); its block is retired. Studio keeps:
+ * the composer's strip (section 6.5) and recent activity left it; both
+ * blocks are retired. Studio keeps:
  *
  *   THIS PROJECT                                     a 44 head, in Studio
  *     the project's access as its sentence, then     (our approved Studio
  *     "Change in project settings", underlined;      plate, H3-DESKTOP.md
  *     Agents, Wallet and Folder on 40 rows;          section 4.9)
  *     PROJECT ASSETS and an arrow
- *   RECENT ACTIVITY                                  a 44 head; drawn by the
- *     the newest four entries of the activity        approved Studio plate,
- *     feed, each a line, its status square and its   no longer by D2's
- *     status word (`vex-console-activity.ts`)        column
  *   OPEN ACTIVITY and an arrow: Agent Scan, the activity page
  *
  * THIS PROJECT stands where a chat's THIS CHAT does in D2's column, since a
@@ -48,16 +45,8 @@
  * no console rest, so it is not shown there; the header's line keeps the
  * project's name and access.
  *
- * The feed is Agent Scan's own read (`useAgentScanInfinite` with the
- * page's unfiltered global filters), one cache entry with it. In Studio with
- * a project open it is that project's feed, through Agent Scan's own project
- * scope (the same filters the page seeds for it, so one cache entry again),
- * and OPEN ACTIVITY opens that scope. Its status
- * words are that page's (Confirmed, "Submitted, awaiting confirmation",
- * Failed, Refunded, "Status unknown"; Filled for a Lighter fill), its squares
- * that page's drawings (section 2.2): a row in flight blinks, a failure is the
- * cross with its word in the refusal ink. A read that failed or timed out says so in
- * the page's words, never as an empty history.
+ * OPEN ACTIVITY opens Agent Scan, the global feed, or in Studio with a
+ * project open that project's feed through Agent Scan's own project scope.
  *
  * THE COUNT is the shared Needs you model's (`needs-you.ts`), the same the
  * Needs you page and the desk's title row count, so no two can disagree. A
@@ -87,25 +76,19 @@
  * heads in caps.
  */
 
-import { useId, useMemo, useRef, useState, type JSX } from "react";
+import { useId, useRef, useState, type JSX } from "react";
 import { LineChevronDown, LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
 import { Cover } from "../../components/ui/cover.js";
 import { StateSquare } from "../../components/ui/state-square.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import type { AvailableWalletsDto } from "@shared/schemas/wallets/session-available.js";
-import { useAgentScanInfinite } from "../../lib/api/portfolio.js";
 import { useProject } from "../../lib/api/projects.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
 import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { assetsRouteFor, type ShellScreenOrigin } from "../../stores/uiStore/shell-route.js";
-import {
-  EMPTY_FILTER_STATE,
-  toAgentScanFilters,
-} from "../appShell/screens/agent-scan/AgentScanFilterBar.js";
-import { STATUS_FAMILY_SQUARE } from "../appShell/screens/agent-scan/StatusMark.js";
 import { openProjectSettings } from "../appShell/studio/projects/project-dialog-intent.js";
 import { agentPresentation } from "../appShell/studio/projects/studio-agent-catalogue.js";
 import { missionsRowOf, type BackgroundWork, type MissionsRow } from "./background-work.js";
@@ -117,7 +100,6 @@ import {
   type NeedsYouItem,
 } from "./needs-you.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
-import { consoleActivityRowsOf } from "./vex-console-activity.js";
 
 /** The head's count: the number once every check has answered, else nothing. */
 export function needsYouCountText(model: Pick<NeedsYouResult, "status" | "count">): string | null {
@@ -429,14 +411,7 @@ export function VexConsoleTop({
   );
 }
 
-// -- The console's rest: recent activity -----------------------------------
-
-/**
- * Agent Scan's unfiltered global read: the same filters object, so the
- * same query key and one cache entry with the page. Module level, so the key
- * is stable across renders.
- */
-const CONSOLE_FEED_FILTERS = toAgentScanFilters(EMPTY_FILTER_STATE);
+// -- Open activity ---------------------------------------------------------
 
 /**
  * Open activity: Agent Scan (H3's Activity page is desktop's Agent Scan), the
@@ -450,13 +425,6 @@ export function openActivity(projectId: string | null = null): void {
         ? { kind: "agentScan", origin: null, sessionId: null }
         : { kind: "agentScan", origin: null, projectId },
     );
-}
-
-/** The feed's filters for a scope: the page's own seed for it (`AgentScanScreen`). */
-function feedFiltersFor(projectId: string | null) {
-  return projectId === null
-    ? CONSOLE_FEED_FILTERS
-    : toAgentScanFilters({ ...EMPTY_FILTER_STATE, scope: { kind: "project", projectId } });
 }
 
 /** OPEN ACTIVITY and its arrow: the key the console and the page strip end in. */
@@ -483,101 +451,6 @@ export function OpenActivityKey({
     </button>
   );
 }
-
-/** Recent activity with nothing in it (VEX Cloud's REAL `RecentActivity` empty line). */
-export const RECENT_ACTIVITY_EMPTY_COPY = "Vex has not acted yet.";
-
-/** A read of the section that failed or timed out (VEX Cloud's REAL console word). */
-export const SECTION_FAILED_COPY = "Could not load this section.";
-
-/**
- * The feed's first page as the console's rows. While the first read runs,
- * two cover rows hold the rows' height (never a pulse); a read that failed
- * or timed out says "Could not load this section." beside the cross, never an
- * empty history; an empty feed says "Vex has not acted yet." (VEX Cloud's
- * console states, `h3-shell-gaps` decisions 5 and 6).
- */
-function ActivityRows({ projectId }: { readonly projectId: string | null }): JSX.Element {
-  const filters = useMemo(() => feedFiltersFor(projectId), [projectId]);
-  const query = useAgentScanInfinite(filters);
-  const first = query.data?.pages[0];
-  const entries = first !== undefined && first.ok && first.data.status === "available"
-    ? first.data.entries
-    : null;
-  const rows = useMemo(
-    () => (entries === null ? [] : consoleActivityRowsOf(entries, Date.now())),
-    [entries],
-  );
-  if (query.isLoading) {
-    return (
-      <div className="vex-console__covers" role="status" aria-label="Loading">
-        <div className="vex-console__activity" aria-hidden="true">
-          <Cover width="52%" />
-          <Cover width="64px" />
-        </div>
-        <div className="vex-console__activity" aria-hidden="true">
-          <Cover width="64%" />
-          <Cover width="56px" />
-        </div>
-      </div>
-    );
-  }
-  if (
-    (first !== undefined && !first.ok)
-    || (first === undefined && query.isError)
-    || (first !== undefined && first.ok && first.data.status === "unavailable")
-  ) {
-    return (
-      <p className="vex-console__fail" role="status">
-        <StateSquare state="error" />
-        {SECTION_FAILED_COPY}
-      </p>
-    );
-  }
-  if (rows.length === 0) {
-    return <p className="vex-console__note vex-console__note--quiet">{RECENT_ACTIVITY_EMPTY_COPY}</p>;
-  }
-  return (
-    <ul className="vex-console__rows" aria-label="Recent activity">
-      {rows.map((row) => (
-        <li key={row.key} className="vex-console__activity" data-vex-activity-status={row.status}>
-          <span className="vex-console__activity-title" title={row.title}>
-            {row.title}
-          </span>
-          <span className="vex-console__status">
-            <StateSquare state={STATUS_FAMILY_SQUARE[row.status]} size={6} />
-            <span className="vex-console__status-word">{row.word}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** RECENT ACTIVITY: the newest entries with their status, then Open activity; or why there are none. */
-export function VexConsoleActivity({
-  projectId = null,
-}: {
-  /** In Studio, the open project: its own feed, through Agent Scan's project scope. */
-  readonly projectId?: string | null;
-} = {}): JSX.Element {
-  const headId = useId();
-  return (
-    <section
-      aria-labelledby={headId}
-      data-vex-area="vex-recent-activity"
-      data-vex-activity-scope={projectId === null ? "global" : "project"}
-      className="vex-console__section"
-    >
-      <h2 id={headId} className="vex-console__head vex-console__head--section">
-        <span className="vex-console__label">Recent activity</span>
-      </h2>
-      <ActivityRows projectId={projectId} />
-      <OpenActivityKey projectId={projectId} />
-    </section>
-  );
-}
-
 
 // -- The console's rest in Studio: this project ----------------------------
 

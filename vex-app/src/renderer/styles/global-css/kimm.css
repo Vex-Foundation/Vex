@@ -192,21 +192,6 @@
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
 }
-/* The strip's room (section 1.5): "the console's rest starts under the
- * strip". Her strip stands over the first 56 of the console's rest in every
- * state, so the rest that follows her section in the column begins below
- * it; open, she covers all of it anyway. A fixed length, never a measure. */
-.vex-kimm ~ .vex-vs__rest {
-  padding-top: var(--vex-h3-strip-h);
-}
-/* A pointer's Hide Vex guards what it reveals (section 3.4; kimm-guard.ts):
- * while `data-kimm-guard` stands on her box, the console's rest takes no
- * pointer, so a second click or a pointer resting where Hide Vex was never
- * lands on it. It lifts once the close has ended, 500ms have passed and the
- * pointer has left the pressed key's box. */
-.vex-kimm[data-kimm-guard] ~ .vex-vs__rest {
-  pointer-events: none;
-}
 .vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
   visibility: hidden;
 }

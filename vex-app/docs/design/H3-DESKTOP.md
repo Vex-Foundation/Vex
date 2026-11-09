@@ -871,7 +871,7 @@ Top to bottom (`VexColumn.tsx`, vex-sidebar.css):
 4. **Needs you and the missions row**: the console's top block as before (section 1.5), Review rows that never decide.
 5. A page's own block (the Board's Ask Vex), then **OPEN ACTIVITY** as the column's foot row, 44 high. Under it, the column's empty ground.
 
-Gone from the shell's column: Kimm's section over the console, its wipe, strip, scan head, drop, corner key, guard and first-close hint, the console's rest (AI permission, recent activity). The chat's AI permission stands in the composer's strip (section 6.5); its console block is retired.
+Gone from the shell's column: Kimm's section over the console, its wipe, strip, scan head, drop, corner key, guard and first-close hint, the console's rest (AI permission, recent activity). The chat's AI permission stands in the composer's strip (section 6.5). Retired with their tests, since nothing reads them after D2: the console's AI permission and recent activity blocks (`VexConsolePermission`, `VexConsoleActivity`, `vex-console-activity.ts`), the console's rest rules (`.vex-vs__rest`, and kimm.css's strip room and guard rules over it, so the guard's `data-kimm-guard` attribute has no reader in the sheet now), and the R3 token chip and avatar-off token (`VexTokenChip`, `VexStatus`), which nothing mounted any more. Her section itself (`KimmSection`, `VexPortraitPlate`, `KimmHint`) stays for the desk, her band and the stages.
 
 ### 6.4 Hiding Vex
 - The VEX key and the chord hide or show **the whole column's body** at the press, no motion: hidden, the column keeps its track (280) and shows its ground and rule only (`data-vex-shown="false"`, no children), so the chat keeps its width and a waiting money card never moves (section 3.6). The bars cell under it shows its ground too. Focus inside the body as it hides goes to the VEX key (section 3.4).
@@ -894,12 +894,12 @@ The welcome stands on it too, as one group at the top of the reading column: "Re
 - Under 1024: the band and the console line as before (section 1.10), re-seated: her console line stands in the chat's track and before the chat in the DOM; the VEX cell's key opens and closes her band, held with its reason while the band rests; the header's NEEDS YOU cell leaves the row.
 
 ### 6.8 Studio and the harness
-Studio stands in the same frame (Vex at the right, the VEX cell, Needs you in the header, This project in THIS CHAT's place). The H3 harness's Studio plates (section 4.9) now lay their parts on D2's tracks; what each part draws is still the plate approved under H3.
+Studio stands in the same frame (Vex at the right, the VEX cell, Needs you in the header, This project in THIS CHAT's place). The H3 harness's Studio plates (section 4.9) now lay their parts on D2's tracks, and their Vex column is D2's (her portrait card on the stand-in still, the state row, This project, the console's top block, Open activity); the centre and the chats are still what the plate approved under H3.
 
 ### 6.9 Open
 - The header's height (56 on the plates, 76 here; section 6.1).
 - Where the chat's scroll body shows a classic scrollbar, its gutter stands between the composer's cells and the bars cell (the composer seat is sticky inside the scroll body), about 6 px of ground. Under H3 it stood at the window's edge.
-- AI permission and recent activity left the column; recent activity's component stays for the approved Studio plate in the harness.
+- `kimm-guard.ts` still stands the guard on her section (the desk's, the stages'), but no rule reads it since the console's rest left; it can go with a safety look at the desk.
 
 ## Appendix A. Words, keys and taglines
 

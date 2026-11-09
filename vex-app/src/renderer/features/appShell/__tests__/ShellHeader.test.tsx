@@ -48,9 +48,6 @@ vi.mock("../NotificationCenter.js", () => ({ NotificationCenter: () => null }));
 vi.mock("../../vex/NeedsYouAnnouncer.js", () => ({
   NeedsYouAnnouncer: () => <span data-testid="needs-you-announcer" />,
 }));
-vi.mock("../../vex/VexTokenChip.js", () => ({
-  VexTokenChip: () => <button type="button" data-testid="token-chip" />,
-}));
 vi.mock("../../vex/VexKey.js", () => ({
   VexKey: ({ open, onToggle }: { open: boolean; onToggle: () => void }) => (
     <button type="button" data-testid="vex-key" aria-expanded={open} onClick={onToggle} />
@@ -139,7 +136,6 @@ describe("the header", () => {
     expect(cell?.querySelector("[data-testid='vex-head-cell']")).not.toBeNull();
     // H3's Vex key (portrait, state, keycaps, chevron) left the shell's header.
     expect(head?.querySelector("[data-testid='vex-key']")).toBeNull();
-    expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
     const title = head?.querySelector("[data-vex-head-cell='title']");
     expect(title?.getAttribute("data-vex-area")).toBe("shell-status-strip");
     // Needs you is its own cell after the title (section 6.2): the title
@@ -185,7 +181,6 @@ describe("the header", () => {
     const head = document.querySelector("[data-vex-area='shell-head']");
     expect(head?.querySelector("[data-vex-head-cell='vex-key'] [data-testid='vex-key']")).not.toBeNull();
     expect(head?.querySelector("[data-testid='vex-head-cell']")).toBeNull();
-    expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
     expect(head?.querySelector("[data-testid='needs-you-head']")).toBeNull();
   });
 

@@ -24,10 +24,8 @@
  * state cell says her state in words. So it is `aria-hidden`, and the key
  * that mounts it passes the two things it already knows: her mood (from her
  * presence state) and whether her section is open, AS THE PRESS LEFT IT (the
- * words change at the press, section 3.3, and so does this cell). Today's
- * forerunner of the key, the title bar's token chip (`VexTokenChip.tsx`),
- * mounts it in place of its token at the chip's own 22px; the Vex key (plan
- * row S3-02) mounts it in its 76px portrait cell, the default `size`.
+ * words change at the press, section 3.3, and so does this cell). The Vex key
+ * (plan row S3-02) mounts it in its 76px portrait cell, the default `size`.
  *
  * Her art comes from the nearest `KimmArtProvider` (`kimm-art-context.tsx`):
  * the shipped art in the app, the harness's stand-ins in the H3 harness.

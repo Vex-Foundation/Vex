@@ -13,7 +13,6 @@
  *   .vex-plate-studio-rail   the same column as its 76 rail
  *   .vex-plate-studio        the centre: the tabs row, the panel header and
  *                            the panes, the terminal's text on the ground
- *   .vex-plate-kimm          her section and her 56 strip, in S4's geometry
  *                            (a box from the console's top block to one
  *                            pixel above the bottom row), on stand-in art
  *   .vex-plate-tp            the console's This project block (S8-06)
@@ -470,70 +469,7 @@
   background: var(--vex-alias-label-primary);
 }
 
-/* ------------------------- her section and her strip ------------------------- */
-
-.vex-plate-kimm {
-  position: absolute;
-  z-index: 2;
-  top: var(--vex-console-top-h);
-  right: 0;
-  bottom: 1px;
-  left: 0;
-  overflow: hidden;
-}
-.vex-plate-kimm[data-open="false"] {
-  clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
-}
-.vex-plate-kimm__ground {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklch, var(--vex-alias-button-accent-fill) 32%, var(--vex-alias-label-primary)) 0%,
-    color-mix(in oklch, var(--vex-alias-button-accent-fill) 72%, var(--vex-alias-label-primary)) 32%,
-    color-mix(in oklch, var(--vex-alias-button-accent-fill) 62%, var(--vex-alias-bg-base)) 56%,
-    var(--vex-alias-bg-base) 82%
-  );
-}
-.vex-plate-kimm__figure {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  max-width: none;
-  height: auto;
-}
-.vex-plate-kimm__strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: auto;
-  max-width: none;
-  height: var(--vex-h3-strip-h);
-}
-.vex-plate-kimm__key {
-  position: absolute;
-  z-index: 3;
-  top: 0;
-  right: 0;
-  display: inline-flex;
-  width: 138px;
-  height: var(--vex-h3-strip-h);
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  background: color-mix(in oklch, var(--vex-alias-bg-base) 82%, transparent);
-  color: var(--vex-alias-label-primary);
-  font-size: 14px;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-}
-.vex-plate-kimm[data-open="false"] .vex-plate-kimm__key {
-  width: 149px;
-}
-.vex-plate-kimm ~ .vex-vs__rest {
-  padding-top: var(--vex-h3-strip-h);
-}
+/* ------------------------- her figure in the band -------------------------- */
 .vex-vs[data-vex-seat="band"] .vex-plate-kimm-well {
   position: relative;
   width: 176px;

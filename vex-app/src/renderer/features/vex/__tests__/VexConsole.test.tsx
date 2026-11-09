@@ -14,11 +14,8 @@
  *  - the missions row: what runs on Mainnet, the one named, "No mission
  *    running" with none, nothing before the sessions answer; its key opens
  *    the mission or the missions list; it closes the top block;
- *  - recent activity: the feed's newest rows with Agent Scan's status
- *    words on their status squares, the page's own words for a read that is
- *    loading, failed, timed out or empty, and Open activity to the page;
- *  - AI permission: the open chat's own, in desktop's words for its mode, and
- *    where it comes from; never "Change in Settings"; nothing with no chat.
+ *  - This project in Studio, from the open project's own read, and Open
+ *    activity to Agent Scan, in Studio in the project's own scope.
  */
 
 import { readFileSync } from "node:fs";
@@ -29,20 +26,7 @@ import { approvalNeedsYouItem, needsYouLeadOf, type NeedsYouItem } from "../need
 import type { NeedsYouResult } from "../useVexPresence.js";
 import { NO_BACKGROUND_WORK, backgroundWorkOf } from "../background-work.js";
 import { approval, session } from "./fixtures.js";
-import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 
-/** What the activity feed's read answers, per test. */
-const feed = vi.hoisted(() => ({
-  current: { isLoading: true, isError: false, data: undefined } as unknown,
-  /** The filters the last read asked with: the scope the console chose. */
-  filters: null as unknown,
-}));
-vi.mock("../../../lib/api/portfolio.js", () => ({
-  useAgentScanInfinite: (filters: unknown) => {
-    feed.filters = filters;
-    return feed.current;
-  },
-}));
 /** What `projects.get` answers for the open project, per test. */
 const project = vi.hoisted(() => ({ current: null as unknown, loading: false }));
 vi.mock("../../../lib/api/projects.js", () => ({
@@ -75,7 +59,7 @@ vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
 }));
 
 const {
-  VexConsoleActivity,
+  OpenActivityKey,
   VexConsoleMissions,
   VexConsoleNeedsYou,
   VexConsoleThisProject,
@@ -385,144 +369,6 @@ describe("the console's missions row", () => {
   });
 });
 
-function feedEntry(id: string, over: Partial<AgentScanActivityEntry>): AgentScanActivityEntry {
-  const leg = (symbol: string | null): AgentScanActivityEntry["input"] => ({
-    address: null,
-    symbol,
-    displaySymbol: symbol,
-    decimals: null,
-    amountHuman: null,
-    amountRaw: null,
-    executedAmountHuman: null,
-    executedAmountRaw: null,
-    displayAmount: null,
-    usdEst: null,
-  });
-  return {
-    source: "agent_activity",
-    id,
-    createdAt: "2026-11-04T12:20:00.000Z",
-    activityKind: "swap",
-    eventRole: "swap",
-    status: "confirmed",
-    protocol: null,
-    chainId: 8453,
-    chainFamily: "evm",
-    chainSlug: "base",
-    fromChain: null,
-    toChain: null,
-    input: leg("USDC"),
-    output: leg("ETH"),
-    amountBasis: null,
-    vexFee: null,
-    usdFeeEst: null,
-    failureCode: null,
-    failureReason: null,
-    txHash: null,
-    explorerUrl: null,
-    providerOrderId: null,
-    legs: [],
-    lastCheckedAt: null,
-    stalledVerification: false,
-    stalledReason: null,
-    pendingReason: null,
-    ...over,
-  };
-}
-
-function answers(page: unknown): void {
-  feed.current = { isLoading: false, isError: false, data: { pages: [page] } };
-}
-
-function activity(): HTMLElement {
-  const el = document.querySelector<HTMLElement>("[data-vex-area='vex-recent-activity']");
-  if (el === null) throw new Error("recent activity is missing");
-  return el;
-}
-
-describe("the console's recent activity", () => {
-  it("lists the newest entries with Agent Scan's words on their status squares", () => {
-    answers({
-      ok: true,
-      data: {
-        status: "available",
-        entries: [
-          feedEntry("1", {}),
-          feedEntry("2", { activityKind: "transfer", status: "failed", output: feedEntry("x", {}).input }),
-        ],
-        nextCursor: null,
-        hasMore: false,
-      },
-    });
-    render(<VexConsoleActivity />);
-    expect(within(activity()).getByRole("heading", { level: 2 }).textContent).toBe("Recent activity");
-    const rows = Array.from(activity().querySelectorAll("li"));
-    expect(rows.map((row) => row.querySelector(".vex-console__activity-title")?.textContent)).toEqual([
-      "Swap USDC → ETH",
-      "Transfer USDC → USDC",
-    ]);
-    expect(rows.map((row) => row.querySelector(".vex-console__status-word")?.textContent)).toEqual([
-      "Confirmed",
-      "Failed",
-    ]);
-    // The square draws the status: solid for Confirmed, the cross for Failed.
-    expect(rows[0]?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("done");
-    expect(rows[1]?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
-    expect(rows[1]?.getAttribute("data-vex-activity-status")).toBe("failed");
-  });
-
-  it("pins Open activity as the console's foot, 44 high under a top rule, opaque (VEX Cloud's .vx-cn-foot)", () => {
-    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/vex-sidebar.css"), "utf8");
-    const foot = /\.vex-vs__rest > \[data-vex-area="vex-recent-activity"\] > \.vex-console__open \{([^}]*)\}/.exec(sheet)?.[1] ?? "";
-    expect(foot).toMatch(/position:\s*sticky;/);
-    expect(foot).toMatch(/bottom:\s*0;/);
-    expect(foot).toMatch(/height:\s*44px;/);
-    expect(foot).toMatch(/margin-top:\s*auto;/);
-    expect(foot).toMatch(/border-top:\s*1px solid var\(--vex-alias-rule-quiet\);/);
-    expect(foot).toMatch(/background:\s*var\(--vex-alias-sidebar-fill\);/);
-    expect(sheet).toMatch(/\.vex-vs__rest \{[^}]*flex-direction:\s*column;/);
-    // The key stays the section's last child, so the sheet can seat it.
-    render(<VexConsoleActivity />);
-    expect(activity().lastElementChild?.getAttribute("data-vex-area")).toBe("vex-open-activity");
-  });
-
-  it("opens Agent Scan from Open activity", () => {
-    answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
-    render(<VexConsoleActivity />);
-    fireEvent.click(within(activity()).getByRole("button", { name: "Open activity" }));
-    expect(useUiStore.getState().shellRoute).toEqual({ kind: "agentScan", origin: null, sessionId: null });
-  });
-
-  it("holds its rows with covers while loading, never words and never a pulse", () => {
-    feed.current = { isLoading: true, isError: false, data: undefined };
-    render(<VexConsoleActivity />);
-    const covers = within(activity()).getByRole("status", { name: "Loading" });
-    expect(covers.querySelectorAll(".vex-console__activity")).toHaveLength(2);
-    expect(covers.querySelectorAll(".vex-cover")).toHaveLength(4);
-    expect(covers.textContent).toBe("");
-  });
-
-  it("says Could not load this section. for a read that failed or timed out, never an empty history", () => {
-    answers({ ok: false, error: { code: "internal", message: "no", correlationId: "c" } });
-    const failed = render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__fail")?.textContent).toBe("Could not load this section.");
-    expect(activity().querySelector(".vex-console__fail .vex-sq")?.getAttribute("data-state")).toBe("error");
-    failed.unmount();
-
-    answers({ ok: true, data: { status: "unavailable", reason: "query_timeout" } });
-    render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__fail")?.textContent).toBe("Could not load this section.");
-    expect(activity().textContent).not.toContain("Vex has not acted yet.");
-  });
-
-  it("says Vex has not acted yet. for an empty feed", () => {
-    answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
-    render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Vex has not acted yet.");
-    expect(activity().querySelector("li")).toBeNull();
-  });
-});
-
 describe("the console's This project (Studio)", () => {
   const PROJECT_ID = "00000000-0000-4000-8000-0000000000d4";
   const part = (): HTMLElement | null =>
@@ -603,17 +449,16 @@ describe("the console's This project (Studio)", () => {
     expect(route.projectId).toBe(PROJECT_ID);
   });
 
-  it("scopes recent activity to the project through Agent Scan's own project scope", () => {
-    render(<VexConsoleActivity projectId={PROJECT_ID} />);
-    // The page's own seed for the scope, so the two share one cache entry.
-    expect(feed.filters).toEqual({ projectId: PROJECT_ID });
+  it("opens the project's activity through Agent Scan's own project scope", () => {
+    render(<OpenActivityKey projectId={PROJECT_ID} />);
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     const route = useUiStore.getState().shellRoute;
     expect(route.kind).toBe("agentScan");
     if (route.kind !== "agentScan") throw new Error("unreachable");
     expect(route.projectId).toBe(PROJECT_ID);
     cleanup();
-    render(<VexConsoleActivity />);
-    expect(feed.filters).toEqual({});
+    render(<OpenActivityKey />);
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "agentScan", origin: null, sessionId: null });
   });
 });

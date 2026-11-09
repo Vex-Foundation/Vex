@@ -149,11 +149,11 @@ describe("while she moves, focus lands on the Vex key", () => {
     expect(document.activeElement).toBe(vexKey);
   });
 
-  it("moves focus inside her folding body to the Vex key, and falls back to the token chip", () => {
+  it("moves focus inside her folding body to the Vex key, with no other forerunner", () => {
     const { container } = render(
       <>
-        <button type="button" data-vex-area="vex-token-chip">
-          Vex chat
+        <button type="button" data-vex-area="vex-key">
+          Show Vex
         </button>
         <aside data-vex-area="vex-sidebar">
           <div data-vex-area="kimm-section">
@@ -172,10 +172,10 @@ describe("while she moves, focus lands on the Vex key", () => {
     const herSection = container.querySelector<HTMLElement>("[data-vex-area='kimm-section']");
     const corner = container.querySelector<HTMLElement>("[data-vex-area='kimm-key']");
     if (herSection === null) throw new Error("no section");
-    expect(vexKeyElement()?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(vexKeyElement()?.getAttribute("data-vex-area")).toBe("vex-key");
     screen.getByTestId("inside").focus();
     expect(handFocusToVexKey(herSection, corner, false)).toBe(true);
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
     // Nothing to hand to: focus stays where it was.
     fireEvent.blur(document.activeElement as Element);
   });

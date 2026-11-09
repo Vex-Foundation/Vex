@@ -10,18 +10,14 @@
  *   - Hide Vex: focus inside her section's body (anything but her corner
  *     key), which folds away, goes to the Vex key.
  *
- * THE VEX KEY is the header's cell over her column (`data-vex-area="vex-key"`,
- * plan row S3-02). Until it lands the header's token chip is its forerunner
- * (`data-vex-area="vex-token-chip"`), so focus goes there instead: the same
- * control, the one that brings her back. DOM reads only, at the press.
+ * THE VEX KEY is the header's key that brings her back (`data-vex-area=
+ * "vex-key"`: D2's VEX key in the shell, H3's Vex key on the desk and the
+ * stages). DOM reads only, at the press.
  */
 
-/** The Vex key, or its forerunner the token chip, or nothing. */
+/** The Vex key, or nothing. */
 export function vexKeyElement(doc: Document = document): HTMLElement | null {
-  return (
-    doc.querySelector<HTMLElement>("[data-vex-area='vex-key']") ??
-    doc.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']")
-  );
+  return doc.querySelector<HTMLElement>("[data-vex-area='vex-key']");
 }
 
 /** Whether two boxes share any height: her box covers what it overlaps. */

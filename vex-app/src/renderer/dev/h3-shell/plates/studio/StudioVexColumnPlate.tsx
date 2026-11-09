@@ -1,35 +1,27 @@
 /**
- * VEX'S COLUMN IN STUDIO, as our H3 plate draws it (S8-01, for S8-06).
+ * VEX'S COLUMN IN STUDIO, approved as our H3 plate (S8-01, for S8-06), now
+ * laid out as D2 lays her column (docs/design/H3-DESKTOP.md section 6.3):
+ * her portrait card, the state row, THIS PROJECT, the console's top block and
+ * Open activity, at the right edge.
  *
- * REAL WHERE IT EXISTS. The console's top block (Needs you, its decision row
- * and the missions row) and its recent activity with Open activity are the
- * product's own components (`VexConsole.tsx`), over the stand-in bridge's
- * fixtures, so they read exactly as the shell's do. The column's box and its
- * rules are the shell's `.vex-vs`.
+ * REAL WHERE IT EXISTS. The state row, the console's top block (Needs you,
+ * its decision row and the missions row) and Open activity are the product's
+ * own components (`VexColumn.tsx`, `VexConsole.tsx`), over the stand-in
+ * bridge's fixtures, so they read exactly as the shell's do. The column's box
+ * and its rules are the shell's `.vex-vs` and `.vex-col`.
  *
- * DRAWN WHERE IT DOES NOT, YET:
- *   - her section: S4's box (docs/design/H3-DESKTOP.md section 1.5), from
- *     the top block's foot (y 224 at 1440 x 900) to one pixel above the
- *     bottom row, on the harness's stand-in crops. Closed, it folds to the 56
- *     strip with SHOW VEX in the corner; open, HIDE VEX.
- *   - THIS PROJECT, the console's Studio block (S8-06): where a chat's AI
- *     PERMISSION stands, since a project's access is its permission. A 44
- *     head; the access as its sentence (the project dialog's own words) and
- *     "Change in project settings", which is true here: a project's access
- *     can be changed, a chat's cannot; three facts on 40 rows (Agents,
- *     Wallet, Folder); and PROJECT ASSETS with its arrow. The Studio host's
- *     state is not here: it is the header's cell, so it stays in view while
- *     she is open (`StudioHeaderTitle`).
- *
- * Under 1024 the column is the band (section 1.10): the top block across it,
- * and her portrait well at the right while she is open. The band has no room
- * for the console's rest, so This project is not shown there; the header's
- * line keeps the project's name and access.
+ * DRAWN WHERE IT DOES NOT:
+ *   - her portrait card: the card's box (`.vex-col__card`, `.vex-kimm-panel
+ *     --card`) on the harness's stand-in still, hidden with the column.
+ *   - THIS PROJECT, the console's Studio block (S8-06), on the sample
+ *     project: the access as its sentence (the project dialog's own words)
+ *     and "Change in project settings"; three facts on 40 rows (Agents,
+ *     Wallet, Folder); and PROJECT ASSETS with its arrow.
  */
 
 import type { JSX } from "react";
-import { LineChevronDown, LineClose } from "../../../../components/icons/line/index.js";
-import { VexConsoleActivity, VexConsoleTop } from "../../../../features/vex/VexConsole.js";
+import { OpenActivityKey, VexConsoleTop } from "../../../../features/vex/VexConsole.js";
+import { VexStateRow } from "../../../../features/vex/VexColumn.js";
 import { useAllMissions, useVexPresence } from "../../../../features/vex/useVexPresence.js";
 import { KIMM_STANDINS } from "../../standins/manifest.js";
 import { SAMPLE_PROJECT } from "./studio-sample.js";
@@ -40,32 +32,20 @@ const ACCESS_SENTENCE = {
   restricted: "Restricted: Vex asks for approval before executing wallet actions with this project's wallets.",
 } as const;
 
-/** Her section in S4's geometry, on the stand-in art. */
-function KimmSectionPlate({ open }: { readonly open: boolean }): JSX.Element {
+/** Her portrait card (D2, section 6.3), on the stand-in still. */
+function PortraitCardPlate(): JSX.Element {
   return (
-    <div className="vex-plate-kimm" data-open={open ? "true" : "false"} data-vex-plate-part="kimm-section">
-      <div aria-hidden className="vex-plate-kimm__ground" />
-      {open ? (
+    <div className="vex-col__card" data-vex-plate-part="portrait-card">
+      <div aria-hidden className="vex-kimm-panel vex-kimm-panel--card">
+        <div className="vex-kimm-panel__ground" />
         <img
           alt=""
-          className="vex-plate-kimm__figure"
+          className="vex-kimm-panel__figure"
           src={KIMM_STANDINS.sections.hi.src}
           width={KIMM_STANDINS.sections.hi.width}
           height={KIMM_STANDINS.sections.hi.height}
         />
-      ) : (
-        <img
-          alt=""
-          className="vex-plate-kimm__strip"
-          src={KIMM_STANDINS.strip.src}
-          width={KIMM_STANDINS.strip.width}
-          height={KIMM_STANDINS.strip.height}
-        />
-      )}
-      <span className="vex-plate-kimm__key">
-        <span>{open ? "Hide Vex" : "Show Vex"}</span>
-        {open ? <LineClose size={16} /> : <LineChevronDown size={16} />}
-      </span>
+      </div>
     </div>
   );
 }
@@ -114,7 +94,7 @@ export function StudioVexColumnPlate({
   open,
   band,
 }: {
-  /** Her section is open. */
+  /** She shows: hidden, the column keeps its ground and rule only. */
   readonly open: boolean;
   /** Under 1024: the band under the header. */
   readonly band: boolean;
@@ -127,12 +107,13 @@ export function StudioVexColumnPlate({
       data-vex-plate-part="vex-column"
       data-vex-vex-open="true"
       data-vex-seat={band ? "band" : "column"}
+      data-vex-shown={open ? "true" : "false"}
       aria-label="Vex"
     >
-      <div className="vex-vs__body">
-        <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
-        {band ? (
-          open ? (
+      {band ? (
+        <div className="vex-vs__body">
+          <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
+          {open ? (
             <div aria-hidden className="vex-plate-kimm-well">
               <img
                 alt=""
@@ -141,17 +122,21 @@ export function StudioVexColumnPlate({
                 height={KIMM_STANDINS.sections.hi.height}
               />
             </div>
-          ) : null
-        ) : (
-          <>
-            <KimmSectionPlate open={open} />
-            <div className="vex-vs__rest" data-vex-area="vex-console-rest">
-              <ThisProjectPlate />
-              <VexConsoleActivity />
+          ) : null}
+        </div>
+      ) : open ? (
+        <div className="vex-vs__body">
+          <div className="vex-col">
+            <PortraitCardPlate />
+            <VexStateRow state={presence.state} word={presence.word} timerStartedAt={presence.timerStartedAt} />
+            <ThisProjectPlate />
+            <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
+            <div className="vex-col__foot">
+              <OpenActivityKey />
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

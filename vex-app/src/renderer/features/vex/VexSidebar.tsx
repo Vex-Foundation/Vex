@@ -122,9 +122,7 @@ export interface VexSidebarProps {
  * on the Lighter desk the title row's token chip.
  */
 function vexToggleControl(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(
-    "[data-vex-area='vex-key'], [data-vex-area='vex-token-chip']",
-  );
+  return document.querySelector<HTMLElement>("[data-vex-area='vex-key']");
 }
 
 /** Move focus out of the column to the Vex key, when focus is in the column. */

@@ -9,9 +9,6 @@
  * distance left / distance) (`kimm-wipe.ts`).
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { useState, type JSX } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,8 +23,6 @@ import { kimmLegMs } from "../kimm-wipe.js";
 import { KimmSection } from "../KimmSection.js";
 import { clearLayout, installFakeAnimations, layOut, type FakeAnimations } from "./fake-animations.js";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const KIMM_CSS = readFileSync(path.join(here, "..", "..", "..", "..", "styles", "global-css", "kimm.css"), "utf8");
 
 /** Give an element the box the browser would lay it out in. */
 function placeAt(el: Element, left: number, top: number, width: number, height: number): void {
@@ -118,10 +113,6 @@ describe("the guard's rule", () => {
     expect(insidePress(press, 600, 281)).toBe(false);
   });
 
-  it("makes the console's rest take no pointer while it stands, in the sheet", () => {
-    const css = KIMM_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(css).toMatch(/\.vex-kimm\[data-kimm-guard\] ~ \.vex-vs__rest \{\s*pointer-events: none;\s*\}/);
-  });
 });
 
 describe("a Hide Vex press guards what it reveals", () => {

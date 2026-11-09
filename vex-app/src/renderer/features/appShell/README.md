@@ -112,9 +112,8 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   line under 1024); `NeedsYouAnnouncer` in the header says a rise in its count.
   Review never decides: an on-screen card is scrolled to with Reject focused,
   other approvals open the Needs you page.
-- Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
-  timer, and "n mission running" only while Vex is hidden. It toggles Vex
-  (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + B
+- The VEX cell (`features/vex/VexHeadCell.tsx`, D2): VEX and the 44 key that
+  hides or shows Vex's column ("Hide Vex" or "Show Vex"); Cmd or Ctrl + Shift + B
   (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt; R3's Cmd or Ctrl +
   Shift + Period still works for one release, unspelled) is the same press,
   off under a modal. `VexStateAnnouncer` is the one live region of the word.
@@ -138,7 +137,7 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   head and hide key, state (swatch, scope, word, timer, narration, background
   missions), Needs you, Studio's "This project", the page slot (`vex-sidebar-slot.ts`,
   the Board's Ask Vex), Kimm's section, the "Show avatar" foot. Lighter puts the
-  desk chat under the plate. Avatar off: no plate, the 44px `VexStatus` token.
+  desk chat under the plate.
   Words come from `useVexPresence` (precedence in `vex-state.ts`).
 - Open by page class (`vexPageClass`, `uiStore/layout.ts`): `chat` (`vexOpenChat`,
   open by default: chat, Needs you, Memory, Sessions, How Vex works, Studio),
