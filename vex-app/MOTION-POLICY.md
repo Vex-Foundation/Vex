@@ -225,7 +225,9 @@ ways:
 - **Only while her section is open.** Closed, the field holds its frame in
   the strip (section 3.2) and draws nothing; opening starts it again from
   that frame. Her section's open choice is the switch, never her agent's
-  state. Under 1024 her band draws one frame and never runs.
+  state. Under 1024 her band draws one frame and never runs, and on a page
+  her open section holds its frame (VEX Cloud runs the field only in a
+  chat's section, its `kimmFieldMode`).
 - **The run gate.** `lib/motion/run-gate.ts` runs it only while the field is
   on screen and the window is shown; a hidden window, a column folded or
   scrolled away, or the inspect view over her paints no frame. The port also
