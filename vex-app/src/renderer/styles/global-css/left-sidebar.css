@@ -274,11 +274,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: currentColor;
 }
 
-/* SEARCH MODE: Search chats becomes the field in its own cell, 48 high, the
- * icon and the text where the row had them, the rule under it; the All,
- * Agent and Mission tabs follow. A field in H3 sits on the ground inside its
- * rules (section 2.1); while it holds the focus the chosen rule draws inside
- * the cell. */
+/* THE SEARCH FIELD: a 48 cell, the icon and the text 24 in, the rule under
+ * it. A field in H3 sits on the ground inside its rules (section 2.1); while
+ * it holds the focus the chosen rule draws inside the cell. Studio's search
+ * mode (`.vex-ls-find`, the Esc keycap) shares the cell. */
 .vex-ls-find {
   flex: none;
 }
@@ -331,7 +330,34 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: transparent;
   color: var(--vex-alias-label-tertiary);
 }
-/* The keycap is the mouse's way out of the search, so it answers the pointer. */
+/* THE CHATS SEARCH (section 1.4; VEX Cloud's `.vx-lc-search`): always open,
+ * the icon in the muted ink, the whole cell carrying the 2px focus ring, and
+ * "Clear search" (a 24 key, its 16 glyph muted, 6 into the cell's padding)
+ * only while there is a query. */
+.vex-ls-search--chats .vex-ls-search__i {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search--chats:focus-within {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-ls-search__clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search__clear:hover {
+  color: var(--vex-alias-label-primary);
+}
+/* Studio's keycap is the mouse's way out of its search, so it answers the
+ * pointer. */
 .vex-ls-search__kbd:hover {
   border-color: var(--vex-alias-rule-ink);
   background: var(--vex-alias-interactive-hover);

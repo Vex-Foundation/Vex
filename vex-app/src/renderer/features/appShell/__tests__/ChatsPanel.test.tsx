@@ -110,6 +110,31 @@ describe("the panel's list states, in the column's words", () => {
   });
 });
 
+describe("the panel's search field", () => {
+  it("Escape clears a typed query first, then closes the panel", () => {
+    const onClose = vi.fn();
+    render(<ChatsPanel open focus="search" covers={false} onClose={onClose} />);
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
+    field.focus();
+    fireEvent.change(field, { target: { value: "gas" } });
+    expect(screen.queryByText("Portfolio Check")).toBeNull();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect((field as HTMLInputElement).value).toBe("");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Clear search only while there is a query", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "gas" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByText("Portfolio Check")).not.toBeNull();
+  });
+});
+
 describe("the panel's focus", () => {
   it("lands on the first chat when it opens on the list", () => {
     const view = renderPanel(false);

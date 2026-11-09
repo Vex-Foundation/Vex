@@ -136,11 +136,9 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
     [setActiveSessionId, setShellRoute, onClose],
   );
 
-  // Esc in the field clears a typed query first, then closes the panel.
-  const onFieldClose = useCallback((): void => {
-    if (searchText !== "") setSearchText("");
-    else onClose();
-  }, [searchText, onClose]);
+  // Esc in the field clears a typed query first (the field's own); with an
+  // empty field it passes on, and the panel's Esc below closes it.
+  const clearSearch = useCallback((): void => setSearchText(""), []);
 
   const panelRef = useRef<HTMLElement | null>(null);
   const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -306,10 +304,8 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         <SessionSearchField
           value={searchText}
           onChange={setSearchText}
-          onClose={onFieldClose}
-          inputRef={(el) => {
-            searchRef.current = el;
-          }}
+          onClear={clearSearch}
+          inputRef={searchRef}
         />
         <div className="vex-scroll vex-ls-sessions vex-chats-panel__list min-h-0 flex-1 overflow-y-auto overflow-x-clip">
           {listBody}

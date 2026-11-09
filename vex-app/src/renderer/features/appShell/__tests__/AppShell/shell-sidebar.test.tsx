@@ -552,7 +552,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Instructions for Vex")).not.toBeNull();
   });
 
-  it("opens the rail search from the magnifier and filters session titles live", async () => {
+  it("filters chat titles live from the always-open search field", async () => {
     sessionsListMock.mockResolvedValueOnce({
       ok: true,
       data: makeSessionRows(),
@@ -561,7 +561,8 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Portfolio Check");
 
-    fireEvent.click(screen.getByRole("button", { name: /Search chats/i }));
+    // The field is always open (H3-DESKTOP.md section 1.4): no row opens it.
+    expect(screen.queryByRole("button", { name: /Search chats/i })).toBeNull();
     const input = screen.getByRole("searchbox", { name: /Search chats/i });
     fireEvent.change(input, { target: { value: "arbitrum" } });
     // The match is marked, so the title is the mark plus the rest: the row's
@@ -573,11 +574,9 @@ describe("AppShell", () => {
     expect(within(list).getByRole("button", { name: /Arbitrum LP Rebalance/ })).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
 
-    // Escape closes the field AND clears the filter.
+    // Escape clears the filter; the field stays open.
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(
-      screen.queryByRole("searchbox", { name: /Search chats/i }),
-    ).toBeNull();
+    expect((input as HTMLInputElement).value).toBe("");
     expect(screen.getByText("Portfolio Check")).not.toBeNull();
   });
 

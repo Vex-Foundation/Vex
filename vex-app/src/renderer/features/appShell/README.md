@@ -60,8 +60,11 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   Portfolio, Agent Scan (its full feed), Board and Settings open pages; Lighter
   and Studio switch mode. The selected row is `selectNavDestination`: the open
   page first (Agent Scan in any scope selects its row), then the mode.
-- Search chats turns its cell into the field with All, Agent and Mission tabs and
-  counts (local text, title filter). Escape closes it and drops the Agent tab.
+- The Search chats field is always open in its 48 cell (VEX Cloud's). A typed
+  query (or Missions) enters the search mode: All, Agent and Mission tabs with
+  counts take the nav's place (local text, title filter). "Clear search" stands
+  only while there is a query. Escape clears a query first, then leaves the mode
+  and drops the Agent tab.
 - The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
   (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
   scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
