@@ -464,7 +464,12 @@ describe("PositionBlock - empty, loading and error", () => {
     });
     renderBlock();
 
-    expect(screen.getByText("Loading your portfolio…")).not.toBeNull();
+    // One status named by the words; the wallet total's tile keeps its label
+    // and parks a cover where the figure will stand.
+    expect(screen.getByRole("status", { name: "Loading your portfolio…" })).not.toBeNull();
+    const tile = document.querySelector('[data-vex-tile="total"]');
+    expect(tile?.textContent).toBe("Wallet total");
+    expect(tile?.querySelector(".vex-cover")).not.toBeNull();
     expect(document.querySelector(".vex-pf-top__big")).toBeNull();
     expect(screen.queryByText("Not available")).toBeNull();
   });

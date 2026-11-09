@@ -773,10 +773,13 @@ describe("BalancesCard - the per-scope empty note, loading and error", () => {
     expect(screen.queryByText(/No balances yet/)).toBeNull();
   });
 
-  it("says Loading while the read is in flight, with no table and no empty note", () => {
+  it("parks covers while the read is in flight (the page's status says Loading), with no table and no empty note", () => {
     mountState({ isLoading: true, isError: false, data: undefined });
 
-    expect(screen.getByText("Loading…")).not.toBeNull();
+    const covers = document.querySelector("[data-vex-cover-rows]");
+    expect(covers?.getAttribute("aria-hidden")).toBe("true");
+    expect(covers?.querySelectorAll("li")).toHaveLength(3);
+    expect(covers?.textContent).toBe("");
     expect(document.querySelector('[data-vex-area="portfolio-balances"]')).toBeNull();
     expect(screen.queryByText(/No balances yet/)).toBeNull();
     expect(viewAllAssets()).toBeNull();

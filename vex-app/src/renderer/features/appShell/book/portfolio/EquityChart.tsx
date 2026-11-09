@@ -72,7 +72,13 @@ export function EquityChart({ scope }: { readonly scope: PortfolioPageScope }): 
 
   let body: JSX.Element;
   if (query.isLoading) {
-    body = <CardStateNote tone="loading">Loading the history…</CardStateNote>;
+    // Its own read (a range can load after the page has): one status, a
+    // parked cover where the curve will stand.
+    body = (
+      <div role="status" aria-label="Loading the history…" aria-busy="true">
+        <div className="vex-pf-load-curve" aria-hidden="true" />
+      </div>
+    );
   } else if ((result !== undefined && !result.ok) || query.isError || history === null) {
     body = <CardStateNote tone="warn">Couldn&apos;t load the history.</CardStateNote>;
   } else if (history.walletCount === 0) {

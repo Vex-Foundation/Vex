@@ -1875,3 +1875,52 @@
   border-top: 0;
   background: var(--vex-alias-card);
 }
+
+/* ---- a page's first read (`PageLoading`, `CoverRows`) ------------------
+ * docs/design/H3-DESKTOP.md sections 1.9 and 5.6 (VEX Cloud's `PageLoading`,
+ * `RowsSkeleton` and `.vx-pfo-load-*`): the loading word over parked covers,
+ * 16 apart; rows of covers in one rule frame on the card ground, each at
+ * least 48 high, 12 16 in, two text covers over each other and a figure
+ * cover at the right; the curve's cover a block on the raised fill with the
+ * scan's head at its left. A page whose tabs row says the word hides it
+ * here. */
+.vex-pgload {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+.vex-pgload[data-word-in-bar] > .vex-loading-word {
+  display: none;
+}
+.vex-load-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-load-rows > li {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-load-rows > li:last-child {
+  border-bottom: 0;
+}
+.vex-load-rows__text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+.vex-pf-load-curve {
+  height: 240px;
+  border: 1px solid var(--vex-alias-rule);
+  border-left-color: var(--vex-alias-scan-head);
+  background: var(--vex-alias-interactive-solid);
+}

@@ -150,7 +150,10 @@ describe("EquityChart - states in words", () => {
   it("loading, a refusal, no wallet and no cycle each say so, with no image", () => {
     mockUsePortfolioHistory.mockReturnValue({ isLoading: true, isError: false, data: undefined });
     const { unmount } = render(<EquityChart scope={{ kind: "global" }} />);
-    expect(chart().textContent).toContain("Loading the history");
+    // A parked cover where the curve will stand, named once as a status.
+    expect(within(chart()).getByRole("status", { name: "Loading the history…" })).not.toBeNull();
+    expect(chart().querySelector(".vex-pf-load-curve")).not.toBeNull();
+    expect(chart().textContent).not.toMatch(/\$/);
     unmount();
 
     mockUsePortfolioHistory.mockReturnValue({
