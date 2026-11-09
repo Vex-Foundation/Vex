@@ -28,7 +28,7 @@
  * console line). Nothing in it decides anything.
  */
 
-import type { JSX } from "react";
+import { useId, type JSX } from "react";
 import { LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
 import { Cover } from "../../components/ui/cover.js";
 import { StateSquare } from "../../components/ui/state-square.js";
@@ -45,6 +45,8 @@ import {
   useMissionsReadFailed,
 } from "./VexConsole.js";
 import { VexElapsed } from "./VexElapsed.js";
+import { VEX_STATE_SQUARE } from "./vex-state.js";
+import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { vexToggleName } from "./vex-toggle-shortcut.js";
 
 /** The console line's own key under 1024: her band, as the frame solved it. */
@@ -67,6 +69,8 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
   // The missions count, the line's short word for the row (Cloud's `.cl-short`).
   const missionsCount = row === null ? null : (/^\d+/.exec(row.lead)?.[0] ?? "0");
   const missionsFailed = useMissionsReadFailed(missions);
+  const wordId = useId();
+  const reasonId = useId();
   return (
     <div className="vex-strip" data-vex-area="vex-console-strip" data-band={band === undefined ? undefined : ""}>
       {band === undefined ? null : (
@@ -76,16 +80,29 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
             className="vex-strip__key"
             data-vex-area="vex-console-line-key"
             aria-label={vexToggleName(band.open)}
+            aria-controls={VEX_SECTION_ID}
+            aria-describedby={band.held === null ? wordId : `${wordId} ${reasonId}`}
             aria-disabled={band.held === null ? undefined : true}
             title={band.held ?? undefined}
             onClick={() => {
-              if (band.held === null) band.onToggle();
+              if (band.held !== null) return;
+              band.onToggle();
+              // Said once, politely, at the press, as every toggle of her
+              // section says it (EC-24; `VexSectionAnnouncer`).
+              announceVexSection(!band.open);
             }}
           >
-            <StateSquare state={presence.state === "ready" ? "idle" : "done"} className="vex-strip__square" />
-            <span className="vex-strip__word">{presence.word}</span>
+            <StateSquare state={VEX_STATE_SQUARE[presence.state]} className="vex-strip__square" />
+            <span id={wordId} className="vex-strip__word">
+              {presence.word}
+            </span>
             {presence.timerStartedAt === null ? null : (
-              <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-strip__timer" />
+              <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-strip__timer" decorative />
+            )}
+            {band.held === null ? null : (
+              <span id={reasonId} hidden>
+                {band.held}
+              </span>
             )}
           </button>
         </div>
