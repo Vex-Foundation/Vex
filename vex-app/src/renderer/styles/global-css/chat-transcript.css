@@ -1057,8 +1057,75 @@ button.vex-trace-head {
 .vex-trace-head[data-tone="run"] .vex-trace-head__label {
   color: var(--vex-alias-label-tertiary);
 }
-.vex-trace-head[data-tone="stopped"] [data-vex-think-glyph] {
+/* The 3x3 cells (VEX Cloud's `.vx-trace-cells`): resting 18% with the
+ * centre 50%, done 30% with the centre lit, stopped 30%; running, the light
+ * steps clockwise round the ring and ends in the centre (cells 0, 1, 2, 5,
+ * 8, 7, 6, 3, then 4), 1100 ms, 120 ms a cell. Still under reduced motion and
+ * Save-Data. A failed head's ink cross, 9px. */
+.vex-trace-cells {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(3, 3px);
+  gap: 2px;
+}
+.vex-trace-cells > i {
+  width: 3px;
+  height: 3px;
+  background-color: var(--vex-alias-label-primary);
+  opacity: 0.18;
+}
+.vex-trace-cells > i:nth-child(5) {
   opacity: 0.5;
+}
+.vex-trace-cells:is([data-tone="done"], [data-tone="stopped"]) > i {
+  opacity: 0.3;
+}
+.vex-trace-cells[data-tone="done"] > i:nth-child(5) {
+  opacity: 1;
+}
+.vex-trace-cells[data-tone="run"] > i {
+  animation: vex-cell-run 1100ms steps(1, end) infinite;
+}
+.vex-trace-cells[data-tone="run"] > i:nth-child(5) {
+  animation-name: vex-cell-run-centre;
+  animation-delay: 960ms;
+}
+.vex-trace-cells[data-tone="run"] > i:nth-child(2) { animation-delay: 120ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(3) { animation-delay: 240ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(6) { animation-delay: 360ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(9) { animation-delay: 480ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(8) { animation-delay: 600ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(7) { animation-delay: 720ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(4) { animation-delay: 840ms; }
+@keyframes vex-cell-run {
+  0%, 30% { opacity: 1; }
+  30.01%, 100% { opacity: 0.18; }
+}
+@keyframes vex-cell-run-centre {
+  0%, 30% { opacity: 1; }
+  30.01%, 100% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-trace-cells[data-tone="run"] > i {
+    animation: none;
+  }
+}
+html[data-still] .vex-trace-cells[data-tone="run"] > i {
+  animation: none;
+}
+.vex-trace-cross {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background:
+    linear-gradient(45deg, transparent 38%, var(--vex-alias-label-primary) 38% 62%, transparent 62%),
+    linear-gradient(-45deg, transparent 38%, var(--vex-alias-label-primary) 38% 62%, transparent 62%);
+}
+@media (forced-colors: active) {
+  .vex-trace-cells > i {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }
 .vex-trace-head__end {
   flex: none;

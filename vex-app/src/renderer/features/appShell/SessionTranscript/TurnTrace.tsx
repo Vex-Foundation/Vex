@@ -39,9 +39,7 @@ import {
   type RefObject,
 } from "react";
 import { LineChevronDown } from "../../../components/icons/line/index.js";
-import { ThinkGlyph } from "../ReasonedBlock.js";
 import { stepsLabel } from "../reasoning-stamp.js";
-import { StepNode } from "../ToolLedger/StepNode.js";
 import { formatToolDuration } from "../ToolLedger/toolDuration.js";
 import { useTurnFoldView } from "./turnFold.js";
 import type { TurnOutcome } from "./turnSteps.js";
@@ -52,6 +50,29 @@ export interface TraceHeadFacts {
   readonly outcome: TurnOutcome;
   /** The live turn clock's reading, after a turn watched live. */
   readonly thoughtMs: number | null;
+}
+
+/**
+ * The head's 3x3 cells (VEX Cloud's `TraceCells`, `.vx-trace-cells`): 3px
+ * cells 2 apart in ink. Resting at 18% with the centre at 50%; done at 30%
+ * with the centre lit; stopped at 30%; while the turn runs the light steps
+ * round the ring into the centre (1100 ms, 120 ms a cell), held still under
+ * reduced motion and Save-Data. A failed turn draws the 9px ink cross.
+ */
+function TraceCells({ tone }: { readonly tone: "run" | "done" | "stopped" }): JSX.Element {
+  return (
+    <span aria-hidden="true" data-tone={tone} data-vex-trace-cells="" className="vex-trace-cells">
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 function TraceHead({
@@ -75,12 +96,10 @@ function TraceHead({
       ? "done"
       : facts.outcome;
   const glyph =
-    tone === "run" ? (
-      <StepNode state="running" />
-    ) : tone === "failed" ? (
-      <StepNode state="failed" />
+    tone === "failed" ? (
+      <span aria-hidden="true" data-vex-trace-cross="" className="vex-trace-cross" />
     ) : (
-      <ThinkGlyph />
+      <TraceCells tone={tone} />
     );
   const label =
     tone === "run" ? (

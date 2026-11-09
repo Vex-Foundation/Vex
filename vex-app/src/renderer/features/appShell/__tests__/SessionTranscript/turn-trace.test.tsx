@@ -138,6 +138,29 @@ describe("the turn's trace head", () => {
     for (const body of bodies(container)) expect(body.hasAttribute("hidden")).toBe(false);
   });
 
+  it("draws the 3x3 cells by state, and the cross for a failed turn", () => {
+    const done = render(draw(TURN, new Set([10, 11, 12]), false));
+    expect(done.container.querySelector('[data-vex-trace-cells][data-tone="done"]')?.children).toHaveLength(9);
+    done.unmount();
+    const running = render(draw([user(10), call(11, "why")], new Set(), true));
+    expect(running.container.querySelector('[data-vex-trace-cells][data-tone="run"]')).not.toBeNull();
+    running.unmount();
+    const failed = render(
+      draw(
+        [
+          user(10),
+          call(11, "why"),
+          { id: 12, variant: "notice", noticeTone: "error", label: null, content: "failed", createdAt: ISO },
+        ],
+        new Set([10, 11, 12]),
+        false,
+      ),
+    );
+    expect(head(failed.container).textContent).toContain("Failed");
+    expect(failed.container.querySelector("[data-vex-trace-cross]")).not.toBeNull();
+    expect(failed.container.querySelector("[data-vex-trace-cells]")).toBeNull();
+  });
+
   it("heads a turn that only called tools", () => {
     const rows = [user(10), call(11, null), answer(12, null)];
     render(draw(rows, new Set([10, 11, 12]), false));
