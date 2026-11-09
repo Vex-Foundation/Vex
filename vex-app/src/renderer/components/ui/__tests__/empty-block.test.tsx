@@ -116,7 +116,7 @@ describe("EmptyBlock", () => {
     const card = rule(".vex-empty-block");
     expect(card).toContain("padding: 40px 16px");
     expect(card).toContain("border: 1px solid var(--vex-alias-rule-quiet)");
-    expect(card).toContain("background: var(--color-h3-card)");
+    expect(card).toContain("background: var(--vex-alias-card)");
     expect(card).toContain("align-items: center");
     expect(card).toContain("font-size: 14px");
     expect(card).toContain("color: var(--vex-alias-label-tertiary)");

@@ -13,10 +13,10 @@
  * 1), on the in-out curve, (0.76, 0, 0.24, 1), the nearest of the family:
  * MOTION-POLICY admits no sixth). */
 .vex-gate {
-  --vex-gate-off: rgba(255, 255, 255, 0.03);
-  --vex-gate-on: rgba(255, 255, 255, 0.2);
-  --vex-gate-head: rgba(255, 255, 255, 0.42);
-  --vex-gate-base: rgba(255, 255, 255, 0.08);
+  --vex-gate-off: var(--vex-alias-loader-off);
+  --vex-gate-on: var(--vex-alias-loader-on);
+  --vex-gate-head: var(--vex-alias-loader-head);
+  --vex-gate-base: var(--vex-alias-loader-base);
   /* The frame's foot line: the bottom row (72) times the wide zoom, and its
    * rule, so the gate hands over to the foot. */
   --vex-gate-foot: var(--vex-h3-foot, calc(72px * var(--vex-zoom, 1) + 1px));
@@ -26,7 +26,7 @@
   inset: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) var(--vex-gate-foot);
-  background-color: var(--color-black);
+  background-color: var(--vex-alias-loader-plate);
   color: var(--vex-alias-label-primary);
   transition: opacity var(--vex-duration-gate-fade) var(--vex-ease-standard);
 }
@@ -70,7 +70,7 @@
 }
 
 .vex-gate__fill {
-  color: var(--color-white);
+  color: var(--vex-alias-loader-ink);
 }
 
 .vex-gate__svg {

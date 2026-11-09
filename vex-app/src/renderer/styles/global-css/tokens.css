@@ -487,6 +487,15 @@
   --vex-alias-gate-border: var(--vex-alias-rule-chosen);
   --vex-alias-gate-input: rgba(255, 255, 255, 0.32);
   --vex-alias-gate-muted: rgba(255, 255, 255, 0.08);
+  /* VEX Cloud's loader gate (the kit's LoaderGate, ui-primitives/gate.css):
+   * pure black under white, its meter cells at 3% unlit, 20% lit and 42% at
+   * the head, its counter's base digits at 8%. */
+  --vex-alias-loader-plate: var(--color-black);
+  --vex-alias-loader-ink: var(--color-white);
+  --vex-alias-loader-off: rgba(255, 255, 255, 0.03);
+  --vex-alias-loader-on: rgba(255, 255, 255, 0.2);
+  --vex-alias-loader-head: rgba(255, 255, 255, 0.42);
+  --vex-alias-loader-base: rgba(255, 255, 255, 0.08);
   /* Field fill and inline-code chips on the plate. */
   --vex-alias-gate-well: var(--vex-alias-field);
   /* 1px rails, progress tracks and quiet chips on the plate. */
