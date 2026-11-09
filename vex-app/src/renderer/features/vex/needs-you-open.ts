@@ -8,7 +8,8 @@
  *   - one raised elsewhere opens its session (mode first, then the selection,
  *     then the page closed, as the approvals inbox always has);
  *   - an approval with no session (a Studio project's) opens the Needs you
- *     page, where its card is;
+ *     page on its own card (`approvalId`), whose Reject takes the focus, as
+ *     R3's header control did;
  *   - a mission opens its session;
  *   - a withdrawal this app did not start opens the funding page.
  *
@@ -27,7 +28,7 @@ export function openNeedsYouItem(item: NeedsYouItem): void {
     return;
   }
   if (item.sessionId === null) {
-    ui.setShellRoute({ kind: "needsYou", origin: null });
+    ui.setShellRoute({ kind: "needsYou", origin: null, approvalId: item.approvalId });
     return;
   }
   const alreadyOpen = ui.runtimeMode !== "studio" && ui.activeSessionId === item.sessionId;

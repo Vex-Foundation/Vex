@@ -10,7 +10,10 @@
  *  - a disclosure of her band named by its words, controlling her section,
  *    described by the state word and, while the band rests, the reason;
  *  - every press said once, politely, "Vex shown." or "Vex hidden." (EC-24),
- *    and nothing said or done while it rests.
+ *    and nothing said or done while it rests;
+ *  - with the decision given way and no header control (section 4.8), the
+ *    Needs you head is the Review key to the decision that leads, with the
+ *    same count; at zero it is words, not a key.
  */
 
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
@@ -19,6 +22,7 @@ import type { VexPresence } from "../useVexPresence.js";
 import { NO_BACKGROUND_WORK } from "../background-work.js";
 
 const presence = vi.hoisted(() => ({ current: null as VexPresence | null }));
+const opened = vi.hoisted(() => ({ items: [] as unknown[] }));
 
 vi.mock("../useVexPresence.js", () => ({
   useVexPresence: () => {
@@ -26,6 +30,12 @@ vi.mock("../useVexPresence.js", () => ({
     return presence.current;
   },
   useAllMissions: () => null,
+}));
+vi.mock("../needs-you-open.js", () => ({
+  openNeedsYouItem: (item: unknown) => {
+    opened.items.push(item);
+  },
+  needsYouItemIsHere: () => false,
 }));
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
@@ -46,6 +56,8 @@ const { VexConsoleStrip } = await import("../VexConsoleStrip.js");
 const { VEX_STATES, VEX_STATE_WORD, VEX_STATE_SQUARE } = await import("../vex-state.js");
 const { VEX_SECTION_ID } = await import("../vex-section-a11y.js");
 const { VexSectionAnnouncer } = await import("../VexSectionAnnouncer.js");
+const { approvalNeedsYouItem } = await import("../needs-you.js");
+const { approval } = await import("./fixtures.js");
 
 function arrange(overrides: Partial<VexPresence> = {}): void {
   presence.current = {
@@ -82,6 +94,7 @@ function said(): string {
 
 beforeEach(() => {
   arrange();
+  opened.items = [];
 });
 
 afterEach(() => {
@@ -173,5 +186,55 @@ describe("VexConsoleStrip: the console line's state key", () => {
     });
     expect(onToggle).not.toHaveBeenCalled();
     expect(said()).toBe("");
+  });
+});
+
+describe("VexConsoleStrip: Needs you on the console line", () => {
+  const band = { open: false, held: null, onToggle: () => undefined };
+
+  it("is the Review key to the decision that leads, with the same count", () => {
+    const item = approvalNeedsYouItem(approval({ id: "a1" }), Date.parse("2026-11-04T12:00:00.000Z"));
+    arrange({
+      needsYou: {
+        status: "ready",
+        unknownCopy: null,
+        count: 1,
+        items: [item],
+        retry: () => undefined,
+        retrying: false,
+      },
+    });
+    render(<VexConsoleStrip band={band} />);
+    const key = document.querySelector<HTMLElement>("[data-vex-area='vex-console-line-needs']");
+    expect(key?.tagName).toBe("BUTTON");
+    expect(key?.getAttribute("aria-label")).toBe(`${item.go}: ${item.title}`);
+    expect(key?.querySelector(".vex-console__count")?.textContent).toBe("1");
+    const described = key?.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe("Needs you: 1");
+    act(() => {
+      fireEvent.click(key as HTMLElement);
+    });
+    expect(opened.items).toEqual([item]);
+  });
+
+  it("is words, not a key, when nothing needs you, and on the page strip from 1024", () => {
+    render(<VexConsoleStrip band={band} />);
+    expect(document.querySelector("[data-vex-area='vex-console-line-needs']")).toBeNull();
+    expect(document.querySelector(".vex-strip__head")?.textContent).toBe("Needs you0");
+    cleanup();
+    const item = approvalNeedsYouItem(approval({ id: "a1" }), Date.parse("2026-11-04T12:00:00.000Z"));
+    arrange({
+      needsYou: {
+        status: "ready",
+        unknownCopy: null,
+        count: 1,
+        items: [item],
+        retry: () => undefined,
+        retrying: false,
+      },
+    });
+    // The page strip keeps its decision cell, so its head stays words.
+    render(<VexConsoleStrip />);
+    expect(document.querySelector("[data-vex-area='vex-console-line-needs']")).toBeNull();
   });
 });

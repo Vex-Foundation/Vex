@@ -12,9 +12,10 @@
  *     project with its access. The page itself draws no crumb or close row.
  *     The cell ends in the cluster (gap 8): the page keys (a page's own keys
  *     such as Portfolio's refresh, through `pageKeysSlot.tsx`; export; a
- *     close key for a page with no other way back), the Studio host status,
- *     Notices (only while notices exist) and "Needs you · N" (while something
- *     waits or the read failed).
+ *     close key for a page with no other way back), the Studio host status
+ *     and Notices (only while notices exist). Needs you has no header control
+ *     (docs/design/H3-DESKTOP.md section 4.8): the console carries it, and the
+ *     header only says a rise (`NeedsYouAnnouncer`).
  *
  * The header (`ShellHeader.tsx`) lays the cells out and reserves the window
  * chrome; the title cell is a window drag region (`.vex-drag`) and every
@@ -35,22 +36,23 @@
  * SESSION-scoped, and the session they scope to belongs to the agent shell.
  * `activeSessionId` survives a mode switch (switching back returns to it), so
  * in Studio they are handed `null`, which each of them treats as "no session"
- * (render nothing, fire no session IPC). Needs you is deliberately NOT gated:
- * it is one app-wide list, visible in whichever mode the user is in.
+ * (render nothing, fire no session IPC). The Needs you announcer is
+ * deliberately NOT gated: it says one app-wide list, in whichever mode the
+ * user is in.
  * `RunningHead.test.tsx` asserts all of this rather than trusting it.
  *
- * `NotificationCenter` and `NotificationAnnouncer` live here for the same
- * once-per-window reason: two centers would fork one list, and two announcers
- * would speak every message twice. The announcer renders only screen-reader
- * live regions (no pixels).
+ * `NotificationCenter`, `NotificationAnnouncer` and `NeedsYouAnnouncer` live
+ * here for the same once-per-window reason: two centers would fork one list,
+ * and two announcers would speak every message twice. The announcers render
+ * only screen-reader live regions (no pixels).
  *
  * ON THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved
  * desk plate) the title cell holds the desk's own head (`deskHead`: where
  * you are and the desk's three keys, `LighterSidebar`), and the cluster
  * keeps only what the desk can need there: a page's keys and close key while
  * a page stands over the desk, and Notices while notices exist. Needs you
- * is the console's on the desk too, and the desk chat's export is not in the
- * desk's row. `data-vex-area="shell-status-strip"` stays the test seam: the
+ * is the console's on the desk as everywhere, and the desk chat's export is
+ * not in the desk's row. `data-vex-area="shell-status-strip"` stays the test seam: the
  * title cell in every mode.
  */
 
@@ -62,7 +64,7 @@ import { ErrorBoundary } from "../../components/ui/error-boundary.js";
 import { useProject } from "../../lib/api/projects.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
-import { NeedsYouControl } from "../vex/NeedsYouControl.js";
+import { NeedsYouAnnouncer } from "../vex/NeedsYouAnnouncer.js";
 import { useNeedsYou } from "../vex/useVexPresence.js";
 import { GlobalApprovalsSync } from "./GlobalApprovals.js";
 import { MissionRail } from "./MissionRail.js";
@@ -294,9 +296,11 @@ export function RunningHead({
        * they are notifications, so the center is their surface. Renders null
        * while there are none. */}
       <NotificationCenter />
-      {/* On the desk Needs you is the console's (the approved desk plate). */}
-      {lighter ? null : <NeedsYouControl />}
+      {/* Needs you is the console's, in every mode (H3-DESKTOP.md section
+       * 4.8): its column, the page strip, or the console line under 1024.
+       * What the header keeps is its voice: a rise is said here, once. */}
       <NotificationAnnouncer />
+      <NeedsYouAnnouncer />
     </div>
   );
 

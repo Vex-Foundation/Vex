@@ -2,14 +2,16 @@
  * The title bar's two cells, in every mode, and its place in the window
  * (docs/design/R3-MINIMAL.md section 3): a 44px drag row whose left cell says
  * where you are and whose right cluster holds the page keys, the Studio host
- * pill, Notices and "Needs you · N"; on the Lighter desk, Notices alone.
+ * pill and Notices; on the Lighter desk, Notices alone. Needs you has no
+ * header control (H3-DESKTOP.md section 4.8): the console carries it, and the
+ * header only says a rise, once, in every mode.
  *
  * The cells divide by WHOSE they are. `MissionRail`, `SessionExportControl`
  * and the session title are scoped to a session, and a session belongs to the
  * agent shell: `activeSessionId` survives a mode switch, so in Studio they
  * would otherwise paint a session's badge, key and name over a project
- * workspace that has nothing to do with them. Needs you is the opposite: one
- * app-wide list, visible in whichever mode the user is in. And the approvals
+ * workspace that has nothing to do with them. The Needs you announcer is the
+ * opposite: one app-wide list, said in whichever mode the user is in. And the approvals
  * sync is mounted once, outside the cluster, in every mode. These tests assert
  * all of it rather than trusting it.
  */
@@ -67,9 +69,6 @@ vi.mock("../NotificationCenter.js", () => ({
 }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovalsSync: () => <div data-testid="approvals-sync" />,
-}));
-vi.mock("../../vex/NeedsYouControl.js", () => ({
-  NeedsYouControl: () => <div data-testid="needs-you" />,
 }));
 vi.mock("../../vex/VexTokenChip.js", () => ({
   VexTokenChip: ({ open, onToggle }: { open: boolean; onToggle: () => void }) => (
@@ -285,9 +284,10 @@ describe("the title cell's own boundary", () => {
       const head = renderHead("agent", SESSION);
       expect(head.querySelector("[data-vex-title-failed]")).not.toBeNull();
       expect(title()).toBeUndefined();
-      // Everything else keeps working: the approvals sync, Needs you.
+      // Everything else keeps working: the approvals sync, the Needs you
+      // announcer.
       expect(screen.getByTestId("approvals-sync")).toBeTruthy();
-      expect(screen.getByTestId("needs-you")).toBeTruthy();
+      expect(head.querySelector("[data-vex-area='needs-you-announcer']")).not.toBeNull();
       expect(screen.getByTestId("mission-rail")).toBeTruthy();
     } finally {
       quiet.mockRestore();
@@ -424,13 +424,16 @@ describe("the Studio host cell", () => {
 });
 
 describe("the right cluster", () => {
-  it("keeps the spec's order: page keys, Notices, Needs you; no chip in the header", () => {
+  it("keeps the spec's order: page keys, Notices; no Needs you control and no chip in the header", () => {
     const head = renderHead("agent", SESSION);
     const flank = head.querySelector(".vex-running-head__flank");
     const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
       el.getAttribute("data-testid"),
     );
-    expect(order).toEqual(["export-control", "notices", "needs-you"]);
+    expect(order).toEqual(["export-control", "notices"]);
+    // Needs you is the console's (H3-DESKTOP.md section 4.8): R3's
+    // "Needs you · N" control is gone from the title cell.
+    expect(head.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
     // The Vex key has the header's own cell over the Vex column
     // (H3-DESKTOP.md section 1.3, `ShellHeader`): the running head draws the
     // title cell alone, and no chip.
@@ -448,15 +451,20 @@ describe("the right cluster", () => {
     expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 
-  it("Needs you is present in EVERY mode, the welcome included", () => {
-    const agent = renderHead("agent", SESSION);
-    expect(agent.querySelector("[data-testid='needs-you']")).not.toBeNull();
-    cleanup();
-    const studio = renderHead("studio", SESSION);
-    expect(studio.querySelector("[data-testid='needs-you']")).not.toBeNull();
-    cleanup();
-    const welcome = renderHead("agent", null, { empty: true });
-    expect(welcome.querySelector("[data-testid='needs-you']")).not.toBeNull();
+  it("says a Needs you rise in EVERY mode, the welcome and the desk included, once", () => {
+    for (const [mode, sessionId, extra] of [
+      ["agent", SESSION, {}],
+      ["studio", SESSION, {}],
+      ["lighter", SESSION, {}],
+      ["agent", null, { empty: true }],
+    ] as const) {
+      const head = renderHead(mode, sessionId, extra);
+      const regions = head.querySelectorAll("[data-vex-area='needs-you-announcer']");
+      expect(regions).toHaveLength(1);
+      expect(regions[0]?.getAttribute("role")).toBe("status");
+      expect(head.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+      cleanup();
+    }
   });
 
   it("the session-scoped parts render nothing without a session", () => {
@@ -472,8 +480,8 @@ describe("the right cluster", () => {
     renderHead("studio", SESSION);
     expect(screen.queryByTestId("mission-rail")).toBeNull();
     expect(screen.queryByTestId("export-control")).toBeNull();
-    // ... and the app-wide list is NOT gated with them.
-    expect(screen.getByTestId("needs-you")).not.toBeNull();
+    // ... and the app-wide list's voice is NOT gated with them.
+    expect(document.querySelector("[data-vex-area='needs-you-announcer']")).not.toBeNull();
   });
 
   it("mounts the approvals sync exactly once, outside the cluster, in every mode", () => {

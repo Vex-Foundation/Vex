@@ -71,6 +71,7 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
   const missionsFailed = useMissionsReadFailed(missions);
   const wordId = useId();
   const reasonId = useId();
+  const countId = useId();
   return (
     <div className="vex-strip" data-vex-area="vex-console-strip" data-band={band === undefined ? undefined : ""}>
       {band === undefined ? null : (
@@ -108,8 +109,35 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
         </div>
       )}
       <div className="vex-strip__cell vex-strip__head">
-        <span className="vex-console__label">Needs you</span>
-        {count === null ? null : <span className="vex-console__count vex-num">{count}</span>}
+        {band !== undefined && lead !== null ? (
+          // Under 1024 the decision gives way, and the header has no Needs
+          // you control (section 4.8): the head itself is the Review key to
+          // the decision that leads, so it stays a press away.
+          <button
+            type="button"
+            className="vex-strip__key"
+            data-vex-area="vex-console-line-needs"
+            aria-label={`${lead.go}: ${lead.title}`}
+            aria-describedby={count === null ? undefined : countId}
+            onClick={() => {
+              openNeedsYouItem(lead);
+            }}
+          >
+            <span className="vex-console__label">Needs you</span>
+            {count === null ? null : <span className="vex-console__count vex-num">{count}</span>}
+            <LineChevronRight size={14} className="vex-console__chevron" />
+            {count === null ? null : (
+              <span id={countId} hidden>
+                {`Needs you: ${count}`}
+              </span>
+            )}
+          </button>
+        ) : (
+          <>
+            <span className="vex-console__label">Needs you</span>
+            {count === null ? null : <span className="vex-console__count vex-num">{count}</span>}
+          </>
+        )}
       </div>
       <div className="vex-strip__cell vex-strip__decision" data-vex-area="vex-strip-decision">
         {needsYou.status === "loading" ? (

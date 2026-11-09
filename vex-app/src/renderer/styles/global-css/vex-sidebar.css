@@ -633,6 +633,17 @@
 .vex-strip[data-band] .vex-strip__short {
   display: inline;
 }
+/* With the decision gone and no header control (section 4.8), the head is
+ * the Review key to the decision that leads: the whole cell is the key, in
+ * the head's own words and weight, a chevron after the count. */
+.vex-strip__head:has(> .vex-strip__key) {
+  padding: 0;
+}
+.vex-strip__head > .vex-strip__key {
+  gap: 16px;
+  font-size: inherit;
+  font-weight: inherit;
+}
 
 /* ---- THE CONSOLE STRIP (docs/design/H3-DESKTOP.md section 1.9;
  * VexConsoleStrip.tsx) ----
