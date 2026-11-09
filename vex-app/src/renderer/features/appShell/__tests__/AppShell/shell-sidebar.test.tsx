@@ -1080,6 +1080,12 @@ describe("AppShell", () => {
     expect(columns).toBe("76px 340px minmax(0, 1fr)");
     expect(panel()?.hasAttribute("data-open")).toBe(false);
     expect(panel()?.hasAttribute("inert")).toBe(true);
+    // What the panel lies over: Vex's column (her console and section) and
+    // the tagline at its foot. Live while the panel is closed.
+    const vexColumn = (): Element | null => view.container.querySelector(".vex-shell-vex");
+    const tagline = (): Element | null => view.container.querySelector("[data-vex-area='tagline-cell']");
+    expect(vexColumn()?.hasAttribute("inert")).toBe(false);
+    expect(tagline()?.hasAttribute("inert")).toBe(false);
 
     const expand = screen.getByRole("button", { name: "Expand sidebar" });
     expect(expand.getAttribute("aria-controls")).toBe("chats-panel");
@@ -1090,6 +1096,12 @@ describe("AppShell", () => {
     // Over her column: the scrim stops at her column's edge, the chat is live.
     expect(scrim()?.hasAttribute("data-covers")).toBe(false);
     expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(false);
+    // Under the open panel Vex's column rests (C3-F-08, VEX Cloud's inert
+    // scope): Tab and a screen reader never reach her console or her
+    // section through the panel.
+    expect(vexColumn()?.hasAttribute("inert")).toBe(true);
+    expect(vexColumn()?.querySelector("#vex-section")).not.toBeNull();
+    expect(tagline()?.hasAttribute("inert")).toBe(true);
     // Nothing in the grid changed, and nothing was written.
     expect(frame?.style.gridTemplateColumns).toBe(columns);
     expect(useUiStore.getState().leftOpen).toBe(true);
@@ -1102,6 +1114,9 @@ describe("AppShell", () => {
     // The same key closes it; so does the scrim, and Escape from inside.
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(panel()?.hasAttribute("inert")).toBe(true);
+    // Closed, her column is live again.
+    expect(vexColumn()?.hasAttribute("inert")).toBe(false);
+    expect(tagline()?.hasAttribute("inert")).toBe(false);
     expect(frame?.style.gridTemplateColumns).toBe(columns);
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     fireEvent.pointerDown(scrim() as HTMLElement);
@@ -1249,6 +1264,8 @@ describe("AppShell", () => {
       view.container.querySelector("[data-vex-area='chats-scrim']")?.hasAttribute("data-covers"),
     ).toBe(true);
     expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(true);
+    // Her band and console line rest under it too.
+    expect(view.container.querySelector(".vex-shell-vex")?.hasAttribute("inert")).toBe(true);
     expect(useUiStore.getState().leftOpen).toBe(true);
   });
 
