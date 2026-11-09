@@ -53,8 +53,45 @@
   z-index: 8;
   display: flex;
   height: 0;
-  justify-content: center;
+  justify-content: flex-end;
   pointer-events: none;
+}
+/* The key (VEX Cloud's `.vx-tx-latest`): a 44 square at the column's right
+ * end, raised on the chosen rule (24%), the down arrow in ink; the open cell
+ * under the pointer; it fades in over 160 ms. */
+.vex-latest {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -44px;
+  padding: 0;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-primary);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: vex-latest-in 160ms var(--vex-ease-standard) both;
+}
+.vex-latest:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-latest:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+@keyframes vex-latest-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-latest {
+    animation: none;
+  }
+}
+html[data-still] .vex-latest {
+  animation: none;
 }
 [data-vex-conversation-scroll] [data-vex-latest-slot] {
   bottom: calc(var(--vex-composer-height, 152px) + 16px);

@@ -39,7 +39,7 @@
  */
 
 import { useCallback, useMemo, useRef, type JSX } from "react";
-import { LineChevronDown } from "../../components/icons/line/index.js";
+import { LineArrowDown } from "../../components/icons/line/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -340,14 +340,28 @@ export function SessionTranscript({
           content sits below the fold. */}
       {showLatest ? (
         <div data-vex-latest-slot>
+          {/* VEX Cloud's `BackToBottom`: a 44 square at the right end of the
+              column, raised on the chosen rule, the down arrow in ink, fading
+              in over 160 ms. It leaves once the floor is reached; if it held
+              the focus, the focus goes on to the draft field rather than to
+              the page. */}
           <button
             type="button"
             data-vex-latest-pill
-            onClick={jumpToLatest}
-            aria-label="Jump to latest message"
-            className="pointer-events-auto -mt-8 inline-flex h-8 w-8 items-center justify-center border border-rule bg-surface-base text-accent-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onClick={(event) => {
+              const held = document.activeElement === event.currentTarget;
+              jumpToLatest();
+              if (held) {
+                event.currentTarget
+                  .closest("[data-vex-area='session-panel']")
+                  ?.querySelector<HTMLTextAreaElement>("[data-vex-area='chat-composer'] textarea")
+                  ?.focus({ preventScroll: true });
+              }
+            }}
+            aria-label="Scroll to latest"
+            className="vex-latest"
           >
-            <LineChevronDown size={16} />
+            <LineArrowDown size={20} />
           </button>
         </div>
       ) : null}
