@@ -58,6 +58,7 @@ import {
   ChatsFailedLine,
   ChatsLoadingLine,
   chatsFailedWords,
+  SearchAnnouncer,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import { SessionSearchField } from "./SessionRows/SessionSearch.js";
@@ -271,6 +272,7 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         onRename={handleRename}
         pendingPinId={pendingPinId}
         highlight={searchText}
+        searching={searchText.trim() !== ""}
       />
     )
   ) : null;
@@ -310,6 +312,11 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         <div className="vex-scroll vex-ls-sessions vex-chats-panel__list min-h-0 flex-1 overflow-y-auto overflow-x-clip">
           {listBody}
         </div>
+        {/* The search's result, spoken once the query rests. */}
+        <SearchAnnouncer
+          query={open ? searchText.trim() : ""}
+          count={query.data?.ok === true ? rows.length : null}
+        />
         <SessionDeleteDialog
           session={removeTarget}
           blockedOutcome={removeBlocked}

@@ -13,7 +13,7 @@
  * under `./SessionRows/`.
  */
 
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { Button } from "../../components/ui/button.js";
 import { StateSquare } from "../../components/ui/state-square.js";
@@ -51,6 +51,11 @@ interface SidebarSessionGroupsProps {
   readonly pendingPinId: string | null;
   /** The sidebar search's text, marked in each title. */
   readonly highlight: string;
+  /**
+   * A query is applied: the groups are the search's results, and they are
+   * named so (VEX Cloud's `aria-label="Search results"`).
+   */
+  readonly searching?: boolean;
 }
 
 /**
@@ -69,9 +74,14 @@ export function SidebarSessionGroups({
   onRename,
   pendingPinId,
   highlight,
+  searching = false,
 }: SidebarSessionGroupsProps): JSX.Element {
   return (
-    <div className="vex-ls-groups">
+    <div
+      className="vex-ls-groups"
+      role={searching ? "group" : undefined}
+      aria-label={searching ? SEARCH_RESULTS_LABEL : undefined}
+    >
       {groups.map((group) => {
         if (group.rows.length === 0) return null;
         const headingId = `ls-${group.key}`;
@@ -156,6 +166,53 @@ export const CHATS_LOADING_COPY = "Loading chats";
 export const CHATS_FAILED_COPY = "Chats could not load.";
 export const CHATS_EMPTY_COPY = "No chats yet.";
 export const CHATS_NO_MATCH_COPY = "No chats match your search.";
+
+/** The name of the chats while a query narrows them (Cloud's). */
+export const SEARCH_RESULTS_LABEL = "Search results";
+
+/** How long a query rests before its result is spoken (Cloud's 250 ms debounce, D25). */
+export const SEARCH_ANNOUNCE_DELAY_MS = 250;
+
+/** "1 chat found", "{n} chats found", or none match (Cloud's words). */
+export function searchResultWords(count: number): string {
+  if (count === 0) return CHATS_NO_MATCH_COPY;
+  return count === 1 ? "1 chat found" : `${String(count)} chats found`;
+}
+
+/**
+ * THE SEARCH'S RESULT, SPOKEN (VEX Cloud's `chat-list.tsx`, 9.7): once a
+ * typed query rests for 250 ms, a polite live region says how many chats it
+ * found, or that none match. Nothing is said while no query is typed or the
+ * list has not loaded. A new query that finds the same count is spoken again:
+ * the words alternate a trailing no-break space, so the region changes.
+ */
+export function SearchAnnouncer({
+  query,
+  count,
+}: {
+  /** The applied query, trimmed; "" while none is typed. */
+  readonly query: string;
+  /** The chats the query leaves; null while the list has not loaded. */
+  readonly count: number | null;
+}): JSX.Element {
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (query === "" || count === null) {
+      setSaid("");
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      const words = searchResultWords(count);
+      setSaid((last) => (last === words ? `${words}\u00a0` : words));
+    }, SEARCH_ANNOUNCE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [query, count]);
+  return (
+    <div aria-live="polite" aria-atomic="true" className="sr-only" data-vex-area="chats-search-announcer">
+      {said}
+    </div>
+  );
+}
 
 /** "Chats could not load." and main's reason after it, when it gave one. */
 export function chatsFailedWords(reason: string | null | undefined): string {

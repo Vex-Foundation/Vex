@@ -414,6 +414,72 @@ describe("New chat and the search mode", () => {
   });
 });
 
+describe("the search's result, spoken (VEX Cloud's chat-list.tsx)", () => {
+  const announcer = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='chats-search-announcer']");
+
+  it("says how many chats a resting query found, politely, and names the results", () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      expect(announcer()?.getAttribute("aria-live")).toBe("polite");
+      expect(announcer()?.textContent).toBe("");
+      const field = screen.getByRole("searchbox", { name: "Search chats" });
+      fireEvent.change(field, { target: { value: "btc" } });
+      // Nothing while the query is still moving.
+      expect(announcer()?.textContent).toBe("");
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("1 chat found");
+      expect(screen.getByRole("group", { name: "Search results" })).not.toBeNull();
+
+      fireEvent.change(field, { target: { value: "r" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("4 chats found");
+
+      fireEvent.change(field, { target: { value: "zzz" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("No chats match your search.");
+
+      // A cleared query says nothing, and the chats are no longer results.
+      fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).toBe("");
+      expect(screen.queryByRole("group", { name: "Search results" })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("speaks a new query that finds the same count again", () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      const field = screen.getByRole("searchbox", { name: "Search chats" });
+      fireEvent.change(field, { target: { value: "btc" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const first = announcer()?.textContent;
+      fireEvent.change(field, { target: { value: "gas" } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(announcer()?.textContent).not.toBe(first);
+      expect(announcer()?.textContent?.trim()).toBe("1 chat found");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("the sessions by name", () => {
   it("heads the list with CHATS, its groups one level under it", () => {
     // docs/design/H3-DESKTOP.md section 1.4: the CHATS heading, then the

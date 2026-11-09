@@ -70,6 +70,7 @@ import {
   ChatsFailedLine,
   ChatsLoadingLine,
   chatsFailedWords,
+  SearchAnnouncer,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import {
@@ -212,6 +213,9 @@ export function SessionsList({
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
+  // The query the rows are narrowed by, as the announcer speaks it.
+  const appliedQuery = searchOpen ? searchText.trim() : "";
+
   const handleSelect = useCallback(
     (id: string): void => {
       setActiveSessionId(id);
@@ -309,6 +313,7 @@ export function SessionsList({
         onRename={handleRename}
         pendingPinId={pendingPinId}
         highlight={searchOpen ? searchText : ""}
+        searching={appliedQuery !== ""}
       />
     )
   ) : null;
@@ -419,6 +424,11 @@ export function SessionsList({
               {listBody}
               {searchOpen ? <p className="vex-ls-hint">{SEARCH_HINT}</p> : null}
             </div>
+            {/* The search's result, spoken once the query rests. */}
+            <SearchAnnouncer
+              query={appliedQuery}
+              count={agentRows === null ? null : visibleRows.length}
+            />
           </div>
         </>
       )}
