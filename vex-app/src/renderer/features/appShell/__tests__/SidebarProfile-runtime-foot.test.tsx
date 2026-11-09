@@ -357,6 +357,9 @@ describe("SidebarProfile foot", () => {
     expect(block(".vex-prof:hover")).toMatch(/color-mix\(in srgb, var\(--color-white\) 5%, transparent\)/);
     expect(block(".vex-prof__chev")).toMatch(/color: var\(--vex-alias-label-tertiary\);/);
     expect(block('.vex-prof[aria-expanded="true"] .vex-prof__chev')).toMatch(/transform: rotate\(180deg\);/);
+    // From 1920 the name steps up to 15 with the column's words.
+    const wide = css.slice(css.indexOf("@media (min-width: 1920px) {"));
+    expect(wide).toMatch(/^@media \(min-width: 1920px\) \{\s*\.vex-prof__n \{\s*font-size: 15px;/);
 
     render(<SidebarProfile sidebarOpen />);
     const trigger = screen.getByRole("button", { name: /account and settings/i });

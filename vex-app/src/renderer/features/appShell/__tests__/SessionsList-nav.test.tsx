@@ -608,6 +608,20 @@ describe("the column fits its track at every seam", () => {
     "utf8",
   );
 
+  it("steps its words up from 1920, since the column never zooms (VEX Cloud's left.css)", () => {
+    const at = css.indexOf("@media (min-width: 1920px) {");
+    expect(at).toBeGreaterThan(-1);
+    const wide = css.slice(at, css.indexOf("\n}\n", at));
+    const sizeOf = (selectors: string): string =>
+      new RegExp(`${selectors.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{\\s*font-size: (\\d+)px;`).exec(wide)?.[1] ?? "none";
+    expect(sizeOf(".vex-ls-nrow--new,\n  .vex-ls-nrow--nav")).toBe("14");
+    expect(sizeOf(".vex-ls-group,\n  .vex-ls-row__state,\n  .vex-ls-row__time")).toBe("12");
+    expect(sizeOf(".vex-ls-row__select,\n  .vex-ls-search__input")).toBe("15");
+    // The block follows the base sizes, so it wins on order.
+    expect(at).toBeGreaterThan(css.indexOf(".vex-ls-row__time {"));
+    expect(at).toBeGreaterThan(css.indexOf(".vex-ls-search__input {"));
+  });
+
   it("fills its track and may shrink below its content", () => {
     const block = /\.vex-ls \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(block).toMatch(/width: 100%;/);

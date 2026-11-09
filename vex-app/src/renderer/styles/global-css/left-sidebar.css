@@ -621,6 +621,27 @@ html[data-still] .vex-ls-msg__hatch {
   color: var(--vex-alias-label-tertiary);
 }
 
+/* WIDE: the column never zooms (docs/design/H3-DESKTOP.md section 1.11);
+ * from 1920 its words step up instead, as VEX Cloud's do (`styles/left.css`,
+ * H3 section 16): New chat and the nav to 14; the day heads, the tags and the
+ * times to 12; the chat rows and the search field to 15. The account name's
+ * step is in profile-menu.css. */
+@media (min-width: 1920px) {
+  .vex-ls-nrow--new,
+  .vex-ls-nrow--nav {
+    font-size: 14px;
+  }
+  .vex-ls-group,
+  .vex-ls-row__state,
+  .vex-ls-row__time {
+    font-size: 12px;
+  }
+  .vex-ls-row__select,
+  .vex-ls-search__input {
+    font-size: 15px;
+  }
+}
+
 /* FOOT: the account row behind a quiet rule. */
 .vex-ls-foot {
   flex: none;

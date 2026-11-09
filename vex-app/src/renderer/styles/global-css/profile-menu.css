@@ -121,6 +121,14 @@ html[data-still] .vex-prof__chev {
   transition: none;
 }
 
+/* From 1920 the name steps up to 15 with the column's words (VEX Cloud's
+ * `.vx-lc-me-text > b`, left-sidebar.css's WIDE block). */
+@media (min-width: 1920px) {
+  .vex-prof__n {
+    font-size: 15px;
+  }
+}
+
 /* The menu's two-line rows, in any placement. */
 .vex-profile-menu__t {
   overflow: hidden;
