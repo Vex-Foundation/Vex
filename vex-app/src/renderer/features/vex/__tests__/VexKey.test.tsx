@@ -300,6 +300,25 @@ describe("VexKey: the control", () => {
     expect(screen.getByText("Hide Vex (⇧⌘B)")).not.toBeNull();
   });
 
+  it("while her band rests, adds the reason to its description and says it on a press, acting on nothing", () => {
+    const onToggle = vi.fn();
+    const reason = "Vex shows her section after this turn.";
+    render(<VexKey open={false} onToggle={onToggle} platform="linux" held={reason} />);
+    expect(key().getAttribute("aria-disabled")).toBe("true");
+    expect(key().hasAttribute("data-vex-key-held")).toBe(true);
+    const described = (key().getAttribute("aria-describedby") ?? "").split(" ");
+    expect(described.map((id) => document.getElementById(id))).toEqual([
+      part("status"),
+      expect.objectContaining({ textContent: reason }),
+    ]);
+    const regions = Array.from(
+      document.querySelectorAll("[data-vex-area='vex-section-announcer'] [role='status']"),
+    );
+    fireEvent.click(key());
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(regions.map((r) => r.textContent).join("")).toBe(reason);
+  });
+
   it("shows her at once on a press while she is closed", () => {
     const onToggle = vi.fn();
     render(<VexKey open={false} onToggle={onToggle} platform="linux" />);
@@ -426,6 +445,12 @@ describe("VexKey: its sheet, at Cloud's measures and widths", () => {
     );
     expect(rule("html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *)")).toMatch(
       /transition:\s*none;/,
+    );
+  });
+
+  it("drops the action words and the chevron while held, keeping her face and state", () => {
+    expect(rule(".vex-key[data-vex-key-held] :is(.vex-key__action, .vex-key__chevron > svg)")).toMatch(
+      /visibility:\s*hidden;/,
     );
   });
 

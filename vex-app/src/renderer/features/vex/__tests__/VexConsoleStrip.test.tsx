@@ -168,7 +168,7 @@ describe("VexConsoleStrip: the console line's state key", () => {
     expect(said()).toBe("Vex hidden.");
   });
 
-  it("while the band rests, adds the reason to its description and neither acts nor speaks", () => {
+  it("while the band rests, adds the reason to its description and says it, acting on nothing", () => {
     const onToggle = vi.fn();
     const reason = "Vex shows her section after this turn.";
     render(
@@ -185,7 +185,8 @@ describe("VexConsoleStrip: the console line's state key", () => {
       fireEvent.click(key);
     });
     expect(onToggle).not.toHaveBeenCalled();
-    expect(said()).toBe("");
+    // The press says why, once, politely (VEX Cloud's held key).
+    expect(said()).toBe(reason);
   });
 });
 

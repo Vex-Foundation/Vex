@@ -46,7 +46,7 @@ import {
 } from "./VexConsole.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VEX_STATE_SQUARE } from "./vex-state.js";
-import { announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
+import { announceVexHeld, announceVexSection, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { vexToggleName } from "./vex-toggle-shortcut.js";
 
 /** The console line's own key under 1024: her band, as the frame solved it. */
@@ -86,7 +86,10 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
             aria-disabled={band.held === null ? undefined : true}
             title={band.held ?? undefined}
             onClick={() => {
-              if (band.held !== null) return;
+              if (band.held !== null) {
+                announceVexHeld(band.held);
+                return;
+              }
               band.onToggle();
               // Said once, politely, at the press, as every toggle of her
               // section says it (EC-24; `VexSectionAnnouncer`).

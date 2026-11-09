@@ -859,6 +859,12 @@ html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *) {
 .vex-key[aria-disabled="true"] {
   cursor: not-allowed;
 }
+/* Held (her band resting under 1024), the key keeps her face and her state
+ * and drops the action words and the chevron, so nothing reads as pressable
+ * that is not; a press says why (VEX Cloud's `.vx-vk[data-held]`). */
+.vex-key[data-vex-key-held] :is(.vex-key__action, .vex-key__chevron > svg) {
+  visibility: hidden;
+}
 /* The chevron cell, 60 then the column's rule (the head cell's own right
  * edge): muted, ink under the pointer, as Cloud's `.vk-dir`. */
 .vex-key__chevron {

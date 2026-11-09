@@ -49,8 +49,10 @@
  * the key's cell is 288 wide and carries the waiting count beside her state,
  * since the console's Needs you is a line away (`vex-key__count`, drawn only
  * in the band tier). While her band rests (`held`: a turn, a waiting card,
- * the composer in use) the key says why instead of acting: its tooltip is
- * the reason and a press changes nothing.
+ * the composer in use) the key says why instead of acting: the reason joins
+ * its description and its tooltip, its action words and chevron leave (so
+ * nothing reads as pressable that is not), and a press changes nothing but
+ * says the reason once, politely (VEX Cloud's held key).
  */
 
 import { useId, type JSX, type ReactNode } from "react";
@@ -65,7 +67,7 @@ import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
 import { VexSectionAnnouncer } from "./VexSectionAnnouncer.js";
-import { VEX_SECTION_ID } from "./vex-section-a11y.js";
+import { announceVexHeld, VEX_SECTION_ID } from "./vex-section-a11y.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
 import { VEX_STATE_SQUARE, vexShortWordOf, type VexState } from "./vex-state.js";
 import {
@@ -151,6 +153,7 @@ export function VexKeyView({
   const shown = open && !closing;
   const name = vexToggleName(shown);
   const stateId = useId();
+  const reasonId = useId();
   // Under 1280 the key says the chat row's short word ("Waiting"), so the
   // word never ends in an ellipsis there; it is a picture of the long one,
   // which stays the key's description.
@@ -166,12 +169,15 @@ export function VexKeyView({
         data-vex-key-open={shown ? "true" : "false"}
         aria-label={name}
         aria-controls={controls}
-        aria-describedby={stateId}
+        aria-describedby={held === null ? stateId : `${stateId} ${reasonId}`}
         aria-keyshortcuts={vexToggleAriaShortcut(platform)}
         aria-disabled={held === null ? undefined : true}
         data-vex-key-held={held === null ? undefined : ""}
         onClick={() => {
-          if (held !== null) return;
+          if (held !== null) {
+            announceVexHeld(held);
+            return;
+          }
           pressVexToggle(open, onToggle);
         }}
       >
@@ -208,6 +214,11 @@ export function VexKeyView({
         <span className="vex-key__chevron">
           {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
         </span>
+        {held === null ? null : (
+          <span id={reasonId} hidden>
+            {held}
+          </span>
+        )}
       </button>
     </Tooltip>
   );
