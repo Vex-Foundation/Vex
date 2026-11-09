@@ -533,7 +533,7 @@ describe("SessionTranscript anchored scroll model", () => {
     readerScroll(scroller, 10);
     await waitFor(() => expect(olderRequested).toBe(true));
     await waitFor(() =>
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull(),
+      expect(screen.getByText("Earlier messages did not load")).not.toBeNull(),
     );
 
     // Back at the floor: the anchor is cleared, follow resumes, and the failed

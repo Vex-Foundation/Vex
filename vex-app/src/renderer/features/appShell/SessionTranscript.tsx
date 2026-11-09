@@ -30,7 +30,7 @@
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
- * shows a top "couldn't load older" strip. Content rendering is delegated to
+ * shows the earlier-messages band's failure with its Retry. Content rendering is delegated to
  * `TranscriptMessage` (assistant = safe markdown, others = plain text).
  *
  * S3 entry settle: only rows appended LIVE after the session's first completed
@@ -68,8 +68,8 @@ import {
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
 import {
-  OlderPageErrorStrip,
-  OlderPageLoadingStrip,
+  EarlierBand,
+  type EarlierBandState,
   TranscriptEmptyState,
   TranscriptErrorState,
   TranscriptLoadingState,
@@ -167,6 +167,23 @@ export function SessionTranscript({
   const olderError =
     items.length > 0 &&
     ((pages?.some((page) => !page.ok) ?? false) || query.isError);
+  // The earlier-messages band (`EarlierBand`): loading while an older page
+  // reads, the failure with its Retry, and "Start of the chat" only once the
+  // reader paged back to the chat's first message; a single page, or the
+  // page cap, says nothing.
+  const lastPage = pages?.at(-1);
+  const earlierState: EarlierBandState | null = query.isFetchingNextPage
+    ? "loading"
+    : olderError
+      ? "error"
+      : (pages?.length ?? 0) > 1 && lastPage !== undefined && lastPage.ok && !lastPage.data.hasMore
+        ? "end"
+        : null;
+  // Retry reads the pages again, the failed one with its own cursor (an
+  // infinite query refetches every page it holds).
+  const retryEarlier = (): void => {
+    void query.refetch();
+  };
 
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
@@ -286,8 +303,7 @@ export function SessionTranscript({
           no per-row margins. */}
       <div data-vex-transcript-column="" className="vex-reading-col">
       <div ref={columnRef} className="relative flex flex-col gap-[18px]">
-        {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
-        {olderError ? <OlderPageErrorStrip /> : null}
+        <EarlierBand state={earlierState} onRetry={retryEarlier} />
         <TranscriptRows
           rows={rows}
           sessionId={sessionId}
