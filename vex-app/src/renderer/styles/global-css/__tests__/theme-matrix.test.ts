@@ -219,13 +219,13 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 24 primitives, at their values", () => {
+  it("holds exactly the 25 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(24);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(25);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 
