@@ -92,9 +92,18 @@ vi.mock("../../SessionContext.js", () => ({ SessionContext: () => null }));
 vi.mock("../../SessionTranscript.js", () => ({ SessionTranscript: () => null }));
 vi.mock("../../MissionControls.js", () => ({ MissionControls: () => null }));
 vi.mock("../../ApprovalsRegion.js", () => ({ ApprovalsRegion: () => null }));
-vi.mock("../../SessionWelcomeHero.js", () => ({
-  SessionWelcomeHero: () => <div data-vex-hero-stub />,
-}));
+// The stub keeps the real welcome's slot for the suggestions (D2, section
+// 6.6), so the grid the composer portals into it lands in the crown.
+vi.mock("../../SessionWelcomeHero.js", async () => {
+  const { setWelcomeStartersSlot } = await import("../../welcome-starters-slot.js");
+  return {
+    SessionWelcomeHero: () => (
+      <div data-vex-hero-stub>
+        <div ref={setWelcomeStartersSlot} data-vex-area="welcome-starters-slot" />
+      </div>
+    ),
+  };
+});
 
 const { SessionPanel } = await import("../../SessionPanel.js");
 const { QUICK_ACTIONS } = await import("../../composer-quick-actions.js");
@@ -195,6 +204,30 @@ describe("SessionPanel welcome - crown anchored above a rising growth band", () 
   it("seats the crown zone as a sibling ABOVE the composer band", () => {
     const { container } = renderWelcome();
     expectAnchoredStructure(container);
+  });
+
+  it("stands the suggestions IN the crown, under the greeting's notes, not over the composer (D2)", () => {
+    // docs/design/H3-DESKTOP.md section 6.6: the greeting, its notes and the
+    // two-by-two grid are one group at the top of the reading column; the
+    // chat under them is empty down to the composer.
+    const { container } = renderWelcome();
+    const crown = crownOf(container);
+    const band = bandOf(container);
+    const grid = container.querySelector("[data-vex-composer-starters]");
+    expect(grid).not.toBeNull();
+    expect(crown.querySelector("[data-vex-area='welcome-starters-slot']")?.contains(grid)).toBe(true);
+    expect(band.contains(grid)).toBe(false);
+    expect(container.querySelectorAll("[data-vex-composer-starters]")).toHaveLength(1);
+    // Still before the field in reading and focus order.
+    const field = screen.getByLabelText("Ask Vex");
+    expect((grid as Element).compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And still the composer's: a pick seeds its draft.
+    fireEvent.click(screen.getByRole("button", { name: /check wallet balances/i }));
+    expect((field as HTMLTextAreaElement).value).toBe(
+      QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
+    );
+    // The welcome's draft outlives the render; leave it empty.
+    fireEvent.change(field, { target: { value: "" } });
   });
 
   it("keeps the anchor, on the same nodes, across empty → chip-seeded long draft → cleared draft", async () => {

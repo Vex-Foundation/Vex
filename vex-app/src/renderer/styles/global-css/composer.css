@@ -205,6 +205,22 @@ html[data-still] .vex-welcome__greeting {
 .vex-shell-frame[data-vex-frame="h3"] .vex-starter-grid {
   width: var(--vex-read-w);
 }
+/* In the welcome (its slot under the notes, welcome-starters-slot.ts) the
+ * grid stands 28 under the notes, on the welcome's own reading line, so the
+ * greeting, its notes and the suggestions are one group at the column's top
+ * and the chat under them is empty down to the composer. */
+.vex-welcome__starters {
+  width: 100%;
+}
+.vex-welcome__starters:empty {
+  display: none;
+}
+.vex-welcome__starters > .vex-starters {
+  padding: 28px 0 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-welcome__starters > .vex-starters {
+  padding-inline: 0;
+}
 .vex-shell-frame[data-vex-frame="h3"] .vex-welcome {
   padding: 72px 24px 0 var(--vex-read-x);
 }

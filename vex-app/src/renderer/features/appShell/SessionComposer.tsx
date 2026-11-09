@@ -26,6 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DragEvent, JSX, MouseEvent as ReactMouseEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
@@ -52,6 +53,7 @@ import { inferenceSettingsRoute } from "../../stores/uiStore/shell-route.js";
 import { useComposerSubmit } from "./composer-submit.js";
 import { ComposerField } from "./ComposerField.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
+import { useWelcomeStartersSlot } from "./welcome-starters-slot.js";
 import { ComposerSendControl } from "./ComposerSendControl.js";
 import {
   APPROVAL_WAIT_PLACEHOLDER,
@@ -253,6 +255,8 @@ export function SessionComposer({
   // `variant`; the composer now consumes that single source instead of keeping
   // a second one.
   const showQuickActions = stage === "hero";
+  // The welcome's slot under its notes, while the welcome stands (D2).
+  const welcomeSlot = useWelcomeStartersSlot();
 
   const applyQuickAction = useCallback(
     (prompt: string): void => {
@@ -354,26 +358,35 @@ export function SessionComposer({
     />
   );
 
+  const starters = (
+    <div data-vex-composer-starters="" className="vex-starters">
+      <ComposerQuickActions
+        onPick={applyQuickAction}
+        onCreateMission={createMission}
+        concealed={draft.length > 0}
+        locked={submitPending}
+      />
+    </div>
+  );
+
   return (
     <>
-      {/* The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7):
-       * the two-by-two grid low in the column, OVER the composer, so they
-       * come before the field in reading and focus order too. Concealed
-       * WHILE THE USER IS TYPING, at once and keeping their box (VEX Cloud's
+      {/* The welcome's suggestions (docs/design/H3-DESKTOP.md sections 1.7
+       * and 6.6): D2 stands them in the welcome, right under its notes, one
+       * group with the greeting at the top of the reading column (the
+       * welcome's slot, `welcome-starters-slot.ts`); with no welcome slot
+       * they stay here, over the composer. Either way they come before the
+       * field in reading and focus order. Concealed WHILE THE USER IS
+       * TYPING, at once and keeping their box (VEX Cloud's
        * `SuggestionRows`), fading back over 200 ms when the draft empties;
        * nothing slides, and the field never moves. Always this child (or
        * its empty slot), so the composer's own node after it keeps its
        * place across the welcome edge. */}
-      {showQuickActions ? (
-        <div data-vex-composer-starters="" className="vex-starters">
-          <ComposerQuickActions
-            onPick={applyQuickAction}
-            onCreateMission={createMission}
-            concealed={draft.length > 0}
-            locked={submitPending}
-          />
-        </div>
-      ) : null}
+      {showQuickActions
+        ? welcomeSlot === null
+          ? starters
+          : createPortal(starters, welcomeSlot)
+        : null}
       <div
         data-vex-composer-stage={stage}
         className="relative"

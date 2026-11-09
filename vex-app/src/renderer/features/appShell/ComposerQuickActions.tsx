@@ -1,7 +1,9 @@
 /**
- * The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7 and
- * Appendix A.4): H3's two-by-two grid of cells, low in the chat column over
- * the composer, 704 to 1416 by 536 to 762 at 1440, each cell about 356 x 113.
+ * The welcome's suggestions (docs/design/H3-DESKTOP.md sections 1.7 and 6.6
+ * and Appendix A.4): a two-by-two grid of cells, each cell about 356 x 113.
+ * D2 stands it in the welcome, right under the greeting's notes, on the
+ * reading column (the composer portals it into the welcome's slot,
+ * `welcome-starters-slot.ts`); with no welcome it stands over the composer.
  * Each cell is one key: its line icon, its title (sans 16, ink), its muted
  * line under the title (sans 14) and an arrow at the right, the cell's rules
  * dividing it from its neighbours (`.vex-starter`, composer.css).
