@@ -40,6 +40,7 @@ import { useApprovalDock } from "./ApprovalCard/approval-dock.js";
 import { ClosedApprovalCard } from "./ApprovalCard/ClosedApprovalCard.js";
 import type { DecidedHere } from "./ApprovalCard/closed-approval.js";
 import { selectFreshApprovals } from "./approvals/fresh-approvals.js";
+import { decisionFailed, decisionLanded, publishApprovalDecision } from "./approvals/decision-signal.js";
 
 /** The region's stack in createdAt order, the pending list's own (`ORDER BY created_at`). */
 function byCreatedAt(a: ApprovalSummaryDto, b: ApprovalSummaryDto): number {
@@ -273,7 +274,14 @@ export function ApprovalsRegion({
             // The reply to a decision made here, kept for the closed card
             // that will stand in this one's place. Read only; the decision
             // itself is the card's.
-            onResolved={(decision, result) => recordDecision(summary.id, { decision, result })}
+            onResolved={(decision, result) => {
+              recordDecision(summary.id, { decision, result });
+              // Display only: Kimm's mood clock reads it, the decision never does.
+              publishApprovalDecision(decisionLanded({ decision, result, approvalId: summary.id, sessionId }));
+            }}
+            onDecisionFailed={(decision) =>
+              publishApprovalDecision(decisionFailed({ decision, approvalId: summary.id, sessionId }))
+            }
           />
         ),
       )}

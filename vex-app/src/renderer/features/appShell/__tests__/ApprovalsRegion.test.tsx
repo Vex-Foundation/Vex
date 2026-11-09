@@ -25,7 +25,10 @@ type PendingData =
 let pendingState: PendingData = { data: undefined };
 /** The approvals read (`approvals.get`) by id, for the closed cards. */
 let records = new Map<string, ApprovalSummaryDto | null>();
-type MutateOptions = { onSuccess?: (result: Result<ApprovalActionResult>) => void };
+type MutateOptions = {
+  onSuccess?: (result: Result<ApprovalActionResult>) => void;
+  onError?: (error: Error) => void;
+};
 let rejectMutate = vi.fn<(input: unknown, options?: MutateOptions) => void>();
 const refetch = vi.fn();
 
@@ -42,6 +45,9 @@ vi.mock("../../../lib/api/approvals.js", () => ({
 const { ApprovalsRegion } = await import("../ApprovalsRegion.js");
 const { ApprovalDockProvider } = await import("../ApprovalCard/approval-dock.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
+const { lastApprovalDecision, resetApprovalDecisionSignalForTests, subscribeApprovalDecisions } = await import(
+  "../approvals/decision-signal.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000aa01";
 
@@ -92,6 +98,7 @@ beforeEach(() => {
   records = new Map();
   rejectMutate = vi.fn();
   refetch.mockClear();
+  resetApprovalDecisionSignalForTests();
 });
 
 describe("ApprovalsRegion", () => {
@@ -381,6 +388,68 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     expect(document.querySelector("[data-vex-area='approval-closed']")).not.toBeNull();
     rerenderWith([], "00000000-0000-4000-8000-00000000aa02");
     expect(document.querySelector("[data-vex-area='approval-closed']")).toBeNull();
+  });
+});
+
+describe("ApprovalsRegion publishes the decision signal for Kimm's mood clock (display only)", () => {
+  const reply = (over: Partial<ApprovalActionResult> = {}): ApprovalActionResult => ({
+    id: "appr-1",
+    status: "rejected",
+    resolvedAt: "2026-05-28T10:02:00.000Z",
+    runtimeOutcome: "resumed",
+    executionStatus: null,
+    missionRunId: null,
+    cached: false,
+    message: "Rejected.",
+    ...over,
+  });
+
+  it("publishes nothing until a decision lands", () => {
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    expect(lastApprovalDecision()).toBeNull();
+  });
+
+  it("publishes a landed rejection, once, with the card's own ids", () => {
+    const heard = vi.fn();
+    subscribeApprovalDecisions(heard);
+    rejectMutate.mockImplementation((_input, options) => options?.onSuccess?.({ ok: true, data: reply() }));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(rejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(lastApprovalDecision()).toEqual(
+      expect.objectContaining({ kind: "rejected", decision: "reject", approvalId: "appr-1", sessionId: SESSION }),
+    );
+  });
+
+  it("publishes a failed decision, and the card still shows its failure and keeps its keys", () => {
+    rejectMutate.mockImplementation((_input, options) => options?.onError?.(new Error("IPC channel closed.")));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(lastApprovalDecision()).toEqual(expect.objectContaining({ kind: "failed", decision: "reject" }));
+    expect(screen.getByRole("alert").textContent).toBe("IPC channel closed.");
+    expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("never lets a reader that throws reach back into the decision", () => {
+    subscribeApprovalDecisions(() => {
+      throw new Error("a broken reader");
+    });
+    rejectMutate.mockImplementation((_input, options) => options?.onSuccess?.({ ok: true, data: reply() }));
+    pendingState = { data: { ok: true, data: [makeSummary({ riskLevel: "info", actionKind: "read" })] } };
+    renderRegion();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    });
+    expect(lastApprovalDecision()?.kind).toBe("rejected");
+    expect(rejectMutate).toHaveBeenCalledTimes(1);
   });
 });
 

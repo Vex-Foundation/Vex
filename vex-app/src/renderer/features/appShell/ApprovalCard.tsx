@@ -158,6 +158,13 @@ export interface ApprovalCardProps {
    */
   readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
   /**
+   * Fires when a decision did not go through (its reply was a failure or it
+   * never answered), after the card has shown its failure line. Display
+   * only: the chat publishes it for Kimm's mood clock
+   * (`approvals/decision-signal.ts`); nothing here waits on it.
+   */
+  readonly onDecisionFailed?: (decision: "approve" | "reject") => void;
+  /**
    * `row` folds the card to one line for the Needs you page (section 8.5):
    * the sentence, the meta line, Reject and "Review {action}". The decision
    * state lives in THIS component either way, so switching a card between its
@@ -191,6 +198,7 @@ export function ApprovalCard({
   idVariant,
   projectName = null,
   onResolved,
+  onDecisionFailed,
   layout = "card",
   onReview,
   decisionDock = null,
@@ -266,12 +274,14 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("approve");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("approve");
         },
       },
     );
@@ -297,12 +307,14 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("reject");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("reject");
         },
       },
     );
