@@ -1761,3 +1761,119 @@
   font-size: 12px;
   color: var(--vex-alias-accent-primary);
 }
+
+/* ---- Vex Inference funds (`VexCloudFundingScreen`) ---------------------
+ * docs/design/H3-DESKTOP.md section 4.9. The plate is VEX Cloud's built Vex
+ * Inference page (owner decision 2026-11-09, look only; Cloud's
+ * `inference.css` section 5, `.vx-acct-figs`, and its 760 money forms):
+ *   - the Balance box: one rule frame on the card ground, a 44 head (12 caps
+ *     600, and "As of {time}" 12 muted at the right), then the two figures
+ *     and the keys cut by 1px rules; a figure is an 11 caps muted label over
+ *     a 20 mono figure and a 13 muted line, padding 14 16; Deposit and
+ *     Withdraw stand stacked as cells at the right, at least 160 wide, never
+ *     blue;
+ *   - the tab panels are framed on the card ground, at most 760 wide. */
+.vex-inf-bal {
+  max-width: 1136px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-inf-bal__h {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-inf-bal__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-bal__asof {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-inf-figs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 1px;
+  background: var(--vex-alias-rule);
+}
+.vex-inf-fig {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--vex-alias-card);
+}
+.vex-inf-fig__k {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-inf-fig__v {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-fig__n {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-inf-keys {
+  display: flex;
+  flex-direction: column;
+  background: var(--vex-alias-bg-base);
+}
+.vex-inf-key {
+  display: inline-flex;
+  min-width: 160px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-inf-key + .vex-inf-key {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-inf-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-inf-forms {
+  max-width: 760px;
+}
+.vex-inf-panel {
+  padding: 20px;
+  border: 1px solid var(--vex-alias-rule);
+  border-top: 0;
+  background: var(--vex-alias-card);
+}
