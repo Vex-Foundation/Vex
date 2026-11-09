@@ -617,3 +617,47 @@ section.vex-set__sec.vex-set__stack > :is(.vex-set__sh, .vex-set__sh-title):firs
   padding: 0 16px;
   border-bottom: 1px solid var(--vex-alias-rule);
 }
+
+/* THE VEX INFERENCE ACCOUNT (`VexCloudAccountPanel`; VEX Cloud's built
+ * `AccountBodyView`, owner decision 2026-11-09): each group's head is the 12
+ * caps name (600) with "As of {time}" 12 muted at its right. In Settings
+ * each group is a box on the card ground, its head a 44 band, its rows 16
+ * in; in onboarding the heads stand as labels over the same rows. */
+.vex-acct-box__h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vex-acct-box__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-acct-box__asof {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set .vex-acct-box {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-set .vex-acct-box__h {
+  min-height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-set .vex-acct-box__b {
+  margin: 0;
+  padding: 0 16px;
+}
+.vex-set .vex-acct-box__foot {
+  margin: 0;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
