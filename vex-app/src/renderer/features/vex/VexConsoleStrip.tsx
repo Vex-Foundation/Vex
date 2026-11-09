@@ -138,7 +138,11 @@ export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand }
         ) : (
           <>
             <span className="vex-console__label">Needs you</span>
-            {count === null ? null : <span className="vex-console__count vex-num">{count}</span>}
+            {count === null ? null : (
+              <span className="vex-console__count vex-num" data-zero={count === "0" ? "" : undefined}>
+                {count}
+              </span>
+            )}
           </>
         )}
       </div>

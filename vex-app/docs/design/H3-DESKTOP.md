@@ -127,7 +127,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Part | y, height | Contents |
 |---|---|---|
 | the Vex key | the header, 248 to 680 | section 1.6 |
-| Needs you head | 76, 44 | NEEDS YOU, and the count at the right; VEX Cloud's `.cn-h`, its rule inside |
+| Needs you head | 76, 44 | NEEDS YOU, and the count at the right, muted at zero (Cloud's `b[data-zero]`); VEX Cloud's `.cn-h`, its rule inside. The console's heads (Needs you, AI permission, This project, Recent activity) are `h2`, as Cloud's are under its `h1` title |
 | Needs you row | 120, 64 | the decision as a sentence ("Approve swap: 200 USDC → ETH"), a meta line ("Mainnet, real funds · since 12:40") and a REVIEW key cell with a chevron (559 to 680, raised fill); at zero, "Nothing needs you." |
 | missions row | 184, 40 | the missions icon, "1 mission running on Mainnet · Grow ETH", a chevron |
 | strategies row | 224, 40 | "2 strategies running", a chevron. Not on desktop |

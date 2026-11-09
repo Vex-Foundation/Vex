@@ -159,6 +159,11 @@
   font-weight: 400;
   letter-spacing: var(--tracking-figure);
 }
+/* A zero is muted, so the eye goes to a count that asks something (VEX
+ * Cloud's `.cn-h b[data-zero]`, `.vx-cl-needs b[data-zero]`). */
+.vex-console__count[data-zero] {
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-console__decision {
   display: flex;
   box-sizing: border-box;

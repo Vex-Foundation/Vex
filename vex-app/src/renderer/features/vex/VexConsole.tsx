@@ -294,15 +294,17 @@ export function VexConsoleNeedsYou({ needsYou }: { readonly needsYou: NeedsYouRe
       className="vex-console__needs"
     >
       <div className="vex-console__head vex-console__head--needs">
-        <h3 id={headId} className="vex-console__heading">
+        <h2 id={headId} className="vex-console__heading">
           <span className="vex-console__label">Needs you</span>
           {count === null ? null : (
             <>
               <span className="sr-only">: </span>
-              <span className="vex-console__count vex-num">{count}</span>
+              <span className="vex-console__count vex-num" data-zero={count === "0" ? "" : undefined}>
+                {count}
+              </span>
             </>
           )}
-        </h3>
+        </h2>
         <ListCue place={place} onPage={turnPage} />
       </div>
       <div className="vex-console__decision" data-vex-area="vex-needs-you-row">
@@ -575,9 +577,9 @@ export function VexConsoleActivity({
       data-vex-activity-scope={projectId === null ? "global" : "project"}
       className="vex-console__section"
     >
-      <h3 id={headId} className="vex-console__head vex-console__head--section">
+      <h2 id={headId} className="vex-console__head vex-console__head--section">
         <span className="vex-console__label">Recent activity</span>
-      </h3>
+      </h2>
       <ActivityRows projectId={projectId} />
       <OpenActivityKey projectId={projectId} />
     </section>
@@ -617,9 +619,9 @@ export function VexConsolePermission({
       data-permission={session.permission}
       className="vex-console__section"
     >
-      <h3 id={headId} className="vex-console__head vex-console__head--section">
+      <h2 id={headId} className="vex-console__head vex-console__head--section">
         <span className="vex-console__label">AI permission</span>
-      </h3>
+      </h2>
       <div className="vex-console__permission">
         <p className="vex-console__permission-sentence">{PERMISSION_SENTENCE[session.permission]}</p>
         <p className="vex-console__permission-origin">{PERMISSION_ORIGIN}</p>
@@ -716,9 +718,9 @@ export function VexConsoleThisProject({
       data-permission={project?.permission}
       className="vex-console__section"
     >
-      <h3 id={headId} className="vex-console__head vex-console__head--section">
+      <h2 id={headId} className="vex-console__head vex-console__head--section">
         <span className="vex-console__label">This project</span>
-      </h3>
+      </h2>
       {project === null ? (
         <p className="vex-console__note">
           {query.isLoading ? "Loading…" : "Vex could not read this project."}

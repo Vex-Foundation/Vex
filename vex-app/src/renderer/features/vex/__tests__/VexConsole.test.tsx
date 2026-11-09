@@ -21,6 +21,8 @@
  *    where it comes from; never "Change in Settings"; nothing with no chat.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalNeedsYouItem, needsYouLeadOf, type NeedsYouItem } from "../needs-you.js";
@@ -139,7 +141,7 @@ describe("the console's Needs you head", () => {
     expect(needsYouCountText(model({ status: "loading", count: null }))).toBeNull();
 
     render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
-    const head = within(section()).getByRole("heading", { level: 3 });
+    const head = within(section()).getByRole("heading", { level: 2 });
     expect(head.querySelector(".vex-console__label")?.textContent).toBe("Needs you");
     expect(head.querySelector(".vex-console__count")?.textContent).toBe("0");
     // The section is named by its head.
@@ -162,6 +164,17 @@ describe("the console's decision row", () => {
     render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
     expect(row().textContent).toBe("Nothing needs you.");
     expect(within(row()).queryByRole("button")).toBeNull();
+  });
+
+  it("mutes a zero count, and only a zero (VEX Cloud's b[data-zero])", () => {
+    const view = render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
+    expect(section().querySelector(".vex-console__count")?.hasAttribute("data-zero")).toBe(true);
+    view.unmount();
+    const item = approvalNeedsYouItem(approval({ id: "a1", sessionId: SESSION }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([item])} />);
+    expect(section().querySelector(".vex-console__count")?.hasAttribute("data-zero")).toBe(false);
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/vex-sidebar.css"), "utf8");
+    expect(sheet).toMatch(/\.vex-console__count\[data-zero\] \{\s*color: var\(--vex-alias-label-tertiary\);/);
   });
 
   it("gives the card's own sentence, its meta line, and a key that only opens the card", () => {
@@ -445,7 +458,7 @@ describe("the console's recent activity", () => {
       },
     });
     render(<VexConsoleActivity />);
-    expect(within(activity()).getByRole("heading", { level: 3 }).textContent).toBe("Recent activity");
+    expect(within(activity()).getByRole("heading", { level: 2 }).textContent).toBe("Recent activity");
     const rows = Array.from(activity().querySelectorAll("li"));
     expect(rows.map((row) => row.querySelector(".vex-console__activity-title")?.textContent)).toEqual([
       "Swap USDC → ETH",
@@ -505,7 +518,7 @@ describe("the console's AI permission", () => {
     const part = (): HTMLElement | null =>
       document.querySelector<HTMLElement>("[data-vex-area='vex-permission']");
     expect(part()?.getAttribute("data-permission")).toBe("restricted");
-    expect(within(part() ?? document.body).getByRole("heading", { level: 3 }).textContent).toBe(
+    expect(within(part() ?? document.body).getByRole("heading", { level: 2 }).textContent).toBe(
       "AI permission",
     );
     expect(part()?.textContent).toContain(
@@ -558,7 +571,7 @@ describe("the console's This project (Studio)", () => {
       displayPath: "~/Vex/projects/notes",
     };
     render(<VexConsoleThisProject projectId={PROJECT_ID} />);
-    expect(within(part() ?? document.body).getByRole("heading", { level: 3 }).textContent).toBe(
+    expect(within(part() ?? document.body).getByRole("heading", { level: 2 }).textContent).toBe(
       "This project",
     );
     expect(part()?.textContent).toContain(PROJECT_ACCESS_SENTENCE.restricted);
