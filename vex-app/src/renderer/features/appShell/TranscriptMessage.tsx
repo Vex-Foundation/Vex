@@ -31,7 +31,11 @@ import { CompactionMarker } from "./CompactionMarker.js";
 import { deskMessageForDisplay } from "./lighterTrading/desk-context.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
-import { TraceGroup, type TraceHeadFacts } from "./SessionTranscript/TurnTrace.js";
+import {
+  TraceGroup,
+  TraceStepItem,
+  type TraceHeadFacts,
+} from "./SessionTranscript/TurnTrace.js";
 import type { TurnOutcome } from "./SessionTranscript/turnSteps.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
 import type { BoardArrival } from "./Board/board-surface-contracts.js";
@@ -430,7 +434,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <AssistantSpeakerLabel />
           {thought ? (
             <TraceGroup anchorId={turnAnchorId} head={head}>
-              <ReasonedBlock reasoning={row.reasoning} />
+              <TraceStepItem kind="model">
+                <ReasonedBlock reasoning={row.reasoning} />
+              </TraceStepItem>
             </TraceGroup>
           ) : null}
           <AssistantBody content={row.content} />
@@ -466,7 +472,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <AssistantSpeakerLabel />
           {thought ? (
             <TraceGroup anchorId={turnAnchorId} head={head}>
-              <ReasonedBlock reasoning={row.reasoning} />
+              <TraceStepItem kind="model">
+                <ReasonedBlock reasoning={row.reasoning} />
+              </TraceStepItem>
             </TraceGroup>
           ) : null}
           <AssistantBody content={row.content} />
@@ -502,7 +510,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             {...turnSeams(turnMark, false)}
           >
             <TraceGroup anchorId={turnAnchorId} head={head}>
-              <div className="vex-steps">
+              <TraceStepItem kind="tool">
                 <ToolDisclosure
                   label={row.label ?? "tool_output"}
                   body={row.content}
@@ -512,7 +520,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                     explorer refs still surface here - grouped/paired acts get
                     theirs via ToolActRow instead. Inert when nothing resolves. */}
                 <ExplorerRefLinks refs={row.explorerRefs} />
-              </div>
+              </TraceStepItem>
             </TraceGroup>
           </div>
         );
@@ -529,7 +537,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               <AssistantSpeakerLabel />
               {thought ? (
                 <TraceGroup anchorId={turnAnchorId} head={head}>
-                  <ReasonedBlock reasoning={row.reasoning} />
+                  <TraceStepItem kind="model">
+                    <ReasonedBlock reasoning={row.reasoning} />
+                  </TraceStepItem>
                 </TraceGroup>
               ) : null}
               <AssistantBody content={row.content} />
@@ -561,10 +571,16 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       return (
         <div className="vex-reply" {...turnSeams(turnMark, false)}>
           <TraceGroup anchorId={turnAnchorId} head={head}>
-            {(row.reasonings ?? []).map((trace, index) => (
-              <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
-            ))}
-            <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+            {(row.reasonings ?? []).map((trace, index) =>
+              (trace ?? "").length > 0 ? (
+                <TraceStepItem key={`${row.id}-${index}`} kind="model">
+                  <ReasonedBlock reasoning={trace} />
+                </TraceStepItem>
+              ) : null,
+            )}
+            <TraceStepItem kind="tool">
+              <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+            </TraceStepItem>
           </TraceGroup>
           <ActReceipts acts={row.calls ?? []} sessionId={sessionId} />
           {/* A group folds its acts; a mission result must not fold with them. */}
@@ -630,7 +646,9 @@ function ToolSteps({
   if (acts.length === 0) {
     return (reasoning ?? "").length > 0 ? (
       <TraceGroup anchorId={turnAnchorId} head={head}>
-        <ReasonedBlock reasoning={reasoning} />
+        <TraceStepItem kind="model">
+          <ReasonedBlock reasoning={reasoning} />
+        </TraceStepItem>
       </TraceGroup>
     ) : null;
   }
@@ -645,19 +663,24 @@ function ToolSteps({
   return (
     <>
       <TraceGroup anchorId={turnAnchorId} head={head}>
-        <ReasonedBlock reasoning={reasoning} />
+        {(reasoning ?? "").length > 0 ? (
+          <TraceStepItem kind="model">
+            <ReasonedBlock reasoning={reasoning} />
+          </TraceStepItem>
+        ) : null}
         {acts.length > 1 ? (
-          <ToolGroupRow group={foldOf(row, acts)} pendingApprovals={pendingApprovals} />
+          <TraceStepItem kind="tool">
+            <ToolGroupRow group={foldOf(row, acts)} pendingApprovals={pendingApprovals} />
+          </TraceStepItem>
         ) : (
-          <div data-vex-tool-ledger="" className="vex-steps">
-            {acts.map((act) => (
+          acts.map((act) => (
+            <TraceStepItem key={act.toolCallId} kind="tool">
               <ToolActRow
-                key={act.toolCallId}
                 act={act}
                 pendingApprovalId={pendingApprovals?.get(act.toolCallId) ?? null}
               />
-            ))}
-          </div>
+            </TraceStepItem>
+          ))
         )}
       </TraceGroup>
       <ActReceipts acts={acts} sessionId={sessionId} />

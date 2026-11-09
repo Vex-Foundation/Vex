@@ -3,9 +3,16 @@
  * built trace, `components/chat/trace/TraceCard.tsx`): one head per turn over
  * every step of the turn, on the card ground in the 1px rule.
  *
- *   div[data-vex-trace-group][data-shut]?   one group of steps at its place in the turn
- *   ├─ TraceHead                            only on the turn's first group
- *   └─ div[data-vex-trace-body]             hidden="until-found" while the turn is folded
+ *   div.vex-trace[data-vex-trace-group][data-shut]?   one group of steps: a card at its place in the turn
+ *   ├─ TraceHead                                       only on the turn's first group
+ *   └─ div[data-vex-trace-body]                        hidden="until-found" while the turn is folded
+ *      └─ ol.vex-trace-steps                           the steps, one li each, on the rail at x 19
+ *
+ * THE STEPS (VEX Cloud's `.vx-trace-steps` and `.vx-trace-step`): one list
+ * per group, no rule between steps, a 1px rail through the nodes. Each step
+ * is a grid of the node (12), its kind in caps 10 (MODEL, TOOL; 64), its
+ * text, its time or word, and the chevron (16). A step's key keeps its own
+ * accessible name: the kind column is a drawing (`aria-hidden`).
  *
  * A turn's steps sit in several rows (a thought, a call, a fold of calls,
  * each persisted on its own); each row's step parts are a group, and the head
@@ -218,10 +225,20 @@ export function TraceGroup({
   readonly anchorId: number | undefined;
   /** Set on the turn's first group only. */
   readonly head?: TraceHeadFacts | null;
+  /** The steps, each an `li` (`TraceStepItem`). */
   readonly children: ReactNode;
 }): JSX.Element {
   const fold = useTurnFoldView();
-  if (fold === null || anchorId === undefined) return <>{children}</>;
+  if (fold === null || anchorId === undefined) {
+    // Outside a whole turn: the same card and list, never folded.
+    return (
+      <div data-vex-trace-group="" className="vex-trace">
+        <div data-vex-trace-body="">
+          <ol className="vex-trace-steps">{children}</ol>
+        </div>
+      </div>
+    );
+  }
   return (
     <FoldedGroup
       anchorId={anchorId}
@@ -233,6 +250,31 @@ export function TraceGroup({
     >
       {children}
     </FoldedGroup>
+  );
+}
+
+/** One step of a group's list. */
+export function TraceStepItem({
+  kind,
+  children,
+}: {
+  /** Who acts in the step: the model thinking, or a tool. */
+  readonly kind: "model" | "tool";
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <li data-vex-trace-kind={kind} className="vex-trace-step">
+      {children}
+    </li>
+  );
+}
+
+/** The kind column's word, a drawing: the step's key names the step. */
+export function TraceKind({ kind }: { readonly kind: "model" | "tool" }): JSX.Element {
+  return (
+    <span aria-hidden="true" className="vex-step__kind">
+      {kind === "model" ? "Model" : "Tool"}
+    </span>
   );
 }
 
@@ -256,7 +298,7 @@ function FoldedGroup({
   const body = useRef<HTMLDivElement>(null);
   useFoldHide(body, shut, () => onReveal(anchorId));
   return (
-    <div data-vex-trace-group="" data-shut={shut ? "" : undefined}>
+    <div data-vex-trace-group="" data-shut={shut ? "" : undefined} className="vex-trace">
       {head === null ? null : (
         <TraceHead
           anchorId={anchorId}
@@ -267,7 +309,7 @@ function FoldedGroup({
         />
       )}
       <div ref={body} data-vex-trace-body="">
-        {children}
+        <ol className="vex-trace-steps">{children}</ol>
       </div>
     </div>
   );

@@ -8,6 +8,8 @@
  * every row of the turn.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TranscriptRows } from "../../SessionTranscript/TranscriptRows.js";
@@ -226,5 +228,50 @@ describe("the turn's fold while it runs", () => {
       vi.advanceTimersByTime(FOLD_DELAY_MS);
     });
     expect(head(view.container).getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("the trace's steps (VEX Cloud's .vx-trace-steps)", () => {
+  it("draws each group as one card holding one list, a step per item, with its kind", () => {
+    const { container } = render(draw(TURN, new Set([10, 11, 12]), false));
+    fireEvent.click(head(container));
+    const cards = container.querySelectorAll(".vex-trace[data-vex-trace-group]");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card.querySelectorAll(":scope > [data-vex-trace-body] > ol.vex-trace-steps")).toHaveLength(1);
+    }
+    // Row 11: its thought and its call, one list; row 12: the answer's thought.
+    const first = cards[0]?.querySelector("ol.vex-trace-steps");
+    expect([...(first?.children ?? [])].map((li) => li.getAttribute("data-vex-trace-kind"))).toEqual([
+      "model",
+      "tool",
+    ]);
+    expect([...(first?.children ?? [])].every((li) => li.tagName === "LI")).toBe(true);
+    expect(first?.querySelectorAll(".vex-step__kind")).toHaveLength(2);
+  });
+
+  it("keeps each step's name: the kind column is a drawing", () => {
+    render(draw(TURN, new Set([10, 11, 12]), false));
+    fireEvent.click(screen.getByRole("button", { name: "Thought, 3 steps" }));
+    // A thought's key is its label; a tool's key its title (and its word).
+    expect(screen.getAllByRole("button", { name: "Thought" })).toHaveLength(2);
+    const tool = document.querySelector<HTMLElement>('[data-vex-trace-kind="tool"] button');
+    expect(tool?.getAttribute("aria-expanded")).toBe("false");
+    expect(tool?.querySelector(".vex-step__kind")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("raw-CSS contract: the rail at x 19, no rule between steps, the 12 / 64 / text / time / 16 grid", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-trace-steps::before \{[^}]*top: 18px;[^}]*bottom: 18px;[^}]*left: 19px;[^}]*width: 1px;/);
+    expect(css).toMatch(
+      /:is\(\.vex-step, \.vex-step__key\)\.vex-step__grid \{[^}]*grid-template-columns: 12px 64px minmax\(0, 1fr\) auto 16px;[^}]*column-gap: 14px;[^}]*padding: 9px 14px;/,
+    );
+    expect(css).toMatch(/\.vex-step__kind \{[^}]*font-size: 10px;[^}]*letter-spacing: 0\.1em;[^}]*text-transform: uppercase;/);
+    expect(css).toMatch(/\.vex-trace \{[^}]*border: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-card\);/);
+    // No rule between two steps of a list.
+    expect(css).not.toMatch(/\[data-vex-message-role="tool"\] \+ \[data-vex-message-role="tool"\] \{/);
   });
 });

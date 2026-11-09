@@ -8,10 +8,8 @@
  */
 
 import { useId, useRef, useState, type JSX } from "react";
-import {
-  LineChevronDown,
-  LineChevronUp,
-} from "../../components/icons/line/index.js";
+import { LineChevronDown } from "../../components/icons/line/index.js";
+import { TraceKind } from "./SessionTranscript/TurnTrace.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 
 export function ToolDisclosure({
@@ -37,16 +35,19 @@ export function ToolDisclosure({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={bodyId}
-          className="vex-step__key"
+          className="vex-step__key vex-step__grid"
         >
           <span aria-hidden className="vex-step__fill" />
+          <TraceKind kind="tool" />
           {/* The raw tool id: a technical string, so the code face. */}
-          <span className="vex-step__title font-code text-[13px]">
-            {label}
+          <span className="vex-step__text">
+            <span className="vex-step__title font-code text-[13px]">
+              {label}
+            </span>
           </span>
-          <span aria-hidden className="vex-step__spacer" />
+          <span aria-hidden className="vex-step__end" />
           <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+            <LineChevronDown size={14} />
           </span>
         </button>
       </div>

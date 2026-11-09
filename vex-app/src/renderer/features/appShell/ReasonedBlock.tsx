@@ -43,15 +43,13 @@
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
-import {
-  LineChevronDown,
-  LineChevronUp,
-} from "../../components/icons/line/index.js";
+import { LineChevronDown } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 import { StepNode } from "./ToolLedger/StepNode.js";
+import { TraceKind } from "./SessionTranscript/TurnTrace.js";
 
 /**
  * H3's thinking glyph: the three-by-three dot grid it draws before THINKING
@@ -152,50 +150,55 @@ export function ReasonedBlock({
           and the moving summary says nothing about state, so AT is told
           directly that this trace is still arriving. */}
       {running ? <span className="sr-only">Reasoning</span> : null}
+      {/* ONE STEP OF THE TRACE (VEX Cloud's `.vx-trace-step`): the node,
+          MODEL in the kind column, the label and the trace's one line in the
+          text column, then the chevron. The key is the label alone; its hit
+          area stretches over the whole row (`.vex-reasoned__key::after`), so
+          the row opens wherever it is pressed while its accessible name stays
+          the label. */}
       <div
-        className="vex-reasoned__row"
+        className="vex-step vex-step__grid vex-reasoned__row"
         data-vex-sweep={running ? "running" : undefined}
       >
-        {/* The glyph: the running node while the trace streams, blinking
-            (PD-06), H3's dot grid once it has settled. */}
+        {/* The node: running while the trace streams, blinking (PD-06), the
+            done square once it has settled. */}
         <span aria-hidden className="vex-step__fill">
-          {running ? <StepNode state="running" /> : <ThinkGlyph />}
+          <StepNode state={running ? "running" : "done"} />
         </span>
-        {/* The key is the label; its hit area stretches over the whole row
-            (`.vex-reasoned__key::after`), so the row opens wherever it is
-            pressed while its accessible name stays the label alone. */}
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={() => setOpen((v) => !v)}
-          className="vex-reasoned__key"
-        >
-          {label}
-        </button>
-        {/* Expanding removes the moving summary: the full trace is right below
-            in ordinary page flow, and page reading must never fight an
-            internal follower. `text-clip` while following - an ellipsis at the
-            end of a line that is being scrolled to its end is a lie about
-            there being more. */}
-        {!open ? (
-          <span
-            ref={summaryRef}
-            data-vex-reasoning-summary=""
-            data-follow-end={running ? "true" : undefined}
-            className={cn(
-              "vex-reasoned__summary",
-              running ? "text-clip" : "text-ellipsis",
-            )}
+        <TraceKind kind="model" />
+        <span className="vex-step__text">
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={() => setOpen((v) => !v)}
+            className="vex-reasoned__key"
           >
-            {summary}
-          </span>
-        ) : (
-          <span aria-hidden className="vex-step__spacer" />
-        )}
-        <span aria-hidden className="vex-reasoned__chev">
-          {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+            {label}
+          </button>
+          {/* Expanding removes the moving summary: the full trace is right
+              below in ordinary page flow, and page reading must never fight
+              an internal follower. `text-clip` while following - an ellipsis
+              at the end of a line that is being scrolled to its end is a lie
+              about there being more. */}
+          {!open ? (
+            <span
+              ref={summaryRef}
+              data-vex-reasoning-summary=""
+              data-follow-end={running ? "true" : undefined}
+              className={cn(
+                "vex-reasoned__summary",
+                running ? "text-clip" : "text-ellipsis",
+              )}
+            >
+              {summary}
+            </span>
+          ) : null}
+        </span>
+        <span aria-hidden className="vex-step__end" />
+        <span aria-hidden className="vex-reasoned__chev vex-step__chev">
+          <LineChevronDown size={14} />
         </span>
       </div>
       {/* The trace rides the shared expand primitive: it stays mounted once

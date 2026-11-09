@@ -59,7 +59,6 @@ import {
 } from "react";
 import {
   LineChevronDown,
-  LineChevronUp,
 } from "../../../components/icons/line/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
 import { StateSquare } from "../../../components/ui/state-square.js";
@@ -69,6 +68,7 @@ import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
 import { ProtocolMark } from "./ProtocolMark.js";
+import { TraceKind } from "../SessionTranscript/TurnTrace.js";
 import { StepNode, type StepNodeState } from "./StepNode.js";
 import { ToolLegLine, ToolSingleLegLine } from "./ToolLegLine.js";
 import { formatToolDuration } from "./toolDuration.js";
@@ -433,10 +433,14 @@ export function ToolActRow({
           onClick={() => setOpen((v) => !v)}
           // The raw symbol stays reachable even though the row shows prose.
           title={act.toolName}
-          className="vex-step__key"
+          className="vex-step__key vex-step__grid"
         >
-          {/* The node: its slot always 10px wide, so every title starts on
-              one edge whether or not an outcome is known. */}
+          {/* THE TRACE STEP'S GRID (VEX Cloud's `.vx-trace-step`): the node
+              (its slot 12 wide, so every text starts on one edge whether or
+              not an outcome is known), TOOL in the kind column, the text
+              (the venue mark, the title, the one summary slot), the time
+              column, the chevron. ONE LINE, always (deepseek ToolRow): the
+              summary is the only member that fills and truncates. */}
           <span
             aria-hidden
             data-vex-tool-status={awaiting ? "waiting" : outcome?.state}
@@ -444,28 +448,28 @@ export function ToolActRow({
           >
             {node !== null ? <StepNode state={node} /> : null}
           </span>
-          <span className="vex-step__mark">
-            <ProtocolMark
-              protocol={identity.protocol}
-              fallbackGlyph={toolGlyph(act.toolName)}
-              size={14}
-            />
-          </span>
-          {/* ONE LINE, always (deepseek ToolRow): title, the FILL-truncating
-              summary, then the time column. `flex-none` on every fixed member
-              is what stops a long summary or a wide leg line from folding the
-              row into two lines. */}
-          <span className="vex-step__title vex-step__name">{identity.title}</span>
-          {summary}
-          <span aria-hidden className="vex-step__spacer" />
-          {word !== null ? (
-            <span data-vex-step-word="" className="vex-step__word">
-              {word}
+          <TraceKind kind="tool" />
+          <span className="vex-step__text">
+            <span className="vex-step__mark">
+              <ProtocolMark
+                protocol={identity.protocol}
+                fallbackGlyph={toolGlyph(act.toolName)}
+                size={14}
+              />
             </span>
-          ) : null}
-          {time !== null ? <DurationChip text={time} /> : null}
+            <span className="vex-step__title vex-step__name">{identity.title}</span>
+            {summary}
+          </span>
+          <span className="vex-step__end">
+            {word !== null ? (
+              <span data-vex-step-word="" className="vex-step__word">
+                {word}
+              </span>
+            ) : null}
+            {time !== null ? <DurationChip text={time} /> : null}
+          </span>
           <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+            <LineChevronDown size={14} />
           </span>
         </button>
         <DeskTicketLoadStamp act={act} />
