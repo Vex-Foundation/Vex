@@ -520,7 +520,7 @@ describe("MemoryPanel in the R3 register", () => {
     );
   });
 
-  it("says Loading in a word beside the listening fill, then draws a failure as the ink callout", async () => {
+  it("loads with H3's hatch and word over cover rows (no blue line), then draws a failure as the ink callout", async () => {
     longMemoryListMock.mockImplementation(
       () => new Promise(() => undefined),
     );
@@ -531,8 +531,13 @@ describe("MemoryPanel in the R3 register", () => {
     const loading = container.querySelector(
       '[data-vex-section="long-memory"] .vex-mem-loading',
     );
-    expect(loading?.textContent).toContain("Loading memory");
-    expect(loading?.querySelector('[data-s="listening"]')).not.toBeNull();
+    expect(loading?.getAttribute("role")).toBe("status");
+    expect(loading?.getAttribute("aria-label")).toBe("Loading memory…");
+    expect(loading?.querySelector(".vex-loading-word")?.textContent).toBe("Loading memory…");
+    expect(loading?.querySelector(".vex-loading-word .vex-stripes")).not.toBeNull();
+    expect(loading?.querySelectorAll("[data-vex-cover-rows] > li")).toHaveLength(2);
+    // R3's loading line is gone.
+    expect(loading?.querySelector(".vex-loader")).toBeNull();
     unmount();
 
     longMemoryListMock.mockReset();
