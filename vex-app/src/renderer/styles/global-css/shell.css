@@ -118,20 +118,28 @@
 .vex-shell-frame[data-vex-frame="h3"] {
   transition: none;
 }
-/* THE READING LINE (docs/design/H3-DESKTOP.md section 1.11; VEX Cloud's
- * `--read-x`, the mockup's tokens.css line 201): the transcript's text edge
- * inside the chat column, where the chat's title, the transcript and the
- * card's text start. 24 where the chat is no wider than the zoomed 760
- * column, else the column centred: 24 at 1440, 159.6 at 1920 and 254.1 at
- * 2560. Under 1024 it is 24. `--vex-chat-track` is the frame's solve. */
+/* THE READING COLUMN (docs/design/H3-DESKTOP.md section 6.6; the owner's
+ * D2 plates): the chat's content stands on a column ANCHORED AT THE CHAT'S
+ * LEFT, never centred, so it does not move when the window's right side
+ * does. `--vex-read-x` is its left edge in the chat (where the chat's title,
+ * the transcript and the card's text start) and `--vex-read-w` its width:
+ * the zoomed 712 (760 less its 24 sides; 711 measured on the plates) at
+ * 100 x zoom in (76 to 100 measured), the gutter giving way first, down to
+ * 24, where the chat is too narrow for both, then the width: 100 and 712 at
+ * 1440, 24 and 704 at 1280, 109.1 and 776.8 at 1920. Under 1024 it is 24
+ * and the chat less 48. `--vex-chat-track` is the frame's solve. */
 .vex-shell-frame[data-vex-frame="h3"] {
-  --vex-read-x: max(
+  --vex-read-span: calc((var(--vex-transcript-max) - 48px) * var(--vex-zoom));
+  --vex-read-x: clamp(
     24px,
-    calc((var(--vex-chat-track) - var(--vex-transcript-max) * var(--vex-zoom)) / 2 + 24px * var(--vex-zoom))
+    calc(var(--vex-chat-track) - var(--vex-read-span) - 24px),
+    calc(100px * var(--vex-zoom))
   );
+  --vex-read-w: min(var(--vex-read-span), calc(var(--vex-chat-track) - var(--vex-read-x) - 24px));
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] {
   --vex-read-x: 24px;
+  --vex-read-w: calc(var(--vex-chat-track) - 48px);
 }
 /* Each column's place: its own track, every row, in D2's order (left |
  * centre | Vex; docs/design/H3-DESKTOP.md section 6), which the Lighter desk
