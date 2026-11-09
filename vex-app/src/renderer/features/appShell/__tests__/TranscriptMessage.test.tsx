@@ -7,6 +7,8 @@
  * row renders the indicator only. Markers are static - no in-flight animation.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
@@ -571,7 +573,7 @@ describe("TranscriptMessage caption register (contract C2)", () => {
         row: row({ variant: "user", content: "hi" }),
       }),
     );
-    const caption = container.querySelector(".vex-micro");
+    const caption = container.querySelector(".vex-you__meta");
     expect(caption).not.toBeNull();
     expect(caption?.className).not.toContain("font-mono");
     expect(caption?.textContent).toContain("You");
@@ -579,8 +581,9 @@ describe("TranscriptMessage caption register (contract C2)", () => {
 
   it("draws the person's message as H3's bubble beside the avatar cell", () => {
     // docs/design/H3-DESKTOP.md section 1.7: the bubble, then the round avatar
-    // cell at its right. "You" is for assistive technology only (the avatar
-    // says it on screen), and the clock is hover-revealed chrome.
+    // cell at its right, under the meta line (VEX Cloud's `UserMessage`). The
+    // row is named "You", so the meta line's drawn "You" is hidden from
+    // assistive technology.
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "user", content: "Swap 200 USDC to ETH on Base." }),
@@ -596,8 +599,9 @@ describe("TranscriptMessage caption register (contract C2)", () => {
     expect(avatar?.querySelector("svg circle.vex-you__disc")).not.toBeNull();
     // The avatar is the row's last cell: the bubble sits to its left.
     expect(message?.lastElementChild).toBe(avatar);
-    expect(message?.querySelector(".sr-only")?.textContent).toBe("You");
-    expect(message?.querySelector(".vex-time-reveal")).not.toBeNull();
+    expect(message?.getAttribute("aria-label")).toBe("You");
+    expect(message?.querySelector('.vex-you__who > [aria-hidden="true"]')?.textContent).toBe("You");
+    expect(message?.querySelector(".vex-you__who time")).not.toBeNull();
   });
 
   it("puts the assistant clock and actions in a TAIL row, in the same register", () => {
@@ -743,6 +747,25 @@ describe("TranscriptMessage operator acknowledgement (M6)", () => {
     expect(node).not.toBeNull();
     expect(node?.getAttribute("role")).toBeNull();
     expect(node?.getAttribute("aria-live")).toBeNull();
+  });
+
+  it("draws a runtime note as a runtime line: the hud square, then the words, on the column's left", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "notice", content: "Run resumed" }), noticeTone: "runtime" },
+      }),
+    );
+    const node = container.querySelector('[data-vex-notice-tone="runtime"]');
+    expect(node?.firstElementChild?.className).toBe("vex-notice__sq");
+    expect(node?.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(node?.textContent).toBe("Run resumed");
+    expect(node?.parentElement?.className).not.toContain("justify-center");
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-notice \{[^}]*padding-left: 16px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/);
+    expect(css).toMatch(/\.vex-notice__sq \{[^}]*width: 6px;[^}]*height: 6px;/);
   });
 });
 
@@ -893,5 +916,104 @@ describe("TranscriptMessage: Vex's answer in bubble runs", () => {
     // Runs: [plan, detail] code [after] table [done].
     expect(tops).toEqual([true, false, false, true, false, true]);
     expect(bottoms).toEqual([false, true, false, true, false, true]);
+  });
+});
+
+describe("TranscriptMessage turn actions (VEX Cloud's TurnActions)", () => {
+  it("draws Vex's keys as message keys under the answer, always shown on the latest turn", () => {
+    const latest = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "answer" }),
+        latest: true,
+      }),
+    );
+    const reply = latest.container.querySelector(".vex-reply");
+    expect(reply?.hasAttribute("data-vex-latest")).toBe(true);
+    const copy = screen.getByRole("button", { name: "Copy message" });
+    expect(copy.className).toContain("vex-msg-key");
+    expect(copy.closest(".vex-reply__tail")).not.toBeNull();
+    latest.unmount();
+    const earlier = render(
+      createElement(TranscriptMessage, { row: row({ variant: "assistant", content: "answer" }) }),
+    );
+    expect(earlier.container.querySelector("[data-vex-latest]")).toBeNull();
+  });
+
+  it("raw-CSS contract: 32 keys with 16 glyphs in a 32 row, the latest turn's shown, the rest revealed over 200 ms", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-reply__tail \{[^}]*gap: 2px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key \{[^}]*width: 32px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key > svg \{[^}]*width: 16px;[^}]*height: 16px;/);
+    expect(css).toMatch(/transition: opacity 200ms/);
+    expect(css).toContain(".vex-reply[data-vex-latest] .vex-reply__tail > :is(.vex-time-reveal, .vex-action-reveal)");
+  });
+});
+
+describe("TranscriptMessage the person's message (VEX Cloud's UserMessage)", () => {
+  it("is an article named You: the meta line of keys and You · time over the bubble, the 34 avatar", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "user", content: "buy the dip" }), createdAt: "2026-05-26T10:00:00" },
+        latest: true,
+      }),
+    );
+    const article = screen.getByRole("article", { name: "You" });
+    expect(article.className).toBe("vex-you");
+    expect(article.hasAttribute("data-vex-latest")).toBe(true);
+    const meta = container.querySelector("[data-vex-user-meta]");
+    expect(meta?.nextElementSibling?.className).toBe("vex-you__stack");
+    expect(screen.getByRole("group", { name: "Message actions" }).contains(
+      screen.getByRole("button", { name: "Copy message" }),
+    )).toBe(true);
+    // "You" is drawn but not read twice; the clock is a <time>.
+    const who = meta?.querySelector(".vex-you__who");
+    expect(who?.textContent).toBe("You · 10:00");
+    expect(who?.querySelector("time")?.getAttribute("dateTime")).toBe("2026-05-26T10:00:00");
+    expect(container.querySelector(".vex-you__avatar svg")?.getAttribute("width")).toBe("34");
+  });
+
+  it("raw-CSS contract: the grid of the column and the 34 avatar, the 28 meta line, the latest row's Copy shown", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-you \{[^}]*grid-template-columns: minmax\(0, 1fr\) 34px;[^}]*column-gap: 12px;/);
+    expect(css).toMatch(/\.vex-you__meta \{[^}]*height: 28px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/);
+    expect(css).toContain(".vex-you[data-vex-latest] [data-vex-copy-message]");
+  });
+});
+
+describe("TranscriptMessage code and tables in the cell form (VEX Cloud's markdown)", () => {
+  const css = (): string =>
+    readFileSync(join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"), "utf8");
+
+  it("heads a code block with a sticky 40 bar: the language, then Wrap and Copy as 40 cells", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "```ts\nconst a = 1;\n```" }),
+      }),
+    );
+    const block = container.querySelector(".vex-code-block");
+    expect(block?.querySelector(".vex-code-block__lang")?.textContent).toBe("ts");
+    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    expect(wrap.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute("aria-pressed")).toBe("true");
+    expect(block?.hasAttribute("data-wrap")).toBe(true);
+    expect(screen.getByRole("button", { name: "Copy code" }).className).toBe("vex-code-block__key");
+    expect(css()).toMatch(/\.vex-code-block__head \{[^}]*position: sticky;[^}]*height: 40px;[^}]*background: var\(--vex-alias-card\);/);
+    expect(css()).toMatch(/\.vex-code-block__key \{[^}]*width: 40px;[^}]*border-left: 1px solid var\(--vex-alias-rule\);/);
+  });
+
+  it("sets a table on the card ground: a 36 head in caps, 42 cells in ink 2, the first column in ink", () => {
+    const sheet = css();
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table \{[^}]*border: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-card\);/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-chat-prose th \{[^}]*height: 36px;[^}]*text-transform: uppercase;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td \{[^}]*height: 42px;[^}]*font-size: 14px;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td:first-child \{[^}]*white-space: nowrap;/);
+    expect(sheet).toContain(".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-md-table {");
   });
 });

@@ -28,20 +28,17 @@
  *
  * REGISTER (docs/design/H3-DESKTOP.md section 1.7 and Appendix A.7). H3's
  * thinking row: a framed cell, 40 high, the dot-grid glyph, the label in caps
- * 13 tracked ink, the one-line summary in 13 muted, then at the right the
- * turn's step count in 13 muted and the chevron. The whole row is the key.
+ * 13 tracked ink, the one-line summary in 13 muted, then the chevron at the
+ * right. The whole row is the key.
  * Opened, the trace is upright 14 ink 2 under the row's rule, inside the
  * same frame (`.vex-reasoned__body`). The live row's trace and the settled
  * in-turn thoughts wear the identical body class, so one trace looks the
  * same streaming, folded, and reopened a week later.
  *
- * THE TURN'S HEAD. The first Reasoned row of a turn is the turn's thinking
- * row (`SessionTranscript/turnSteps.ts`), so it also says the turn's steps
- * ("3 steps") and, after a turn watched live, how long the turn took ("Thought
- * for 2.8s", the live turn clock's own reading, `TurnIsland/turnClock.ts`).
- * A turn reopened from history has no stored duration, so it says "Thought"
- * with no total, and its steps (VEX Cloud's EC-07 and its stored trace head).
- * Every other thinking row of the turn says "Thought".
+ * ONE STEP OF THE TURN'S TRACE. The turn's head (`SessionTranscript/
+ * TurnTrace.tsx`) stands over the turn's steps and folds them all; this row
+ * is one of those steps, a thought, and opens to its own trace. It says no
+ * count and no time of the turn: the head does.
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
@@ -53,9 +50,8 @@ import {
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
-import { reasonedStampLabel, stepsLabel } from "./reasoning-stamp.js";
+import { reasonedStampLabel } from "./reasoning-stamp.js";
 import { StepNode } from "./ToolLedger/StepNode.js";
-import { formatToolDuration } from "./ToolLedger/toolDuration.js";
 
 /**
  * H3's thinking glyph: the three-by-three dot grid it draws before THINKING
@@ -108,8 +104,6 @@ export function ReasonedBlock({
   tokens = null,
   durationMs = null,
   running = false,
-  steps = null,
-  thoughtMs = null,
 }: {
   /** Persisted trace; `null`/empty renders nothing at all. */
   readonly reasoning: string | null | undefined;
@@ -122,17 +116,6 @@ export function ReasonedBlock({
    * blocks (every persisted transcript row) leave it false.
    */
   readonly running?: boolean;
-  /**
-   * The whole turn's steps, set only on the turn's thinking row
-   * (`turnSteps.ts`); `null` draws no count.
-   */
-  readonly steps?: number | null;
-  /**
-   * The live turn clock's reading for this turn (`turnClock.ts`), set only
-   * on the turn's thinking row after a turn watched live; `null` keeps
-   * "Thought".
-   */
-  readonly thoughtMs?: number | null;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
@@ -157,27 +140,12 @@ export function ReasonedBlock({
 
   if (text.length === 0) return null;
 
-  // "Thought for 2.8s" (docs/design/H3-DESKTOP.md Appendix A.7): the live
-  // turn clock's own measurement, spelled as the step rows spell their
-  // measured times ("812ms", "2.8s", "1m 05s"). The words are a label
-  // (caps); the figure keeps its own case, as H3 prints "THOUGHT FOR 2.8s".
-  // No measurement keeps "Thought", with no total: nothing is estimated.
-  const thoughtFor = formatToolDuration(thoughtMs);
-  const label =
-    thoughtFor === null ? (
-      reasonedStampLabel(tokens, durationMs)
-    ) : (
-      <>
-        Thought for <span className="vex-reasoned__figure">{thoughtFor}</span>
-      </>
-    );
-  const count = stepsLabel(steps);
+  const label = reasonedStampLabel(tokens, durationMs);
 
   return (
     <div
       data-vex-reasoning="persisted"
       data-vex-reasoning-state={running ? "running" : "settled"}
-      data-vex-thinking-head={steps !== null ? "" : undefined}
       className="vex-think"
     >
       {/* Fill-only signals need a text equivalent: the swatch is decorative
@@ -226,11 +194,6 @@ export function ReasonedBlock({
         ) : (
           <span aria-hidden className="vex-step__spacer" />
         )}
-        {count !== null ? (
-          <span data-vex-turn-steps="" className="vex-reasoned__steps">
-            {count}
-          </span>
-        ) : null}
         <span aria-hidden className="vex-reasoned__chev">
           {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
         </span>

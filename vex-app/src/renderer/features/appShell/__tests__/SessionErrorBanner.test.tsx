@@ -16,6 +16,8 @@
  * and the two-way dismissal binding.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
@@ -142,6 +144,16 @@ describe("SessionErrorBanner", () => {
     expect(keys.map((key) => key.textContent)).toEqual(["Dismiss"]);
     expect(keys[0]?.getAttribute("aria-label")).toBe("Dismiss error");
     expect(document.activeElement).not.toBe(keys[0]);
+  });
+
+  it("draws Dismiss with no fill, as Cloud's non-primary key", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    const block = /\.vex-turn-error__key \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(block).toContain("background: none;");
+    expect(block).not.toContain("interactive-solid");
   });
 
   it("shows the bounded technical codes and NOTHING resembling prose", () => {

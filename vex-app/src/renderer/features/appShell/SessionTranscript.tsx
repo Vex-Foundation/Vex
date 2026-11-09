@@ -30,7 +30,7 @@
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
- * shows a top "couldn't load older" strip. Content rendering is delegated to
+ * shows the earlier-messages band's failure with its Retry. Content rendering is delegated to
  * `TranscriptMessage` (assistant = safe markdown, others = plain text).
  *
  * S3 entry settle: only rows appended LIVE after the session's first completed
@@ -39,7 +39,7 @@
  */
 
 import { useCallback, useMemo, useRef, type JSX } from "react";
-import { LineChevronDown } from "../../components/icons/line/index.js";
+import { LineArrowDown } from "../../components/icons/line/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -68,8 +68,8 @@ import {
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
 import {
-  OlderPageErrorStrip,
-  OlderPageLoadingStrip,
+  EarlierBand,
+  type EarlierBandState,
   TranscriptEmptyState,
   TranscriptErrorState,
   TranscriptLoadingState,
@@ -167,6 +167,23 @@ export function SessionTranscript({
   const olderError =
     items.length > 0 &&
     ((pages?.some((page) => !page.ok) ?? false) || query.isError);
+  // The earlier-messages band (`EarlierBand`): loading while an older page
+  // reads, the failure with its Retry, and "Start of the chat" only once the
+  // reader paged back to the chat's first message; a single page, or the
+  // page cap, says nothing.
+  const lastPage = pages?.at(-1);
+  const earlierState: EarlierBandState | null = query.isFetchingNextPage
+    ? "loading"
+    : olderError
+      ? "error"
+      : (pages?.length ?? 0) > 1 && lastPage !== undefined && lastPage.ok && !lastPage.data.hasMore
+        ? "end"
+        : null;
+  // Retry reads the pages again, the failed one with its own cursor (an
+  // infinite query refetches every page it holds).
+  const retryEarlier = (): void => {
+    void query.refetch();
+  };
 
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
@@ -286,8 +303,7 @@ export function SessionTranscript({
           no per-row margins. */}
       <div data-vex-transcript-column="" className="vex-reading-col">
       <div ref={columnRef} className="relative flex flex-col gap-[18px]">
-        {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
-        {olderError ? <OlderPageErrorStrip /> : null}
+        <EarlierBand state={earlierState} onRetry={retryEarlier} />
         <TranscriptRows
           rows={rows}
           sessionId={sessionId}
@@ -295,6 +311,7 @@ export function SessionTranscript({
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
           forkActions={forkActions}
+          live={preview !== null}
         />
         {/* A17 — the settled turn's tail wears its usage stats. Mounted only
             between turns; a user-tail (message sent, reply not begun) or a
@@ -323,14 +340,28 @@ export function SessionTranscript({
           content sits below the fold. */}
       {showLatest ? (
         <div data-vex-latest-slot>
+          {/* VEX Cloud's `BackToBottom`: a 44 square at the right end of the
+              column, raised on the chosen rule, the down arrow in ink, fading
+              in over 160 ms. It leaves once the floor is reached; if it held
+              the focus, the focus goes on to the draft field rather than to
+              the page. */}
           <button
             type="button"
             data-vex-latest-pill
-            onClick={jumpToLatest}
-            aria-label="Jump to latest message"
-            className="pointer-events-auto -mt-8 inline-flex h-8 w-8 items-center justify-center border border-rule bg-surface-base text-accent-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onClick={(event) => {
+              const held = document.activeElement === event.currentTarget;
+              jumpToLatest();
+              if (held) {
+                event.currentTarget
+                  .closest("[data-vex-area='session-panel']")
+                  ?.querySelector<HTMLTextAreaElement>("[data-vex-area='chat-composer'] textarea")
+                  ?.focus({ preventScroll: true });
+              }
+            }}
+            aria-label="Scroll to latest"
+            className="vex-latest"
           >
-            <LineChevronDown size={16} />
+            <LineArrowDown size={20} />
           </button>
         </div>
       ) : null}

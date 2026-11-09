@@ -1,8 +1,10 @@
 /**
- * Fenced code block: a well on paper 2 (docs/design/R3-MINIMAL.md section 6)
- * with a language strip + copy key in the sans at 12 muted, the code set in
- * JetBrains Mono on the same code-token palette the Studio viewer's shiki
- * theme writes (`--vex-alias-code-*`). Styles: `.vex-code-block` in
+ * Fenced code block, as VEX Cloud draws one (`.md-code-block`): the well in
+ * the 1px rule, under a sticky 40 bar on the card ground that holds the
+ * language in caps 11 muted, then Wrap and Copy as 40 cells, each with its
+ * left rule. The code is set in the mono on the same code-token palette the
+ * Studio viewer's shiki theme writes (`--vex-alias-code-*`); Wrap folds its
+ * long lines (a press, `aria-pressed`). Styles: `.vex-code-block` in
  * chat-transcript.css. The copy button writes the token's RAW string via
  * the clipboard API; it never re-enters the React tree, so the no-HTML-sink
  * invariant is untouched.
@@ -10,7 +12,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { LineCopy } from "../../../components/icons/line/index.js";
+import { LineCheck, LineCopy } from "../../../components/icons/line/index.js";
+import { LineSvg } from "../../../components/icons/line/LineSvg.js";
+
+/** The wrap glyph: a line that runs on and turns back under itself. */
+function WrapGlyph(): JSX.Element {
+  return (
+    <LineSvg size={16}>
+      <path d="M2.5 4.5h11M2.5 8.5h9a2 2 0 0 1 0 4h-3M10 11l-1.5 1.5L10 14M2.5 12.5h3" />
+    </LineSvg>
+  );
+}
 import { highlightLines } from "../highlight.js";
 
 const KIND_CLASS = {
@@ -81,24 +93,38 @@ export function CodeBlock({
     resetTimerRef.current = setTimeout(() => setCopyState("idle"), COPY_RESET_MS);
   };
 
+  const [wrap, setWrap] = useState(false);
   return (
-    <div className="vex-code-block">
+    <div className="vex-code-block" data-wrap={wrap ? "" : undefined}>
       <div className="vex-code-block__head">
-        <span>{lang}</span>
-        <button
-          type="button"
-          aria-label="Copy code"
-          onClick={() => void onCopy()}
-          className="flex items-center text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-        >
-          {copyState === "idle" ? (
-            <LineCopy size={14} />
-          ) : (
-            <span>{copyState === "copied" ? "Copied" : "Copy failed"}</span>
-          )}
-        </button>
+        <span className="vex-code-block__lang">{lang}</span>
+        <span className="vex-code-block__keys">
+          <button
+            type="button"
+            aria-label="Wrap lines"
+            aria-pressed={wrap}
+            onClick={() => setWrap((value) => !value)}
+            className="vex-code-block__key"
+          >
+            <WrapGlyph />
+          </button>
+          <button
+            type="button"
+            aria-label={
+              copyState === "copied"
+                ? "Copied"
+                : copyState === "failed"
+                  ? "Copy failed"
+                  : "Copy code"
+            }
+            onClick={() => void onCopy()}
+            className="vex-code-block__key"
+          >
+            {copyState === "copied" ? <LineCheck size={16} /> : <LineCopy size={16} />}
+          </button>
+        </span>
       </div>
-      <pre className="max-h-[480px] overflow-auto bg-[var(--vex-alias-code-background)] px-4 py-3 font-code text-[12.5px] leading-[1.6] text-[var(--vex-alias-code-foreground)]">
+      <pre className="vex-code-block__pre max-h-[480px] overflow-auto bg-[var(--vex-alias-code-background)] px-4 py-3 font-code text-[12.5px] leading-[1.6] text-[var(--vex-alias-code-foreground)]">
         <code>{body}</code>
       </pre>
     </div>

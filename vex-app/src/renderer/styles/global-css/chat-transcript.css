@@ -53,8 +53,45 @@
   z-index: 8;
   display: flex;
   height: 0;
-  justify-content: center;
+  justify-content: flex-end;
   pointer-events: none;
+}
+/* The key (VEX Cloud's `.vx-tx-latest`): a 44 square at the column's right
+ * end, raised on the chosen rule (24%), the down arrow in ink; the open cell
+ * under the pointer; it fades in over 160 ms. */
+.vex-latest {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -44px;
+  padding: 0;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-primary);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: vex-latest-in 160ms var(--vex-ease-standard) both;
+}
+.vex-latest:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-latest:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+@keyframes vex-latest-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-latest {
+    animation: none;
+  }
+}
+html[data-still] .vex-latest {
+  animation: none;
 }
 [data-vex-conversation-scroll] [data-vex-latest-slot] {
   bottom: calc(var(--vex-composer-height, 152px) + 16px);
@@ -90,46 +127,147 @@
   zoom: var(--vex-zoom);
 }
 
-/* The day label: 12 muted, centred. The row stack's 18 gap plus 8 here is the
- * 26 above it; the gap below is the 18. */
-.vex-day {
-  padding-top: 8px;
-  font-size: 12px;
+/* The earlier-messages band (`EarlierBand`; VEX Cloud's `.vx-tx-earlier`,
+ * H3's `.t-earlier`): 36 high on the 1px rule under it, caps 11 tracked in
+ * ink 2, the swatch 10 from the words; Retry a 28 key at the band's end in
+ * the same caps; "Start of the chat" muted and centred, with no rule. */
+.vex-earlier {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-secondary);
+  font-size: 11px;
   line-height: 1.45;
-  text-align: center;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-earlier__alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.vex-earlier__words {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-earlier__retry {
+  flex: none;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.vex-earlier__retry:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-earlier__retry:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-earlier--end {
+  justify-content: center;
+  border-bottom: 0;
   color: var(--vex-alias-label-tertiary);
 }
 
+/* The day line (VEX Cloud's `.vx-tx-day`, H3's `.t-day`): caps 11 tracked,
+ * muted, centred between two hairlines that fade from the chosen rule (24%)
+ * to nothing, 14 from the word. The row stack's 18 gap plus 8 here is the 26
+ * above it; the gap below is the 18. */
+.vex-day {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-day::before,
+.vex-day::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--vex-alias-rule-chosen));
+}
+.vex-day::after {
+  background: linear-gradient(90deg, var(--vex-alias-rule-chosen), transparent);
+}
+.vex-day > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* ── The person's message ────────────────────────────────────────────────
- * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
- * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
- * right. The bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16 /
- * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
+ * VEX Cloud's `UserMessage` (`.vx-tx-you`, H3's `.t-you`): a grid of the
+ * column and the 34 avatar, 12 apart. Over the bubble, the meta line, 28 high
+ * on the bubble's right edge and 4 above it: the message keys (28 with 14
+ * glyphs; the latest row's Copy always shown, the rest on hover or focus),
+ * then "You · 12:40" in caps 11 tracked, muted, the figures tabular. The
+ * bubble is white at 13% (Cloud's --vx-bubble-you) with the words in sans 16
+ * / 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
  * column (VEX Cloud's `.t-you p`); 18 round with the corner by the avatar
  * sharp at 4 (`--vex-radius-bubble-you`, one of the shape law's two
- * exceptions in base.css). The avatar is a 36px disc. The clock and
- * the message keys sit at the bubble's left, hover-revealed, so at rest the
- * row is the bubble and the disc alone. */
+ * exceptions in base.css). */
 .vex-you {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 12px;
+  display: grid;
+  grid-template-areas:
+    "meta ."
+    "bub av";
+  grid-template-columns: minmax(0, 1fr) 34px;
+  column-gap: 12px;
+  justify-items: end;
+  min-width: 0;
 }
-.vex-you__cap {
+.vex-you__meta {
   display: flex;
-  flex: none;
+  grid-area: meta;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  height: 20px;
-  /* Centred on the bubble's first line: 12 + 23.2 / 2 - 20 / 2. */
-  margin-top: 14px;
+  min-width: 0;
+  height: 28px;
+  margin-bottom: 4px;
   color: var(--vex-alias-label-tertiary);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-you__keys {
+  display: flex;
+  align-items: center;
+}
+.vex-you__who {
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .vex-you[data-vex-latest] [data-vex-copy-message] {
+    opacity: 1;
+  }
 }
 .vex-you__stack {
   display: flex;
+  grid-area: bub;
   min-width: 0;
-  max-width: 74%;
+  max-width: calc((100% + 46px) * 0.74);
   flex-direction: column;
   align-items: flex-end;
 }
@@ -158,11 +296,10 @@
  * disc is Cloud's avatar ground (--vx-avatar, #151618), the plate step. */
 .vex-you__avatar {
   display: flex;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  /* The disc's top sits 2 above the bubble's, as the capture draws it. */
-  margin-top: -2px;
+  grid-area: av;
+  align-self: start;
+  width: 34px;
+  height: 34px;
 }
 .vex-you__avatar > svg {
   display: block;
@@ -235,23 +372,108 @@
 .vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(.vex-code-block, .vex-md-table):last-child {
   margin-bottom: 0;
 }
-/* A table's head cells in an answer are labels: caps 11, tracked, muted, as
- * VEX Cloud sets its table heads (`.tbl th`). */
+/* Out of the bubble, each block keeps its own ground: the code's well, the
+ * table's card. */
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-code-block {
+  background: var(--vex-alias-field);
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-md-table {
+  background: var(--vex-alias-card);
+}
+/* A table in an answer (VEX Cloud's `.md-table-scroll`): a cell on the card
+ * ground in the 1px rule. Its head 36 high, caps 11 tracked, muted; its
+ * cells at least 42 high, 14 / 1.45 in ink 2, 10 by 16 in, each row on the
+ * rule but the last; the first column in ink, unwrapped. A right-aligned
+ * column holds figures: the mono 12.5, tabular. */
+.vex-reply .vex-md-table {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  font-variant-numeric: tabular-nums;
+}
+.vex-reply .vex-md-table table {
+  font-size: 14px;
+}
+.vex-reply .vex-md-table :is(th, td) {
+  padding: 10px 16px;
+}
 .vex-reply .vex-chat-prose th {
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
   font-size: 11px;
   font-weight: 400;
+  line-height: 1.3;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-reply .vex-md-table td {
+  height: 42px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-reply .vex-md-table tr:last-child > td {
+  border-bottom: 0;
+}
+.vex-reply .vex-md-table td:first-child {
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-reply .vex-md-table td.text-right {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
-/* The turn's clock and message keys, under the prose, revealed on hover. */
+/* The turn's clock and message keys, under the prose (VEX Cloud's
+ * `.vx-tx-acts`): a row 32 high, 6 out to the left so the first glyph stands
+ * on the answer's edge, the keys 2 apart, the clock 8 before them. Revealed
+ * on hover over 200 ms; the latest turn's always show. */
 .vex-reply__tail {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 20px;
-  margin-top: 4px;
+  gap: 2px;
+  height: 32px;
+  margin: 2px 0 0 -6px;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-reply__tail > .vex-time-reveal {
+  margin: 0 8px 0 6px;
+}
+/* A message key: a square on no fill, its glyph in ink 2, the cell's wash and
+ * ink under the pointer, the 2px focus ring inside. 28 with a 14 glyph; 32
+ * with a 16 glyph under Vex's answer. */
+.vex-msg-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-msg-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-msg-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-reply__tail .vex-msg-key {
+  width: 32px;
+  height: 32px;
+}
+.vex-reply__tail .vex-msg-key > svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* "Stopped", a status in H3's grammar (section 2.2): the small outline square
@@ -283,8 +505,10 @@
 .vex-steps {
   margin-top: 12px;
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
-.vex-reply > .vex-steps:first-child {
+.vex-reply > .vex-steps:first-child,
+.vex-reply > [data-vex-trace-group]:first-child > [data-vex-trace-body] > .vex-steps:first-child {
   margin-top: 0;
 }
 .vex-think + .vex-steps {
@@ -741,10 +965,11 @@ html[data-still] .vex-step-node[data-step-node="running"] {
  *  row (`ReasonedBlock`) are the same cell.                     *
  * ============================================================ */
 
-/* The live turn's frame (the island primitive's shell). */
+/* The live turn's frame (the island primitive's shell), on the card ground
+ * as every trace card (VEX Cloud's `.vx-trace`). */
 .vex-island {
   border: 1px solid var(--vex-alias-rule);
-  background: transparent;
+  background: var(--vex-alias-card);
 }
 .vex-live-row {
   gap: 14px;
@@ -866,7 +1091,9 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   padding: 0 22px;
   border: 0;
   border-right: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-interactive-solid);
+  /* No fill: Dismiss is not the row's primary key (VEX Cloud's
+   * `.vx-fail-keys > .vx-key:not([data-variant="primary"])`). */
+  background: none;
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -876,7 +1103,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   cursor: pointer;
 }
 .vex-turn-error__key:hover {
-  background: var(--vex-alias-interactive-active);
+  background: var(--vex-alias-interactive-hover);
 }
 .vex-turn-error__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -893,14 +1120,15 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 }
 
 /* ── The thinking row (a persisted Thought row) ──────────────────────────
- * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
- * for 2.8 s" in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then
- * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
- * whole row is the key: the label is the button, and its hit area stretches
- * over the row. Opened, the trace sits under the head's rule in the frame. */
+ * One thought of the turn, a step under the turn's head (`.vex-trace-head`),
+ * on the card ground: the dot-grid glyph, "Thought" in caps 11 tracked ink
+ * (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then the
+ * chevron. The whole row is the key: the label is the button, and its hit
+ * area stretches over the row. Opened, the trace sits under the row's rule. */
 .vex-think {
   margin-bottom: 12px;
   border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
 }
 /* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label.
  * It takes the figures' 0.04em (VEX Cloud's `.rz-ms`). */
@@ -964,12 +1192,6 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-reasoned__steps {
-  flex: none;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: var(--vex-alias-label-tertiary);
-}
 .vex-reasoned__chev {
   display: inline-flex;
   flex: none;
@@ -1010,6 +1232,168 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   text-transform: none;
 }
 
+/* ── The turn's trace head (`SessionTranscript/TurnTrace.tsx`) ───────────
+ * VEX Cloud's built trace (`styles/thread.css`, `.vx-trace-head`): one head
+ * per turn over every step of it, a cell 40 high on the card ground in the
+ * 1px rule, 16 in. The glyph in its 10 slot, the label in caps 11 tracked in
+ * ink 2 (muted while the turn runs), the steps at the right in 11 muted at
+ * the figures' tracking, then the chevron, which turns (300 ms) while the
+ * steps go at once. No summary of the trace. The first step part under it
+ * shares its rule, so the head and the steps read as one card; folded, the
+ * head stands alone, 12 over what follows it. A stopped or failed turn's
+ * head is a label: no key, no chevron. */
+.vex-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  color: var(--vex-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-align: start;
+  text-transform: uppercase;
+}
+button.vex-trace-head {
+  cursor: pointer;
+}
+.vex-trace-head:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-trace-head .vex-step__fill {
+  color: var(--vex-alias-label-primary);
+}
+.vex-trace-head__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-trace-head[data-tone="run"] .vex-trace-head__label {
+  color: var(--vex-alias-label-tertiary);
+}
+/* The 3x3 cells (VEX Cloud's `.vx-trace-cells`): resting 18% with the
+ * centre 50%, done 30% with the centre lit, stopped 30%; running, the light
+ * steps clockwise round the ring and ends in the centre (cells 0, 1, 2, 5,
+ * 8, 7, 6, 3, then 4), 1100 ms, 120 ms a cell. Still under reduced motion and
+ * Save-Data. A failed head's ink cross, 9px. */
+.vex-trace-cells {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(3, 3px);
+  gap: 2px;
+}
+.vex-trace-cells > i {
+  width: 3px;
+  height: 3px;
+  background-color: var(--vex-alias-label-primary);
+  opacity: 0.18;
+}
+.vex-trace-cells > i:nth-child(5) {
+  opacity: 0.5;
+}
+.vex-trace-cells:is([data-tone="done"], [data-tone="stopped"]) > i {
+  opacity: 0.3;
+}
+.vex-trace-cells[data-tone="done"] > i:nth-child(5) {
+  opacity: 1;
+}
+.vex-trace-cells[data-tone="run"] > i {
+  animation: vex-cell-run 1100ms steps(1, end) infinite;
+}
+.vex-trace-cells[data-tone="run"] > i:nth-child(5) {
+  animation-name: vex-cell-run-centre;
+  animation-delay: 960ms;
+}
+.vex-trace-cells[data-tone="run"] > i:nth-child(2) { animation-delay: 120ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(3) { animation-delay: 240ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(6) { animation-delay: 360ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(9) { animation-delay: 480ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(8) { animation-delay: 600ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(7) { animation-delay: 720ms; }
+.vex-trace-cells[data-tone="run"] > i:nth-child(4) { animation-delay: 840ms; }
+@keyframes vex-cell-run {
+  0%, 30% { opacity: 1; }
+  30.01%, 100% { opacity: 0.18; }
+}
+@keyframes vex-cell-run-centre {
+  0%, 30% { opacity: 1; }
+  30.01%, 100% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-trace-cells[data-tone="run"] > i {
+    animation: none;
+  }
+}
+html[data-still] .vex-trace-cells[data-tone="run"] > i {
+  animation: none;
+}
+.vex-trace-cross {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background:
+    linear-gradient(45deg, transparent 38%, var(--vex-alias-label-primary) 38% 62%, transparent 62%),
+    linear-gradient(-45deg, transparent 38%, var(--vex-alias-label-primary) 38% 62%, transparent 62%);
+}
+@media (forced-colors: active) {
+  .vex-trace-cells > i {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+.vex-trace-head__end {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-figure);
+  text-transform: none;
+  white-space: nowrap;
+}
+.vex-trace-head__chev {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  transform: rotate(180deg);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-trace-head[aria-expanded="false"] .vex-trace-head__chev {
+  transform: none;
+}
+@media (hover: hover) {
+  button.vex-trace-head:hover :is(.vex-trace-head__end, .vex-trace-head__chev) {
+    color: var(--vex-alias-label-primary);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-trace-head__chev {
+    transition: none;
+  }
+}
+html[data-still] .vex-trace-head__chev {
+  transition: none;
+}
+/* The first step part under the head shares the head's rule. */
+.vex-trace-head + [data-vex-trace-body] > :first-child {
+  margin-top: -1px;
+}
+/* Folded, the head stands alone, 12 over the answer or what follows it. */
+[data-vex-trace-group][data-shut]:has(> .vex-trace-head):not(:last-child) {
+  margin-bottom: 12px;
+}
+/* A row of nothing but steps, in a folded turn, takes its gap back. */
+[data-vex-trace-shut] {
+  margin-top: -18px;
+}
+
 /* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */
 .vex-turn-stats {
   display: flex;
@@ -1034,15 +1418,34 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 
 /* ── Notices and markers ─────────────────────────────────────────────────── */
 
-/* A runtime notice: 12 muted, centred; never caps. */
+/* A runtime line (VEX Cloud's `.vx-tx-sys`, H3's `.t-sys`): 16 in, the 6px
+ * hud square 10 before the words, the words in caps 11 tracked, muted. */
 .vex-notice {
-  max-width: 80%;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: center;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-notice__sq {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+  background-color: var(--vex-alias-state-running-mark);
+}
+@media (forced-colors: active) {
+  .vex-notice__sq {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }
 /* A turn error in the flow: the ink cross, "Error" in ink 500, the message 13
  * ink 2. Never red. */
@@ -1113,12 +1516,13 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   [data-time-hover-root] .vex-time-reveal,
   [data-time-hover-root] .vex-action-reveal {
     opacity: 0;
-    transition: opacity var(--vex-duration-fast) var(--vex-ease-standard);
+    transition: opacity 200ms var(--vex-ease-standard);
   }
   [data-time-hover-root]:hover .vex-time-reveal,
   [data-time-hover-root]:focus-within .vex-time-reveal,
   [data-time-hover-root]:hover .vex-action-reveal,
-  [data-time-hover-root]:focus-within .vex-action-reveal {
+  [data-time-hover-root]:focus-within .vex-action-reveal,
+  .vex-reply[data-vex-latest] .vex-reply__tail > :is(.vex-time-reveal, .vex-action-reveal) {
     opacity: 1;
   }
 }
@@ -1148,22 +1552,69 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   color: var(--vex-alias-code-token-parameter);
 }
 
-/* A fenced block in chat: the paper 2 well with a quiet rule, its head 12
- * muted (the language and Copy, sentence case), the code in the mono 12.5. */
+/* A fenced block (VEX Cloud's `.md-code-block`): the well in the 1px rule;
+ * over it a sticky 40 bar on the card ground under its rule, the language in
+ * caps 11 tracked, muted, 16 in, then Wrap and Copy as 40 cells in ink 2,
+ * each with its left rule, the cell's wash and ink under the pointer; the
+ * code in the mono 12.5. Wrapped, long lines fold instead of scrolling. */
 .vex-code-block {
-  overflow: hidden;
-  border: 1px solid var(--vex-alias-rule-quiet);
+  border: 1px solid var(--vex-alias-rule);
   background: var(--vex-alias-field);
 }
 .vex-code-block__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  gap: 12px;
+  height: 40px;
+  padding: 0 0 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-style: normal;
+  line-height: 1;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-code-block__lang {
+  min-width: 0;
+  overflow: hidden;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-code-block__keys {
+  display: flex;
+  flex: none;
+  align-self: stretch;
+}
+.vex-code-block__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-code-block__key:hover,
+.vex-code-block__key[aria-pressed="true"] {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-code-block__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-code-block[data-wrap] .vex-code-block__pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

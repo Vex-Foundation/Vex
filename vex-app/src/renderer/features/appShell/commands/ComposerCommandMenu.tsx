@@ -1,13 +1,15 @@
 /**
- * Slash-command combobox menu (B9): the command list floated above the
- * composer card in the Menu primitive's chrome (`.vex-menu` card classes),
- * driven as a LISTBOX rather than a focusable menu - focus stays in the
- * textarea, the highlight is exposed via aria-activedescendant, and rows
- * pick on mousedown so the textarea never blurs.
+ * Slash-command combobox menu (B9), drawn as VEX Cloud's `/` menu
+ * (`SlashMenu`, `.vx-cmp-slash`): the chat column's width, its foot flush on
+ * the composer's top, the card ground under the 24% top rule, no shadow. A
+ * 32 head "Commands" in caps 11 muted, then each row on a 148 grid: the
+ * command in the mono 13 ink, what it does in 14 ink 2. Driven as a LISTBOX
+ * rather than a focusable menu - focus stays in the textarea, the highlight
+ * is exposed via aria-activedescendant (the wash), and rows pick on
+ * mousedown so the textarea never blurs.
  */
 
 import { useEffect, type JSX } from "react";
-import { cn } from "../../../lib/utils.js";
 import type { ComposerCommand } from "./directory.js";
 
 function optionId(id: string): string {
@@ -50,14 +52,16 @@ export function ComposerCommandMenu({
 
   if (!open) return null;
   return (
-    <div
-      id="vex-composer-command-listbox"
-      data-vex-composer-command-menu
-      className="vex-menu vex-menu-dense vex-menu-scrollable absolute bottom-full left-0 z-50 mb-2 w-72"
-      role="listbox"
-      aria-label="Composer commands"
-    >
-      <div className="vex-menu-viewport" role="presentation">
+    <div data-vex-composer-command-menu="" className="vex-slash">
+      <div aria-hidden="true" className="vex-slash__head">
+        Commands
+      </div>
+      <div
+        id="vex-composer-command-listbox"
+        className="vex-slash__list vex-scroll"
+        role="listbox"
+        aria-label="Composer commands"
+      >
         {items.map((command, index) => (
           <button
             key={command.id}
@@ -66,7 +70,7 @@ export function ComposerCommandMenu({
             role="option"
             aria-selected={index === highlight}
             data-active={index === highlight ? "true" : undefined}
-            className={cn("vex-menu-item")}
+            className="vex-slash__row"
             // mousedown, not click: preventing default stops the focus steal
             // so the textarea keeps focus (combobox pattern).
             onMouseDown={(event) => {
@@ -74,14 +78,8 @@ export function ComposerCommandMenu({
               onPickAt(index);
             }}
           >
-            <span className="vex-menu-item-label flex min-w-0 items-baseline gap-2">
-              <span className="shrink-0 font-mono text-[13px] text-ink-primary">
-                {command.label}
-              </span>
-              <span className="min-w-0 truncate text-[12px] text-ink-tertiary">
-                {command.description}
-              </span>
-            </span>
+            <b className="vex-slash__name">{command.label}</b>
+            <span className="vex-slash__what">{command.description}</span>
           </button>
         ))}
       </div>

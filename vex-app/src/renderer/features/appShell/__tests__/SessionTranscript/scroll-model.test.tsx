@@ -168,6 +168,38 @@ describe("SessionTranscript anchored scroll model", () => {
     expect(followMode(container)).toBe("tail");
   });
 
+  it("back to bottom: Scroll to latest, and a focused key hands the focus on to the draft field", async () => {
+    layout(900, 200);
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    setVex();
+    // The transcript inside its panel, beside the composer's draft field.
+    const { container } = render(
+      createElement(
+        "div",
+        { "data-vex-area": "session-panel" },
+        createElement(SessionTranscript, { sessionId: SESSION }),
+        createElement(
+          "form",
+          { "data-vex-area": "chat-composer" },
+          createElement("textarea", { "aria-label": "draft" }),
+        ),
+      ),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+    readerScroll(getScroller(container), 100);
+    const pill = requirePill(container);
+    // VEX Cloud's `BackToBottom`: named for where it goes, the 44 key.
+    expect(pill.getAttribute("aria-label")).toBe("Scroll to latest");
+    expect(pill.className).toBe("vex-latest");
+    pill.focus();
+    fireEvent.click(pill);
+    await waitFor(() => expect(latestPill(container)).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "draft" }));
+  });
+
   it("threshold-entry-must-not-snap: stopping inside the follow band leaves the remaining distance alone", async () => {
     layout(1000, 300);
     listMock.mockResolvedValue(
@@ -533,7 +565,7 @@ describe("SessionTranscript anchored scroll model", () => {
     readerScroll(scroller, 10);
     await waitFor(() => expect(olderRequested).toBe(true));
     await waitFor(() =>
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull(),
+      expect(screen.getByText("Earlier messages did not load")).not.toBeNull(),
     );
 
     // Back at the floor: the anchor is cleared, follow resumes, and the failed

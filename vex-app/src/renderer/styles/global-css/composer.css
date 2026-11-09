@@ -81,6 +81,22 @@
   letter-spacing: -0.005em;
   text-wrap: pretty;
   color: var(--vex-alias-accent-primary);
+  /* It fades in over 500 ms (VEX Cloud's welcome); still under reduced
+   * motion and Save-Data. */
+  animation: vex-greeting-in 500ms var(--vex-ease-standard) both;
+}
+@keyframes vex-greeting-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-welcome__greeting {
+    animation: none;
+  }
+}
+html[data-still] .vex-welcome__greeting {
+  animation: none;
 }
 
 /* The notes under the bubble, as VEX Cloud's runtime rows (`.t-sys`): each
@@ -186,8 +202,39 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: minmax(113px, auto);
+  margin: 0;
+  padding: 0;
   border-top: 1px solid var(--vex-alias-rule);
   border-left: 1px solid var(--vex-alias-rule);
+  list-style: none;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+/* A list item per cell; the cell's key fills it. */
+.vex-starter-item {
+  display: flex;
+  min-width: 0;
+}
+.vex-starter-item > .vex-starter {
+  flex: 1 1 auto;
+}
+/* While the draft has text: hidden at once, keeping the box (VEX Cloud's
+ * `SuggestionRows`); the 200 ms is the way back only. */
+.vex-starter-grid[data-concealed] {
+  visibility: hidden;
+  opacity: 0;
+  transition: none;
+}
+/* While a send is being made: 0.4, no press. */
+.vex-starter-grid[data-locked] {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-starter-grid {
+    transition: none;
+  }
+}
+html[data-still] .vex-starter-grid {
+  transition: none;
 }
 /* One cell, one key (VEX Cloud's `.starters a`): the icon 20 in, the title
  * and its line after it 14 apart, the arrow 18 from the right, everything
@@ -297,4 +344,80 @@
 [data-vex-area="session-panel"][data-phase="settling"]
   [data-vex-composer-seat] {
   visibility: hidden;
+}
+
+/* ============================================================ *
+ *  THE SLASH MENU                                               *
+ * ============================================================ */
+
+/* VEX Cloud's `/` menu (`.vx-cmp-slash`): the chat column's width, its foot
+ * flush on the composer's top, the card ground under the chosen rule (24%),
+ * no shadow, at most 480 or half the window. A 32 head "Commands" in caps 11
+ * muted, 24 in, over the 1px rule; each row 40 high at least, 24 in, on a
+ * 148 grid 16 apart: the command in the mono 13 ink, what it does in 14 ink
+ * 2, each cut with an ellipsis; the highlighted row is the wash. */
+.vex-slash {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-height: min(480px, 50dvh);
+  border-top: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-card);
+}
+.vex-slash__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 32px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-tertiary);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-slash__list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.vex-slash__row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 24px;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+.vex-slash__row:hover,
+.vex-slash__row[data-active="true"] {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-slash__name {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vex-alias-label-primary);
+}
+.vex-slash__what {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

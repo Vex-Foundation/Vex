@@ -27,7 +27,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, JSX, MouseEvent as ReactMouseEvent } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   useExportSessionMarkdown,
@@ -83,7 +82,6 @@ import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
 import { Swatch } from "../../components/ui/swatch.js";
-import { DURATION_BASE_MS, EASE_STANDARD } from "../../lib/motion/index.js";
 
 /**
  * The placeholder shown while a turn is running. It states what the Send key
@@ -329,34 +327,20 @@ export function SessionComposer({
     <>
       {/* The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7):
        * the two-by-two grid low in the column, OVER the composer, so they
-       * come before the field in reading and focus order too. Gone WHILE
-       * THE USER IS TYPING, by opacity only (MOTION-POLICY); nothing
-       * slides, and the field never moves: the dock stands on the column's
-       * foot, so the grid leaving only frees room above it. Always this
-       * child (or its empty slot), so the composer's own node after it
-       * keeps its place across the welcome edge. */}
+       * come before the field in reading and focus order too. Concealed
+       * WHILE THE USER IS TYPING, at once and keeping their box (VEX Cloud's
+       * `SuggestionRows`), fading back over 200 ms when the draft empties;
+       * nothing slides, and the field never moves. Always this child (or
+       * its empty slot), so the composer's own node after it keeps its
+       * place across the welcome edge. */}
       {showQuickActions ? (
         <div data-vex-composer-starters="" className="vex-starters">
-          <AnimatePresence initial={false}>
-            {draft.length === 0 ? (
-              <motion.div
-                key="starter-rows"
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={
-                  reducedMotion
-                    ? { opacity: 0, transition: { duration: 0 } }
-                    : { opacity: 0 }
-                }
-                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
-              >
-                <ComposerQuickActions
-                  onPick={applyQuickAction}
-                  onCreateMission={createMission}
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+          <ComposerQuickActions
+            onPick={applyQuickAction}
+            onCreateMission={createMission}
+            concealed={draft.length > 0}
+            locked={submitPending}
+          />
         </div>
       ) : null}
       <div

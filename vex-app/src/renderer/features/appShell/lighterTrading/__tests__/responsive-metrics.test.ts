@@ -279,9 +279,11 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(narrow).not.toMatch(/\.lit-account-refresh-word \{[^}]*display: none/s);
   });
 
-  it("keeps a short message of yours on one line in her narrow column: its clock and keys give way first", () => {
-    expect(css).toMatch(/\.lit-chat-shell \.vex-you__cap \{[^}]*flex: 0 1 auto;[^}]*min-width: 0;[^}]*overflow: hidden;/s);
-    expect(css).toMatch(/\.lit-chat-shell \.vex-you__stack \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - 60px\);/s);
+  it("keeps a short message of yours on one line in her narrow column: the bubble takes the row less the avatar", () => {
+    // The meta line stands over the bubble (VEX Cloud's `UserMessage`), so
+    // nothing beside the bubble gives way; the bubble's cap is its column.
+    expect(css).not.toContain(".vex-you__cap");
+    expect(css).toMatch(/\.lit-chat-shell \.vex-you__stack \{[^}]*max-width: 100%;/s);
   });
 
   it("lets the desk chat in the Vex sidebar speak the room without a re-projection", () => {

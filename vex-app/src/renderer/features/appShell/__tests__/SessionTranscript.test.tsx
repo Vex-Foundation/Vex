@@ -331,9 +331,41 @@ describe("SessionTranscript", () => {
     });
     fireEvent.scroll(getScroller(container));
     await waitFor(() => {
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull();
+      expect(screen.getByText("Earlier messages did not load")).not.toBeNull();
     });
     expect(screen.getByText("newest")).not.toBeNull();
+    // The failure is an alert, with a Retry that reads the failed page again.
+    expect(screen.getByRole("alert").textContent).toContain("Earlier messages did not load");
+    const calls = listMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(listMock.mock.calls.length).toBeGreaterThan(calls);
+    });
+    expect(listMock.mock.calls.some(([input]) => (input as { cursor: unknown }).cursor !== null)).toBe(true);
+  });
+
+  it("says the start of the chat once the reader paged back to its first message", async () => {
+    listMock.mockImplementation((input: { readonly cursor: unknown }) =>
+      Promise.resolve(
+        input.cursor === null
+          ? page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], 3)
+          : page([msg({ id: 1, role: "user", kind: "text", content: "oldest" })], null),
+      ),
+    );
+    setVex();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+    // One page: the band says nothing, since nothing was paged back.
+    expect(screen.queryByText("Start of the chat")).toBeNull();
+    fireEvent.scroll(getScroller(container));
+    await waitFor(() => {
+      expect(screen.getByText("Start of the chat")).not.toBeNull();
+    });
   });
 
 });

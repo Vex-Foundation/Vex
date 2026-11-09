@@ -363,14 +363,37 @@ describe("composer capsule - send cell", () => {
     expect(send.getAttribute("type")).toBe("submit");
     // The word in sentence case (the sheet sets the caps) beside the
     // three-by-three dot glyph, 20 square, which is decoration.
-    expect(send.textContent).toBe("Send");
+    expect(send.querySelector(".vex-composer-key__word")?.textContent).toBe("Send");
     const glyph = send.querySelector("svg");
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     expect(glyph?.getAttribute("width")).toBe("20");
     expect(glyph?.querySelectorAll("circle")).toHaveLength(9);
-    expect(send.disabled).toBe(true);
-    typeDraft("buy the dip");
+    // Held, not disabled (VEX Cloud's SubmitButton, dock contract section
+    // 3): the key keeps its place in the tab order and focus through a send.
     expect(send.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-disabled")).toBe(false);
+  });
+
+  it("a held SEND keeps focus, says why it is held, and its press sends nothing", () => {
+    render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
+    send.focus();
+    expect(document.activeElement).toBe(send);
+    expect(send.tabIndex).toBe(0);
+    const reason = document.getElementById(send.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe("Write a message to send");
+    expect(send.getAttribute("aria-keyshortcuts")).toBe("Enter");
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    send.form?.addEventListener("submit", submitted);
+    fireEvent.click(send);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(send);
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("raw-CSS contract: the send cell is 138 wide and the row's 72, the one blue fill, white caps 13", () => {
@@ -387,7 +410,7 @@ describe("composer capsule - send cell", () => {
       /\.vex-composer-send::before,\s*\.vex-composer-stop::before \{[^}]*background: var\(--vex-alias-button-accent-hover\);[^}]*transform: scaleY\(0\);[^}]*transform-origin: bottom;[^}]*transition: transform var\(--vex-duration-key-fill\)/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send:hover:not\(:disabled\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
+      /\.vex-composer-send:hover:not\(:disabled, \[aria-disabled="true"\]\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
     );
     expect(CONSOLE_CSS).not.toMatch(
       /\.vex-composer-send:hover:not\(:disabled\),\s*\.vex-composer-stop:hover:not\(:disabled\) \{[^}]*background-color/,
@@ -396,7 +419,7 @@ describe("composer capsule - send cell", () => {
     // muted word, never the blue: a blue key that does nothing is a trust
     // regression. No dotted outline, no transparent key.
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send:disabled,\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
+      /\.vex-composer-send:is\(:disabled, \[aria-disabled="true"\]\),\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
     );
     expect(CONSOLE_CSS).not.toMatch(/dotted/);
     // The dots are faint at rest and white under the pointer.
@@ -404,7 +427,7 @@ describe("composer capsule - send cell", () => {
       /\.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-label-faint\);/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-key:hover:not\(:disabled\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
+      /\.vex-composer-key:hover:not\(:disabled, \[aria-disabled="true"\]\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
   });
 
@@ -422,10 +445,22 @@ describe("composer capsule - send cell", () => {
     expect(stop.className).toContain("vex-composer-key");
     expect(stop.className).toContain("vex-composer-stop");
     expect(stop.querySelector(".vex-composer-stop__mark")).not.toBeNull();
+    // STOP's square is 14 (VEX Cloud's `.vx-cmp-stop`).
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-stop__mark \{[^}]*width: 14px;[^}]*height: 14px;/);
     // A stop being acknowledged is the disabled key: the cell fill, muted.
     expect(CONSOLE_CSS).toMatch(
       /\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
     );
+  });
+});
+
+describe("composer capsule - the status strip's cells", () => {
+  it("raw-CSS contract: a cell's words 24 in and 16 from its rule; the context key 16 in, 24 from the edge, reaching 12 up", () => {
+    // VEX Cloud's `.vx-cmp-cell` (0 16 0 24), its budget cell at the strip's
+    // end (0 24 0 16), and a key cell's 44 target on the 32 strip.
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-strip__cell \{[^}]*padding: 0 16px 0 24px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context \{[^}]*position: relative;[^}]*padding: 0 24px 0 16px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context::before \{[^}]*position: absolute;[^}]*inset: -12px 0 0;/);
   });
 });
 
@@ -507,6 +542,27 @@ describe("composer capsule - slash commands (combobox)", () => {
     expect(listbox.querySelectorAll('[role="option"]').length).toBe(COMPOSER_COMMANDS.length);
     expect(COMPOSER_COMMANDS).toHaveLength(4);
     expect(document.activeElement).toBe(field);
+  });
+
+  it("draws Cloud's / menu: the column's width on the composer's top, the Commands head, the 148 grid", () => {
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    typeDraft("/");
+    const menu = container.querySelector("[data-vex-composer-command-menu]");
+    expect(menu?.className).toBe("vex-slash");
+    expect(menu?.querySelector(".vex-slash__head")?.textContent).toBe("Commands");
+    expect(menu?.querySelector(".vex-slash__head")?.getAttribute("aria-hidden")).toBe("true");
+    const option = screen.getAllByRole("option")[0];
+    expect(option?.className).toBe("vex-slash__row");
+    expect(option?.querySelector(".vex-slash__name")?.textContent).toBe(COMPOSER_COMMANDS[0]?.label);
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-slash \{[^}]*right: 0;[^}]*bottom: 100%;[^}]*left: 0;[^}]*border-top: 1px solid var\(--vex-alias-rule-chosen\);[^}]*background: var\(--vex-alias-card\);/);
+    expect(css).toMatch(/\.vex-slash__head \{[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-slash__row \{[^}]*grid-template-columns: 148px minmax\(0, 1fr\);/);
   });
 
   it("ArrowDown moves the highlight via aria-activedescendant - the options never take focus", () => {

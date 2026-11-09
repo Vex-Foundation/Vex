@@ -230,11 +230,13 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 /* THE SEND CELL: 138 wide and the row's 72 under its top rule, padding 0 30
  * 0 32 (H3's `.cmp-send`), the composer's one blue fill (section 2.4's
  * primary key), white caps 13 behind the glyph: the 20px dots for SEND, faint
- * at rest and white under the pointer, a 9 x 9 square for STOP. The fill
+ * at rest and white under the pointer, a 14 x 14 square for STOP (VEX
+ * Cloud's `.vx-cmp-stop`). The fill
  * stops at the rule, which stays the ground's.
  *
  * HELD (VEX Cloud's EC-04): while there is nothing to send, SEND is
- * disabled and says so by its look, the cell fill with a muted word and the
+ * held (`aria-disabled`, so it keeps its place in the tab order) and says so
+ * by its look, the cell fill with a muted word and the
  * faint dots, no blue and no hover; a blue key that does nothing would be a
  * trust regression. A stop being acknowledged is the same held key. */
 .vex-composer-key {
@@ -279,11 +281,11 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
   pointer-events: none;
 }
-.vex-composer-send:hover:not(:disabled)::before,
+.vex-composer-send:hover:not(:disabled, [aria-disabled="true"])::before,
 .vex-composer-stop:hover:not(:disabled)::before {
   transform: scaleY(1);
 }
-.vex-composer-send:disabled,
+.vex-composer-send:is(:disabled, [aria-disabled="true"]),
 .vex-composer-stop:disabled {
   background-color: var(--vex-alias-bg-layer-3);
   color: var(--vex-alias-label-tertiary);
@@ -293,14 +295,14 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   flex: none;
   color: var(--vex-alias-label-faint);
 }
-.vex-composer-key:hover:not(:disabled) .vex-composer-key__glyph {
+.vex-composer-key:hover:not(:disabled, [aria-disabled="true"]) .vex-composer-key__glyph {
   color: var(--vex-alias-button-accent-ink);
 }
 .vex-composer-stop__mark {
   display: block;
   flex: none;
-  width: 9px;
-  height: 9px;
+  width: 14px;
+  height: 14px;
   background: currentColor;
 }
 /* A row under 420 (the desk's rail, 300 at its narrowest): the model cell
@@ -322,7 +324,8 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 /* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section 1.8): 32
  * high with its top rule (VEX Cloud's `.cmp-meta`, 796 to 827 at 1440), its
  * top rule across the chat column, four cells divided by the rule, each
- * one's words 24 in, in the strip's caps 11:
+ * one's words 24 in and 16 from its right rule (VEX Cloud's `.vx-cmp-cell`),
+ * in the strip's caps 11:
  *
  *   model    the model's name, 12 in ink, then the effort word in muted
  *            caps
@@ -350,7 +353,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 24px;
+  padding: 0 16px 0 24px;
 }
 .vex-composer-strip__cell + .vex-composer-strip__cell {
   border-left: 1px solid var(--vex-alias-rule);
@@ -459,16 +462,25 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 /* CONTEXT, the meter and the share: the label in muted caps 11, the cell
  * meter (Cloud's ten cells 6 x 12 two apart, 8% unlit, 39% lit, the last lit
  * 60%; ui-primitives/marks.css), the share a figure in ink 2; the key is the
- * whole cell, its text 24 in. */
+ * whole cell, the strip's last, its text 16 in and 24 from the right edge
+ * (VEX Cloud's budget cell, `.vx-cmp-cell[data-cell="budget"]`). A key cell
+ * reaches 12 up into the transcript's foot, a 44 target on the 32 strip
+ * (`.vx-cmp-cell:is(button)::before`). */
 .vex-composer-context {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   height: 100%;
-  padding: 0 24px;
+  padding: 0 24px 0 16px;
   color: var(--vex-alias-label-tertiary);
   font-size: 11px;
   white-space: nowrap;
+}
+.vex-composer-context::before {
+  content: "";
+  position: absolute;
+  inset: -12px 0 0;
 }
 .vex-composer-context__label {
   font-size: 11px;
@@ -497,8 +509,5 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100%25" height="100%25" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4 4"/></svg>');
 }
 
-/* Keyboard highlight for the slash-command combobox rows (focus stays in
- * the textarea, so :hover/:focus cannot paint it). */
-[data-vex-composer-command-menu] .vex-menu-item[data-active="true"] {
-  background: var(--vex-alias-interactive-hover);
-}
+/* The slash menu's rows, its keyboard highlight included, are composer.css's
+ * (`.vex-slash`). */

@@ -162,6 +162,12 @@ function cssRule(selector: string): string {
 }
 
 describe("SessionWelcomeHero - the greeting bubble", () => {
+  it("fades in over 500 ms, and holds still under reduced motion and Save-Data", () => {
+    expect(cssRule(".vex-welcome__greeting")).toContain("animation: vex-greeting-in 500ms");
+    expect(COMPOSER_CSS).toMatch(/@keyframes vex-greeting-in \{\s*from \{\s*opacity: 0;/);
+    expect(cssRule("html[data-still] .vex-welcome__greeting")).toContain("animation: none;");
+  });
+
   it("says H3's one line, \"Ready when you are.\", whatever the hour or the name", () => {
     profileWithName("desu");
     const randSpy = vi.spyOn(Math, "random");

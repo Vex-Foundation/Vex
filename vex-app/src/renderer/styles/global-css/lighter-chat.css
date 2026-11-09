@@ -36,18 +36,11 @@
 .lit-chat-shell .vex-chat-prose code { font-size: 12px; }
 .lit-chat-shell .vex-reasoning-prose { font-size: 13px; line-height: 1.5; }
 .lit-chat-shell .vex-you__body { font-size: 13px; line-height: 1.5; }
-/* Her column is 300 to 520 wide, so the message's clock and keys (shown on
- * hover at the bubble's left) give way before its words: the bubble takes
- * its words' width, up to the row less the avatar and the two gaps, and a
- * short message stays on one line, as the approved desk plate draws it. */
-.lit-chat-shell .vex-you__cap {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
+/* Her column is 300 to 520 wide, so the bubble takes its words' width, up
+ * to the row less the avatar and its gap (the meta line stands over it), and
+ * a short message stays on one line, as the approved desk plate draws it. */
 .lit-chat-shell .vex-you__stack {
-  flex: 0 0 auto;
-  max-width: calc(100% - 60px);
+  max-width: 100%;
 }
 
 .lit-chat-shell .vex-chat-prose [class*="text-[24px]"] { margin-top: 12px; font-size: 15px; font-weight: 600; line-height: 21px; }
@@ -351,11 +344,11 @@
 /* While a desk review waits in the ticket's place, SEND steps down to the
  * raised fill, so the review's Approve is the window's one blue cell. A held
  * SEND (nothing to send) keeps its held look (console.css). */
-.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:not(:disabled) {
+.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }
 
-.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:hover:not(:disabled) {
+.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:hover:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--vex-alias-interactive-hover);
 }
