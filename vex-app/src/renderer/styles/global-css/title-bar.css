@@ -879,6 +879,24 @@ html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *) {
 .vex-key:hover .vex-key__chevron {
   color: var(--vex-alias-label-primary);
 }
+/* One up chevron, turned down while she is closed and up as she opens (VEX
+ * Cloud's `.vx-vk-dir > svg`, 300ms): it turns, never swaps; at once under
+ * reduced motion and the still frame (MOTION-POLICY.md names it). */
+.vex-key__chevron > svg {
+  transform: rotate(180deg);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-key__chevron[data-open] > svg {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key__chevron > svg {
+    transition: none;
+  }
+}
+html[data-still] .vex-key__chevron > svg {
+  transition: none;
+}
 /* The short word ("Waiting") waits for the narrow window (below). */
 .vex-key__short {
   display: none;

@@ -210,7 +210,9 @@ describe("VexKey: what it draws", () => {
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     // Her face stays in the cell while she is open, so the two crossfade.
     expect(part("chip")?.getAttribute("data-kimm-key")).toBe("closed");
+    // One up chevron, turned by the sheet while she is closed (Cloud's `.vx-vk-dir`).
     expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 10l4-4 4 4");
+    expect(part("chevron")?.hasAttribute("data-open")).toBe(true);
     rerender(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
     expect(part("portrait")?.hasAttribute("data-open")).toBe(false);
     expect(part("pic")).not.toBeNull();
@@ -221,7 +223,8 @@ describe("VexKey: what it draws", () => {
     expect(face?.getAttribute("data-kimm-key")).toBe("closed");
     expect(face?.getAttribute("data-kimm-art")).toBe("ready");
     expect(face?.querySelector("img")?.getAttribute("src")).toMatch(/^\/art\/kimm\/chip-[a-z]+\.webp$/);
-    expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 6l4 4 4-4");
+    expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 10l4-4 4 4");
+    expect(part("chevron")?.hasAttribute("data-open")).toBe(false);
   });
 });
 
@@ -446,6 +449,17 @@ describe("VexKey: its sheet, at Cloud's measures and widths", () => {
     expect(rule("html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *)")).toMatch(
       /transition:\s*none;/,
     );
+  });
+
+  it("turns one chevron over 300ms rather than swapping, at once when still", () => {
+    const turn = rule(".vex-key__chevron > svg");
+    expect(turn).toMatch(/transform:\s*rotate\(180deg\);/);
+    expect(turn).toMatch(/transition:\s*transform var\(--vex-duration-reveal\) var\(--vex-ease-standard\);/);
+    expect(rule(".vex-key__chevron[data-open] > svg")).toMatch(/transform:\s*none;/);
+    expect(sheet).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.vex-key__chevron > svg \{\s*transition: none;/,
+    );
+    expect(rule("html[data-still] .vex-key__chevron > svg")).toMatch(/transition:\s*none;/);
   });
 
   it("drops the action words and the chevron while held, keeping her face and state", () => {

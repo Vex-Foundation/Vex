@@ -49,6 +49,13 @@ here is a defect:
   ground's fill, on the standard curve, as her section opens or closes.
   Opacity and a fill only, inside a fixed 76 cell, so nothing moves; reduced
   motion and Save-Data change it at once (title-bar.css states both).
+- The Vex key's chevron turn, 300ms (`--vex-duration-reveal`, on the
+  standard curve) - VEX Cloud's `.vx-vk-dir > svg` (`styles/header.css`;
+  `docs/design/H3-DESKTOP.md` section 1.6): one up chevron turns 180 degrees
+  as her section closes and back as it opens, at the press. A transform of a
+  16px glyph inside its fixed cell, so nothing moves around it (Cloud rides
+  its house curve, which desktop keeps for a page's re-lay alone); reduced
+  motion and the still frame turn it at once (title-bar.css states both).
 - The general key's hover fill, 420ms (`--vex-duration-key-fill`,
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot

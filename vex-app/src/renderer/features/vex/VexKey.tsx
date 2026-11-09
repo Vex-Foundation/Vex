@@ -13,8 +13,8 @@
  *                          0:03"); line two, 10 under it: the action (12,
  *                          caps), Hide Vex or Show Vex, then the chord's
  *                          keycaps
- *     .vex-key__chevron    60 wide, then the column's rule: down while she
- *                          is closed, up while open
+ *     .vex-key__chevron    60 wide, then the column's rule: one up
+ *                          chevron, turned down while she is closed
  *
  * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6; VEX Cloud's EC-01):
  * "Hide Vex" while she is open, "Show Vex" while she is closed, the name
@@ -56,7 +56,7 @@
  */
 
 import { useId, type JSX, type ReactNode } from "react";
-import { LineChevronDown, LineChevronUp } from "../../components/icons/line/index.js";
+import { LineChevronUp } from "../../components/icons/line/index.js";
 import type { KimmMood } from "../../components/vex/kimm/kimm-assets.js";
 import { Keycaps } from "../../components/ui/keycaps.js";
 import { StateSquare } from "../../components/ui/state-square.js";
@@ -211,8 +211,10 @@ export function VexKeyView({
             {count}
           </span>
         ) : null}
-        <span className="vex-key__chevron">
-          {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
+        {/* One up chevron, turned down while she is closed (VEX Cloud's
+          * `.vx-vk-dir`): it turns at the press, never swapping glyphs. */}
+        <span className="vex-key__chevron" data-open={shown ? "" : undefined}>
+          <LineChevronUp size={16} />
         </span>
         {held === null ? null : (
           <span id={reasonId} hidden>

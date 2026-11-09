@@ -24,7 +24,6 @@
 
 import { useEffect, useState, type JSX, type ReactNode } from "react";
 import {
-  LineChevronDown,
   LineChevronUp,
   LineMarkets,
   LinePlus,
@@ -112,7 +111,9 @@ function PlateVexKey({ open, state }: { readonly open: boolean; readonly state: 
           <Keycaps chord={VEX_TOGGLE_CHORD} decorative />
         </span>
       </span>
-      <span className="vex-key__chevron">{open ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}</span>
+      <span className="vex-key__chevron" data-open={open ? "" : undefined}>
+        <LineChevronUp size={16} />
+      </span>
     </button>
   );
 }
