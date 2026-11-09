@@ -1126,6 +1126,28 @@ describe("AppShell", () => {
     wide.unmount();
   });
 
+  // C3-B-01, F-08 (VEX Cloud's W3 review, `nav-parts.tsx`): while the chats
+  // panel is open, what it lies over rests, so Tab never leaves the panel for
+  // it: Vex's column (her console, her section and, under 1024, the band, all
+  // inside `.vex-shell-vex`), and the chat where the panel covers. Today only
+  // the chat rests. `it.fails` pins the gap: once AppShell sets
+  // `inert={chatsPanelOn && chatsPanel.open}` on the Vex column, this goes
+  // red and flips to `it`.
+  it.fails("rests Vex's column while the chats panel lies over it, at 1024 and in the band", () => {
+    for (const width of [1024, 1000]) {
+      setWindowWidth(width);
+      useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+      const view = renderShell();
+      const vex = view.container.querySelector<HTMLElement>(".vex-shell-vex");
+      expect(vex?.hasAttribute("inert")).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+      expect(vex?.hasAttribute("inert")).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+      expect(vex?.hasAttribute("inert")).toBe(false);
+      view.unmount();
+    }
+  });
+
   it("opens the chats panel from the rail's search with its field focused", () => {
     setWindowWidth(1180);
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });

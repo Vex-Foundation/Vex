@@ -21,6 +21,13 @@
  *   div.vex-chats-scrim        over the rest of her column; a press on it
  *                              is a press outside, which closes the panel
  *
+ * FOCUS. Opening sends focus inside: to the first chat, or to the search
+ * field when the press was Search or the list has no chat yet. Closing hands
+ * focus that was inside back to the rail's key. While it is open, what it
+ * lies over rests so Tab never leaves it for what it covers (Cloud's W3
+ * review, `nav-parts.tsx`): the frame makes Vex's column inert (her console,
+ * her section and, under 1024, the band) and, where it covers, the chat.
+ *
  * Esc (focus in the panel or on its key), a press anywhere outside the panel
  * and its keys, and a row's press close it. Nothing here writes the stored
  * fold: the panel is the visit's own, and it closes when the window grows
@@ -155,12 +162,14 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
     const panel = panelRef.current;
     const scrim = scrimRef.current;
     if (panel === null || scrim === null) return undefined;
-    // Focus: the press that opened it says where; a close hands focus that
-    // was inside back to the rail's key.
+    // Focus: the press that opened it says where; a list with no chat in it
+    // yet (loading, failed or empty) hands it to the search field, as Cloud's
+    // panel does, so focus always lands inside. A close hands focus that was
+    // inside back to the rail's key.
     if (open) {
       const target = focus === "search"
         ? searchRef.current
-        : panel.querySelector<HTMLElement>(".vex-ls-row__select");
+        : panel.querySelector<HTMLElement>(".vex-ls-row__select") ?? searchRef.current;
       target?.focus({ preventScroll: true });
     } else if (panel.contains(document.activeElement)) {
       panelKey()?.focus({ preventScroll: true });

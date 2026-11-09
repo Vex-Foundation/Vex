@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 
@@ -36,7 +36,7 @@ vi.mock("../../../lib/api/sessions.js", () => ({
 }));
 vi.mock("../SessionDeleteDialog.js", () => ({ SessionDeleteDialog: () => null }));
 
-const { ChatsPanel } = await import("../ChatsPanel.js");
+const { CHATS_PANEL_KEY_ATTR, ChatsPanel } = await import("../ChatsPanel.js");
 
 const NOW = new Date();
 const today = (hour: number): string =>
@@ -139,12 +139,65 @@ describe("the panel's search field", () => {
 });
 
 describe("the panel's focus", () => {
+  /** The panel and the rail's key that toggles it, as the frame draws them. */
+  function renderWithKey(open: boolean): {
+    readonly rerender: (next: boolean, focus?: "list" | "search") => void;
+    readonly key: HTMLElement;
+  } {
+    const tree = (next: boolean, focus: "list" | "search") => (
+      <>
+        <button type="button" {...{ [CHATS_PANEL_KEY_ATTR]: "toggle" }}>
+          Expand sidebar
+        </button>
+        <ChatsPanel open={next} focus={focus} covers={false} onClose={() => {}} />
+      </>
+    );
+    const view = render(tree(open, "list"));
+    return {
+      rerender: (next, focus = "list") => {
+        act(() => {
+          view.rerender(tree(next, focus));
+        });
+      },
+      key: screen.getByRole("button", { name: "Expand sidebar" }),
+    };
+  }
+
   it("lands on the first chat when it opens on the list", () => {
-    const view = renderPanel(false);
-    act(() => {
-      view.rerender(<ChatsPanel open focus="list" covers={false} onClose={() => {}} />);
-    });
+    const { rerender } = renderWithKey(false);
+    rerender(true);
     expect(document.activeElement?.textContent).toContain("Portfolio Check");
+  });
+
+  it("lands on the search field when it opens from Search", () => {
+    const { rerender } = renderWithKey(false);
+    rerender(true, "search");
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search chats" }));
+  });
+
+  it("lands on the search field when the list has no chat yet, never staying behind", () => {
+    for (const query of [
+      { isLoading: true, isError: false, data: undefined },
+      { isLoading: false, isError: false, data: { ok: true as const, data: [] } },
+      { isLoading: false, isError: true, data: undefined },
+    ]) {
+      harness.query = query;
+      const { rerender, key } = renderWithKey(false);
+      key.focus();
+      rerender(true);
+      expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search chats" }));
+      cleanup();
+    }
+  });
+
+  it("hands focus back to the rail's key when it closes with focus inside", () => {
+    const { rerender, key } = renderWithKey(false);
+    rerender(true);
+    expect(key).not.toBe(document.activeElement);
+    rerender(false);
+    expect(document.activeElement).toBe(key);
+    // Closed, nothing in it takes focus or a press.
+    expect(document.querySelector("[data-vex-area='chats-panel']")?.hasAttribute("inert")).toBe(true);
   });
 });
 
