@@ -136,18 +136,12 @@
   container: vex-pg-bar / inline-size;
 }
 @container vex-pg-bar (width < 900px) {
-  .vex-pg-tabs[data-size="row"] .vex-pg-tab {
+  .vex-pg-tabs .vex-pg-tab {
     padding: 0 18px;
   }
-  .vex-pg-tabs[data-size="row"] .vex-pg-tab__d {
+  .vex-pg-tabs .vex-pg-tab__d {
     display: none;
   }
-}
-/* A card head's tabs (the equity chart's range): the same cells at the
- * head's own height and the 11 caps step (VEX Cloud's `.range button`). */
-.vex-pg-tabs[data-size="head"] .vex-pg-tab {
-  padding: 0 14px;
-  font-size: 11px;
 }
 .vex-pg-bar__end {
   display: flex;

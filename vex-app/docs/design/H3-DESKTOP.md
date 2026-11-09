@@ -767,6 +767,13 @@ VEX Cloud's `EmptyState`, `ErrorState` and `LoadingState` (`components/ui/empty-
 - **Loading:** the card holds the loading word (the stepping hatch and the sentence, section 5.6) over three parked covers at full, four fifths and three fifths of a 320 column; the block is a busy status named by the sentence.
 - Desktop keeps a second line (`detail`) under the sentence where a caller has a reason worth saying (a failed read's message, why deposits are closed): Cloud draws one sentence only, but those lines are real information. The old scope word is no longer drawn; it rides `data-scope`. A failed read does not add its own alert: the caller names the role (`LoadFailedBlock` passes `alert`).
 
+### 5.8 Tabs
+VEX Cloud's tabs (`components/ui/underline-tabs.tsx`, `styles/rows.css`, DG-2 section 8), desktop's `Tabs` (`components/ui/tabs.tsx`), its default look `cells`:
+- Square cells cut by the 7% rule (each cell's right edge, the row's left edge and the rule under the row), 13 caps tracked at 0.08em in ink 2, padding 0 22. The chosen cell is the open ground (`--vex-alias-interactive-active`) with its word in ink: no underline, no blue (blue is the action), no glide. The pointer's cell takes the hover wash and ink. Focus is the white ring inside the cell.
+- The row: 56 for a page's sections (`density="nav"`), 48 for a section's panels (`panel`, the default), 40 for a panel's own strip (`compact`, 12 caps, padding 0 16). Wider than its box it scrolls sideways with no bar.
+- The page frame's tab cells (`PageTabs`, `.vex-pg-tabs` in `book.css`) were already these cells in the 57 row; their unused card head size (`size="head"`) is retired.
+- R3's `underline` look stays only where an approved plate draws it (the wizard's wallets and Studio's tab strip, section 4.9); the `segmented` look is unchanged.
+
 ---
 
 ## Appendix A. Words, keys and taglines

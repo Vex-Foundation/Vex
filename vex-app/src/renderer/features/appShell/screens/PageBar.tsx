@@ -46,25 +46,22 @@ export interface PageTab {
 
 /**
  * The tab cells: a labelled group of toggle buttons, the selected one
- * pressed. `size="row"` is the frame's 57 high cell at 15 caps; `size="head"`
- * is the smaller cell a card head carries (the equity chart's range).
+ * pressed, in the frame's 57 high row.
  */
 export function PageTabs({
   label,
   tabs,
   selectedKey,
   onSelect,
-  size = "row",
 }: {
   /** The group's accessible name ("Portfolio scope"). */
   readonly label: string;
   readonly tabs: readonly PageTab[];
   readonly selectedKey: string;
   readonly onSelect: (key: string) => void;
-  readonly size?: "row" | "head";
 }): JSX.Element {
   return (
-    <div role="group" aria-label={label} className="vex-pg-tabs" data-size={size}>
+    <div role="group" aria-label={label} className="vex-pg-tabs">
       {tabs.map((tab) => (
         <button
           key={tab.key}
