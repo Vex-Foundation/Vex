@@ -13,14 +13,17 @@
 
 import type { JSX, RefObject } from "react";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
+import { Button } from "../../../components/ui/button.js";
 import { Stamp } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { approvalActorLine } from "../approvals/approvals-copy.js";
 import { approvalExpiryWords, approvalSentence, approvalToolTitle, isUserMcpApproval } from "./approval-sentence.js";
-import { rejectKeyWords } from "./ApprovalDecisionActions.js";
+import { ApprovalFailureLine, rejectKeyWords } from "./ApprovalDecisionActions.js";
 
-const ROW_KEY =
-  "inline-flex h-8 shrink-0 items-center justify-center border px-3 font-sans text-[13px] font-medium leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary";
+// The row's keys are the kit's keys (`Button`, Cloud's v99 keys: 13 caps at
+// 400): Reject the strong `ink` key, Review the framed `ghost` one; neither
+// is blue, since nothing is approved from a row. The armed Reject wears the
+// 2px ink ring 3px out, as before.
 const ARMED_RING = "outline outline-2 outline-offset-[3px] outline-rule-ink";
 
 export interface ApprovalRowProps {
@@ -79,40 +82,28 @@ export function ApprovalRow({
         {approvalSentence(summary)}
       </h3>
       <span className="vex-appr-row__go">
-        <button
+        <Button
           ref={rejectRef}
-          type="button"
+          variant="ink"
           onClick={onReject}
           disabled={inFlight}
           aria-busy={rejectPending}
           aria-label={reject.aria}
-          className={`${ROW_KEY} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
-            rejectArmed ? ` ${ARMED_RING}` : ""
-          }`}
+          className={`shrink-0${rejectArmed ? ` ${ARMED_RING}` : ""}`}
         >
           {reject.text}
-        </button>
-        <button
-          type="button"
-          onClick={onReview}
-          disabled={inFlight}
-          className={`${ROW_KEY} border-rule bg-transparent text-ink-primary enabled:hover:bg-interactive-hover`}
-        >
+        </Button>
+        <Button variant="ghost" onClick={onReview} disabled={inFlight} className="shrink-0">
           {reviewLabel}
-        </button>
+        </Button>
       </span>
       <p className="vex-appr-row__meta">
         <span>{meta}</span>
         {isUserMcpApproval(summary) ? null : <Stamp data-testid="real-funds-stamp" className="vex-appr-row__stamp" />}
       </p>
-      {/* The card's failure line (Cloud's DG5-28): one ink line with the
-          cross under the row's words, never red. */}
-      {inlineError !== null ? (
-        <p role="alert" data-vex-area="approval-failure" className="vex-appr__fail vex-appr-row__fail">
-          <Swatch state="error" size={9} className="vex-appr__fail-mark" />
-          <span>{inlineError}</span>
-        </p>
-      ) : null}
+      {/* The card's failure line (Cloud's DG5-28): one ink line under the
+          row's words, never red; mounted empty so its first text is said. */}
+      <ApprovalFailureLine error={inlineError} className="vex-appr-row__fail" />
     </div>
   );
 }

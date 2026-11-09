@@ -24,6 +24,7 @@ import {
   actionKindWords,
   addressIn,
   approvalConsequence,
+  approvalExpiryCountdown,
   approvalExpiryWords,
   approvalEyebrowWord,
   approvalFamily,
@@ -629,6 +630,45 @@ describe("approvalExpiryWords", () => {
   it("is null for an unreadable value", () => {
     expect(approvalExpiryWords("soon", now)).toBeNull();
     expect(approvalExpiryWords("", now)).toBeNull();
+  });
+});
+
+describe("approvalExpiryCountdown (Cloud's TakeoverTimer)", () => {
+  const now = Date.UTC(2026, 9, 17, 9);
+  const at = (ms: number): string => new Date(now + ms).toISOString();
+
+  it("counts whole minutes, rounded up, while an hour or less is left", () => {
+    expect(approvalExpiryCountdown(at(14 * 60_000), now)).toEqual({
+      text: "Expires in 14 min",
+      warn: false,
+      nextChangeMs: 60_000,
+    });
+    expect(approvalExpiryCountdown(at(13 * 60_000 + 1), now)?.text).toBe("Expires in 14 min");
+    expect(approvalExpiryCountdown(at(13 * 60_000 + 1), now)?.nextChangeMs).toBe(1);
+    expect(approvalExpiryCountdown(at(60 * 60_000), now)?.text).toBe("Expires in 60 min");
+  });
+
+  it("counts m:ss for the last two minutes, in ink for the last one", () => {
+    expect(approvalExpiryCountdown(at(120_000), now)).toEqual({ text: "Expires in 2:00", warn: false, nextChangeMs: 1000 });
+    expect(approvalExpiryCountdown(at(65_500), now)).toEqual({ text: "Expires in 1:06", warn: false, nextChangeMs: 500 });
+    expect(approvalExpiryCountdown(at(60_000), now)).toEqual({ text: "Expires in 1:00", warn: true, nextChangeMs: 1000 });
+    expect(approvalExpiryCountdown(at(5_000), now)).toEqual({ text: "Expires in 0:05", warn: true, nextChangeMs: 1000 });
+  });
+
+  it("says Expired at zero and stops counting", () => {
+    expect(approvalExpiryCountdown(at(0), now)).toEqual({ text: "Expired", warn: false, nextChangeMs: null });
+    expect(approvalExpiryCountdown(at(-5_000), now)?.text).toBe("Expired");
+  });
+
+  it("names the clock time further out than an hour, and wakes within a minute", () => {
+    const later = approvalExpiryCountdown("2026-10-17T15:30:00.000Z", now);
+    expect(later?.text).toBe("Expires at 15:30 UTC");
+    expect(later?.nextChangeMs).toBe(60_000);
+    expect(approvalExpiryCountdown(at(60 * 60_000 + 20_000), now)?.nextChangeMs).toBe(20_000);
+  });
+
+  it("is null for an unreadable value", () => {
+    expect(approvalExpiryCountdown("soon", now)).toBeNull();
   });
 });
 

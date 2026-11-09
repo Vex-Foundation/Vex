@@ -26,10 +26,10 @@
  * label, handler and guard below is the one the card draws inside itself.
  */
 
-import type { JSX, RefObject } from "react";
+import type { JSX, ReactNode, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
 import { useInitialFocusRef } from "../../../components/ui/dialog.js";
-import { Swatch } from "../../../components/ui/swatch.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 
 export interface ApprovalDecisionActionsProps {
   readonly isHighRisk: boolean;
@@ -87,10 +87,25 @@ export interface ApprovalDecisionActionsProps {
    * states are the same as inside the card.
    */
   readonly dock?: { readonly labelledBy: string; readonly gateLine: string } | null;
+  /**
+   * The decision's own failure (`ApprovalFailureLine`), or `null` while there
+   * is none. Given (even `null`), the line is mounted right over the keys:
+   * before the footer in the card, and inside the docked row between the
+   * reason field and the keys. Omitted, no line is drawn here.
+   */
+  readonly failure?: string | null;
+  /**
+   * The clip cue (`ClipCue`, "{n} more lines below"), drawn as the footer's
+   * first row while rows of the card are out of view; nothing otherwise.
+   */
+  readonly cue?: ReactNode;
 }
 
-// THE KEYS (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
-// Reject is the ink outline (the refusing choice) and owns the first focus;
+// THE KEYS' BASE (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
+// The sheet redraws them as Cloud's cell keys wherever this footer is drawn
+// (approval.css: the docked row, and "The key row outside the dock", 44 high
+// in 13 caps); these classes are what the Lighter desk's Review order card
+// narrows (lighter-ticket.css). Reject is the ink outline (the refusing choice) and owns the first focus;
 // the action button is the view's one blue fill. Focus is the 2px focus
 // outline, 3px out. The ARMED (second click) key turns into an ink outline
 // with a 2px ink ring 3px out: the second press is the irreversible one, and
@@ -104,7 +119,24 @@ const KEY_BASE =
 const ARMED_RING = "outline outline-2 outline-offset-[3px] outline-rule-ink";
 
 const REASON_INPUT =
-  "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 font-sans text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none disabled:text-ink-tertiary";
+  "block w-full min-w-0 resize-none border-0 bg-transparent font-sans text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:outline-none disabled:text-ink-tertiary";
+
+/**
+ * The reason field's counter shows from here (Cloud shows "{count} / 1,000"
+ * from 900, nine tenths of its cap; desktop's cap is 500).
+ */
+export const REJECT_REASON_COUNT_FROM = 450;
+
+/**
+ * The reason as a one-line field would hold it. The field wraps and grows
+ * like Cloud's instruction field, but it keeps an `<input>`'s value rule
+ * (HTML strips line breaks from a text input's value), so Enter and a pasted
+ * break add nothing and the reason that travels with Reject is exactly the
+ * text it always was.
+ */
+export function oneLineReason(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
 
 /**
  * THE REASON FIELD'S WORDS (docs/design/H3-DESKTOP.md section 4.3 and
@@ -153,6 +185,36 @@ export function rejectKeyWords(input: {
   return { text: "Reject", aria: "Reject" };
 }
 
+/**
+ * THE FAILURE LINE (Cloud's DG5-28, `FooterAlert`): when a decision does not
+ * go through, one ink line right over the decision band, one lightness step
+ * over the card. It is always mounted and empty until it has words, so its
+ * first text is said by the alert it already is; empty, it takes no room
+ * (approval.css). No mark and never red: nothing was refused here, the
+ * decision did not go through, and the keys are live again.
+ *
+ * The card draws it right before its footer, in the card or in the chat's
+ * dock with the footer (`ApprovalCard`), so a docked card's failure sits
+ * over the band, never in the transcript behind it.
+ */
+export function ApprovalFailureLine({
+  error,
+  className,
+}: {
+  readonly error: string | null;
+  readonly className?: string;
+}): JSX.Element {
+  return (
+    <div
+      role="alert"
+      data-vex-area="approval-failure"
+      className={className === undefined ? "vex-appr__fail" : `vex-appr__fail ${className}`}
+    >
+      {error}
+    </div>
+  );
+}
+
 export function ApprovalDecisionActions({
   isHighRisk,
   armedAction,
@@ -171,6 +233,8 @@ export function ApprovalDecisionActions({
   wrapReasonOnNarrow = false,
   rejectReasonInput = true,
   dock = null,
+  failure,
+  cue = null,
 }: ApprovalDecisionActionsProps): JSX.Element {
   // The Reject key keeps its own ref (the card's first-mount focus) and names
   // itself the initial focus: one ref does both, see `useInitialFocusRef`.
@@ -188,119 +252,168 @@ export function ApprovalDecisionActions({
   const approveIdleAria = settledDecision === "approved"
     ? "Approved"
     : approveArmed ? "Confirm approve" : approveLabel;
+  const failureLine = failure === undefined ? null : <ApprovalFailureLine error={failure} />;
+  // THE STATUS (Cloud's `.vx-tk-status`, `role="status"`, present from
+  // mount): what the decision is doing, said once as it changes, since the
+  // card is no live region of its own. Docked, it is the middle cell, which
+  // reads the gate line until a decision runs; in the card, it is unseen.
+  const statusWords = approvePending
+    ? pendingApproveLabel
+    : rejectPending
+      ? REJECTING_WORD
+      : settledDecision === "approved"
+        ? "Approved."
+        : settledDecision === "rejected"
+          ? "Rejected."
+          : null;
   return (
-    <footer
-      data-vex-area="approval-foot"
-      // DOCKED (docs/design/H3-DESKTOP.md section 1.8): the shell's bottom
-      // row under the chat, a grid of cells (approval.css): the reason field
-      // across the top, then Reject | the gate line | the approve key. Out of
-      // the card's region, so the group takes the card's title as its name.
-      data-docked={dock !== null ? "" : undefined}
-      role={dock !== null ? "group" : undefined}
-      aria-labelledby={dock?.labelledBy}
-      className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
-    >
-      {rejectReasonInput ? (
-        <input
-          type="text"
-          value={rejectReason}
-          onChange={(e) => onRejectReasonChange(e.target.value)}
-          disabled={inFlight}
-          maxLength={APPROVAL_REJECT_REASON_MAX}
-          aria-label={REJECT_REASON_LABEL}
-          placeholder={REJECT_REASON_PLACEHOLDER}
-          className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
-        />
-      ) : null}
-      {/* REJECT IS THE NAMED INITIAL FOCUS, and it is first in the footer.
-          The safer action owns both, and it owns them through the same
-          `autofocus` content attribute every dialog in this app names its
-          initial focus with (`components/ui/dialog.tsx`), so a card mounted
-          inside a dialog and a card mounted inside the global approvals panel
-          resolve to the SAME element by one rule rather than two. The
-          attribute is written by the ref, not passed as a prop, because React
-          warns on a lowercase `autofocus` prop. Measured
-          defect this closes: the panel moved focus to its own container, so a
-          keyboard user landed on nothing and the "least destructive default"
-          existed only in the inline card's mount effect. */}
-      <button
-        ref={rejectKeyRef}
-        type="button"
-        onClick={onReject}
-        disabled={inFlight}
-        aria-busy={rejectPending}
-        aria-label={rejectAria}
-        // Presentation hooks for the docked row's sheet; the classes below
-        // keep drawing the key inside the card.
-        data-vex-key="reject"
-        data-armed={rejectArmed ? "" : undefined}
-        className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
-          rejectArmed ? ` ${ARMED_RING}` : ""
-        }`}
+    <>
+      {dock === null ? failureLine : null}
+      <footer
+        data-vex-area="approval-foot"
+        // DOCKED (docs/design/H3-DESKTOP.md section 1.8): the shell's bottom
+        // row under the chat, a grid of cells (approval.css): the reason field
+        // across the top, then Reject | the gate line | the approve key. Out of
+        // the card's region, so the group takes the card's title as its name.
+        data-docked={dock !== null ? "" : undefined}
+        // Outside the dock the keys are Cloud's cells on the card's rule
+        // (approval.css, "The key row outside the dock").
+        data-vex-keys={dock === null ? "cells" : undefined}
+        role={dock !== null ? "group" : undefined}
+        aria-labelledby={dock?.labelledBy}
+        className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
       >
-        {rejectText}
-      </button>
-      {/* THE MIDDLE CELL, docked only: the line for the card's gate, where H3
-          draws its tick box and key hints (section 4.3). Words, no control. */}
-      {dock !== null ? (
-        <p data-vex-area="approval-gate" className="vex-appr__gate">
-          {dock.gateLine}
-        </p>
-      ) : null}
-      {/* THE WORKING KEY. A desk order signs, submits and then waits on the
-          sequencer: fifteen-odd seconds in an app that is otherwise instant.
-          While its own dispatch runs this button is the only live thing on
-          screen, so it keeps its full blue fill and leads its label with the
-          ONGOING SWATCH in its own ink (status by fill, the page's one state
-          motion), as Cloud's pending key keeps its blue, while the Reject
-          beside it is held (the cell ground and the muted word): the action
-          you took stays alive, the one you did not recedes.
-          `aria-busy` and the swapped label carry the same fact without the
-          motion, which is what a screen reader and a reduced-motion viewer
-          each get. */}
-      <button
-        type="button"
-        onClick={onApprove}
-        disabled={inFlight}
-        aria-busy={approvePending}
-        aria-label={
-          approvePending
-            ? `${spokenWord(pendingApproveLabel)}, please wait`
-            : approveIdleAria
-        }
-        data-vex-approve-working={approvePending ? "" : undefined}
-        data-vex-key="approve"
-        data-armed={approveArmed ? "" : undefined}
-        className={`${KEY_BASE} gap-2 ${
-          approveArmed
-            ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
-            : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
-        }`}
-      >
-        {approvePending ? (
-          <span aria-hidden className="inline-flex shrink-0">
-            <Swatch state="ongoing" size={9} />
-          </span>
+        {/* The clip cue, first: under the card's visible rows and over the
+            keys, never over a row. */}
+        {cue}
+        {dock === null ? (
+          <p role="status" data-vex-area="approval-status" className="sr-only">
+            {statusWords}
+          </p>
         ) : null}
-        {/* ONE WIDTH, TWO LABELS. Both sit in the same grid cell, so the key
-            is always sized to the longer of them and the swap crossfades in
-            place instead of snapping the footer narrower under the pointer
-            that just pressed it. The resting width is unchanged: the idle
-            label is the longer one. The button's `aria-label` is what names
-            it, so the faded copy is never announced twice. */}
-        <span className="grid grid-cols-1 grid-rows-1 place-items-center">
-          <span
-            className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-100" : "opacity-0"}`}
+        {rejectReasonInput ? (
+          // Cloud's instruction field (`CustomRow`, `AnswerField`): sans 16,
+          // wrapping and growing to 144, a row of at least 56 with 16 around
+          // the words and the ring on the whole row, and the count once the
+          // words near the cap. One line of text, as before (`oneLineReason`).
+          <div
+            data-vex-area="approval-reason"
+            className={`vex-appr__reason-row${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
           >
-            {pendingApproveLabel}
+            <textarea
+              rows={1}
+              value={rejectReason}
+              onChange={(e) => onRejectReasonChange(oneLineReason(e.target.value))}
+              // Enter adds no line, as in a one-line field; it sends nothing.
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) e.preventDefault();
+              }}
+              disabled={inFlight}
+              maxLength={APPROVAL_REJECT_REASON_MAX}
+              aria-label={REJECT_REASON_LABEL}
+              placeholder={REJECT_REASON_PLACEHOLDER}
+              className={`vex-appr__reason-field ${REASON_INPUT}`}
+            />
+            {rejectReason.length >= REJECT_REASON_COUNT_FROM ? (
+              <span data-vex-area="approval-reason-count" className="vex-appr__count">
+                {rejectReason.length} / {APPROVAL_REJECT_REASON_MAX}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {/* Docked, the failure line is the row's own cell between the reason
+            field and the keys (Cloud's dock: the instruction row, the alert,
+            the band). */}
+        {dock !== null ? failureLine : null}
+        {/* REJECT IS THE NAMED INITIAL FOCUS, and it is first in the footer.
+            The safer action owns both, and it owns them through the same
+            `autofocus` content attribute every dialog in this app names its
+            initial focus with (`components/ui/dialog.tsx`), so a card mounted
+            inside a dialog and a card mounted inside the global approvals panel
+            resolve to the SAME element by one rule rather than two. The
+            attribute is written by the ref, not passed as a prop, because React
+            warns on a lowercase `autofocus` prop. Measured
+            defect this closes: the panel moved focus to its own container, so a
+            keyboard user landed on nothing and the "least destructive default"
+            existed only in the inline card's mount effect. */}
+        <button
+          ref={rejectKeyRef}
+          type="button"
+          onClick={onReject}
+          disabled={inFlight}
+          aria-busy={rejectPending}
+          aria-label={rejectAria}
+          // Presentation hooks for the docked row's sheet; the classes below
+          // keep drawing the key inside the card.
+          data-vex-key="reject"
+          data-armed={rejectArmed ? "" : undefined}
+          className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
+            rejectArmed ? ` ${ARMED_RING}` : ""
+          }`}
+        >
+          {rejectText}
+        </button>
+        {/* THE MIDDLE CELL, docked only: the line for the card's gate, where H3
+            draws its tick box and key hints (section 4.3), and the card's
+            status while a decision runs or has landed. Words, no control. */}
+        {dock !== null ? (
+          <p role="status" data-vex-area="approval-gate" className="vex-appr__gate">
+            {statusWords ?? dock.gateLine}
+          </p>
+        ) : null}
+        {/* THE WORKING KEY. A desk order signs, submits and then waits on the
+            sequencer: fifteen-odd seconds in an app that is otherwise instant.
+            While its own dispatch runs this button is the only live thing on
+            screen, so it keeps its full blue fill and leads its label with
+            Cloud's busy mark, the blinking 8 square in its own ink, 14 from
+            the word (the page's one state motion), as Cloud's pending key
+            keeps its blue, while the Reject
+            beside it is held (the cell ground and the muted word): the action
+            you took stays alive, the one you did not recedes.
+            `aria-busy` and the swapped label carry the same fact without the
+            motion, which is what a screen reader and a reduced-motion viewer
+            each get. */}
+        <button
+          type="button"
+          onClick={onApprove}
+          disabled={inFlight}
+          aria-busy={approvePending}
+          aria-label={
+            approvePending
+              ? `${spokenWord(pendingApproveLabel)}, please wait`
+              : approveIdleAria
+          }
+          data-vex-approve-working={approvePending ? "" : undefined}
+          data-vex-key="approve"
+          data-armed={approveArmed ? "" : undefined}
+          className={`${KEY_BASE} gap-[14px] ${
+            approveArmed
+              ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
+              : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
+          }`}
+        >
+          {approvePending ? (
+            // Cloud's busy mark (`.vx-busy-mark`): an 8 square in the key's
+            // own ink, blinking, 14 from the word (approval.css).
+            <StateSquare state="ongoing" size={8} className="vex-appr__busy" />
+          ) : null}
+          {/* ONE WIDTH, TWO LABELS (Cloud's `.vx-key-stack`). Both sit in the
+              same grid cell, so the key is always sized to the longer of them
+              and never narrows under the pointer that just pressed it; the
+              words swap at once, the other kept hidden. The resting width is
+              unchanged: the idle label is the longer one. The button's
+              `aria-label` is what names it, so the hidden copy is never
+              announced. */}
+          <span className="grid grid-cols-1 grid-rows-1 place-items-center">
+            <span className={`col-start-1 row-start-1 ${approvePending ? "visible" : "invisible"}`}>
+              {pendingApproveLabel}
+            </span>
+            <span className={`col-start-1 row-start-1 ${approvePending ? "invisible" : "visible"}`}>
+              {approveIdleText}
+            </span>
           </span>
-          <span
-            className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-0" : "opacity-100"}`}
-          >
-            {approveIdleText}
-          </span>
-        </span>
-      </button>
-    </footer>
+        </button>
+      </footer>
+    </>
   );
 }

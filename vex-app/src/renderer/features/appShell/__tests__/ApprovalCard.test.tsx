@@ -22,7 +22,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -620,7 +620,7 @@ describe("ApprovalCard", () => {
     );
   });
 
-  it("says a failure as Cloud's one ink line with the cross, right above the decision band (DG5-28)", () => {
+  it("says a failure as Cloud's one ink line, no mark, right above the decision band (DG5-28)", () => {
     mockApproveMutate.mockImplementation((_input, options) => {
       void options?.onSuccess?.({
         ok: false,
@@ -636,12 +636,17 @@ describe("ApprovalCard", () => {
       });
     });
     renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    // Mounted from the start, empty, so its first text is said.
+    const before = screen.getByRole("alert");
+    expect(before.textContent).toBe("");
+    expect(before.getAttribute("data-vex-area")).toBe("approval-failure");
     fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     const line = screen.getByRole("alert");
+    // The same node, never remounted: a live region says only what changes in it.
+    expect(line).toBe(before);
     expect(line.classList.contains("vex-appr__fail")).toBe(true);
-    expect(line.getAttribute("data-vex-area")).toBe("approval-failure");
-    // The cross is the ink error swatch, the words follow it; nothing is red.
-    expect(line.firstElementChild?.getAttribute("data-s")).toBe("error");
+    // No mark: the words alone; nothing is red.
+    expect(line.childElementCount).toBe(0);
     expect(line.textContent).toBe("Wallet rejected the request.");
     expect(line.className).not.toMatch(/danger|red|err/);
     // The decision band follows it at once: the line is the last cell above the footer.
@@ -709,10 +714,17 @@ describe("ApprovalCard", () => {
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
     expect(approve.getAttribute("aria-busy")).toBe("true");
-    // The working key keeps its blue fill and leads with the ongoing swatch
-    // (status by fill); the retired travelling lane is gone.
+    // The working key keeps its blue fill and leads with Cloud's busy mark,
+    // the blinking 8 square, 14 from the word; the retired travelling lane is gone.
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(true);
-    expect(approve.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    const mark = approve.querySelector('.vex-sq[data-state="ongoing"]') as HTMLElement | null;
+    expect(mark).not.toBeNull();
+    expect(mark?.style.width).toBe("8px");
+    expect(approve.className).toContain("gap-[14px]");
+    // The words swap at once, never a crossfade: the idle label is kept hidden for the width.
+    expect(approve.innerHTML).not.toContain("transition-opacity");
+    const labels = Array.from(approve.querySelectorAll(".col-start-1"));
+    expect(labels.map((label) => label.classList.contains("invisible"))).toEqual([false, true]);
     expect(approve.className).not.toContain("disabled:border-dotted");
     expect(approve.className).not.toContain("vex-ring-working");
   });
@@ -728,7 +740,7 @@ describe("ApprovalCard", () => {
     const approve = screen.getByRole("button", { name: /^approve transfer$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
-    expect(approve.querySelector(".vex-swatch")).toBeNull();
+    expect(approve.querySelector(".vex-swatch, .vex-sq")).toBeNull();
     // An inert primary is HELD (Cloud's kit): the sheet draws the cell
     // ground and the muted word from `disabled`, never a dotted blue outline.
     expect(approve.className).not.toMatch(/disabled:(border-dotted|border-accent|text-accent|bg-transparent)/);
@@ -995,6 +1007,21 @@ describe("ApprovalCard folded to its row (the Needs you page)", () => {
     expect(screen.queryByRole("button", { name: /^approve/i })).toBeNull();
   });
 
+  it("draws its keys as the kit's 13 caps keys, never blue, and its type at Cloud's kit measures", () => {
+    renderRow(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    expect(screen.getByRole("button", { name: "Reject" }).getAttribute("data-vex-button")).toBe("ink");
+    expect(screen.getByRole("button", { name: "Review transfer" }).getAttribute("data-vex-button")).toBe("ghost");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr-row__title")).toContain("font-weight: 400");
+    expect(body(".vex-appr-row__stamp.vex-stamp")).toContain("height: 24px");
+    expect(body(".vex-appr-row__stamp.vex-stamp")).toContain("font-size: 11px");
+  });
+
   it("Review opens the card and decides nothing", () => {
     const onReview = vi.fn();
     renderRow(makeSummary(), onReview);
@@ -1088,13 +1115,15 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     });
   }
 
-  it("names the act in the eyebrow, as H3 draws it, with no status swatch beside it", () => {
+  it("names the act in the eyebrow, as H3 draws it, after the strip's state square and no R3 swatch", () => {
     renderCard(makeSummary(), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
     const eyebrow = header?.querySelector(".vex-appr__eyebrow");
     // Sentence case in the source; the eyebrow's style sets the caps.
     expect(eyebrow?.textContent).toBe("Confirm this transfer");
-    expect(header?.firstElementChild).toBe(eyebrow);
+    // Cloud's strip: the state square first, then the eyebrow.
+    expect(header?.firstElementChild?.classList.contains("vex-sq")).toBe(true);
+    expect(header?.firstElementChild?.nextElementSibling).toBe(eyebrow);
     expect(header?.textContent).not.toContain("Approval needed");
     expect(header?.querySelector('.vex-swatch[data-s="awaiting"]')).toBeNull();
     expect(header?.innerHTML).not.toContain("--vex-pin");
@@ -1132,7 +1161,7 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
   it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at Cloud's 18 / 1.3", () => {
     for (const selector of [".vex-appr__eyebrow", ".vex-appr__net"]) {
       const body = ruleBody(selector);
-      expect(body).toContain("font-size: 13px");
+      expect(body).toContain("font-size: 12px");
       expect(body).toContain("text-transform: uppercase");
       expect(body).toContain("letter-spacing: var(--tracking-label)");
       expect(body).not.toContain("--font-mono");
@@ -1141,7 +1170,10 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     expect(title).toContain("font-size: 18px");
     expect(title).toContain("line-height: 1.3");
     expect(title).toContain("letter-spacing: -0.01em");
-    expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 15px");
+    // Cloud's `.vx-tk-warn`: 14 / 1.45, 6 under the sentence.
+    expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 14px");
+    expect(ruleBody(".vex-appr__consequence")).toContain("line-height: 1.45");
+    expect(ruleBody(".vex-appr__consequence")).toContain("margin: 6px 0 0");
   });
 });
 
@@ -1199,8 +1231,98 @@ describe("ApprovalCard, the H3 head", () => {
   it("keeps the expiry and the risk tag in the eyebrow row, read from the approval", () => {
     renderCard(makeSummary({ expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
-    expect(header?.querySelector(".vex-appr__expiry")?.textContent).toMatch(/^Expires (at )?.+ UTC$/);
+    const timer = header?.querySelector(".vex-appr__expiry");
+    expect(timer?.textContent).toBe("Expires in 10 min");
+    expect(timer?.getAttribute("role")).toBe("timer");
     expect(header?.contains(screen.getByTestId("risk-chip"))).toBe(true);
+  });
+
+  it("counts the expiry down live, m:ss in ink for the last minute, and never touches the keys", () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.UTC(2026, 9, 17, 9);
+      vi.setSystemTime(start);
+      renderCard(
+        makeSummary({ riskLevel: "info", actionKind: "read", expiresAt: new Date(start + 3 * 60_000).toISOString() }),
+        false,
+      );
+      const timer = (): Element | null => screen.queryByRole("timer");
+      // One act per second, so each wake renders and schedules the next.
+      const tick = (ms: number): void => {
+        for (let left = ms; left > 0; left -= 1000) {
+          act(() => {
+            vi.advanceTimersByTime(Math.min(1000, left));
+          });
+        }
+      };
+      expect(timer()?.textContent).toBe("Expires in 3 min");
+      tick(60_000);
+      expect(timer()?.textContent).toBe("Expires in 2:00");
+      expect(timer()?.hasAttribute("data-warn")).toBe(false);
+      tick(75_000);
+      expect(timer()?.textContent).toBe("Expires in 0:45");
+      expect(timer()?.hasAttribute("data-warn")).toBe(true);
+      tick(45_000);
+      expect(timer()?.textContent).toBe("Expired");
+      // Words only: the keys stay exactly as they were; the engine owns the deadline.
+      expect((screen.getByRole("button", { name: "Approve transfer" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leads the strip with the status square: the target while it waits, the blink while a decision runs", () => {
+    renderCard(makeSummary(), false);
+    const header = document.querySelector('[data-vex-area="approval-card"] header');
+    const square = header?.firstElementChild;
+    expect(square?.classList.contains("vex-sq")).toBe(true);
+    expect(square?.getAttribute("data-state")).toBe("warning");
+    expect(square?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("sets the strip at Cloud's measures: the eyebrow and MAINNET 12 caps, the pair 18 apart, the timer tabular", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr__eyebrow")).toContain("font-size: 12px");
+    expect(body(".vex-appr__net")).toContain("font-size: 12px");
+    expect(body(".vex-appr__funds")).toContain("gap: 18px");
+    expect(body(".vex-appr__expiry")).toContain("font-variant-numeric: tabular-nums");
+    expect(body(".vex-appr__expiry")).toContain("letter-spacing: 0.04em");
+    expect(body(".vex-appr__expiry[data-warn]")).toContain("color: var(--vex-alias-label-primary)");
+  });
+
+  it("is named by its eyebrow and described by its sentence, with no card-wide live region", () => {
+    renderCard(makeSummary(), false);
+    const card = document.querySelector<HTMLElement>('[data-vex-area="approval-card"]') as HTMLElement;
+    expect(screen.getByRole("region", { name: "Confirm this transfer" })).toBe(card);
+    const sentence = screen.getByRole("heading", { level: 3 });
+    expect(card.getAttribute("aria-describedby")).toBe(sentence.id);
+    expect(card.hasAttribute("aria-live")).toBe(false);
+    expect(card.hasAttribute("aria-busy")).toBe(false);
+    // The footer's status is mounted from the start, empty, so its first words are said.
+    const status = card.querySelector('[data-vex-area="approval-status"]');
+    expect(status?.getAttribute("role")).toBe("status");
+    expect(status?.textContent).toBe("");
+  });
+
+  it("says the running decision through the footer's status and marks the card busy", () => {
+    approvePending = true;
+    renderCard(makeSummary(), false);
+    const card = document.querySelector<HTMLElement>('[data-vex-area="approval-card"]') as HTMLElement;
+    expect(card.getAttribute("aria-busy")).toBe("true");
+    expect(card.querySelector('[data-vex-area="approval-status"]')?.textContent).toBe("Approving…");
+  });
+
+  it("blinks the strip's square while the decision is in flight", () => {
+    approvePending = true;
+    renderCard(makeSummary(), false);
+    const square = document.querySelector('[data-vex-area="approval-card"] header > .vex-sq');
+    expect(square?.getAttribute("data-state")).toBe("ongoing");
   });
 
   it("puts no em or en dash in the head", () => {
@@ -1254,9 +1376,10 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     renderCard(SWAP, false);
     const rows = moneyRows();
     expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
-    expect(rows[0]?.value).toBe("200 USDC · on Base");
-    expect(rows[1]?.value).toBe("0.05714 ETH · quoted");
-    expect(rows[2]?.value).toBe("0.05686 ETH · slippage limit 0.5%");
+    // A note is its own line under the value (Cloud's row note), so its inline "·" is not drawn.
+    expect(rows[0]?.value).toBe("200 USDC on Base");
+    expect(rows[1]?.value).toBe("0.05714 ETH quoted");
+    expect(rows[2]?.value).toBe("0.05686 ETH slippage limit 0.5%");
     expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%)");
     expect(rows[4]?.value).toBe("Not available");
     // The network fee is never quoted, so the total stays hidden.
@@ -1272,6 +1395,19 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       // The register sets the caps; the source stays words.
       expect(row.label).not.toBe(row.label.toUpperCase());
     }
+  });
+
+  it("draws a row's note on its own line at 11 muted, and Not available muted (Cloud's rows)", () => {
+    renderCard(SWAP, false);
+    const rows = moneyRows();
+    const note = rows[2]?.dd.querySelector(".vex-appr__note");
+    expect(note?.textContent).toBe("slippage limit 0.5%");
+    const sheet = APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(ruleBody(".vex-appr__note")).toContain("display: block");
+    expect(ruleBody(".vex-appr__note")).toContain("font-size: 11px");
+    expect(ruleBody(".vex-appr__note")).toContain("margin-top: 3px");
+    expect(ruleBody(".vex-appr__missing")).toContain("color: var(--vex-alias-label-tertiary)");
+    expect(sheet).toContain(".vex-appr__missing");
   });
 
   it("sets every figure in mono and keeps 'Not available' a word, never a figure", () => {
@@ -1335,10 +1471,14 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
   });
 
   it("draws each row as a ruled cell edge to edge, the label 24 in at the left and the value 24 in at the right", () => {
-    expect(ruleBody(".vex-appr__dl")).toContain("grid-template-columns: fit-content(50%) minmax(0, 1fr)");
+    // Cloud's field row grid: the name column at least 120, each row's rule under it.
+    expect(ruleBody(".vex-appr__dl")).toContain("grid-template-columns: minmax(120px, auto) minmax(0, 1fr)");
     expect(ruleBody(".vex-appr__dl")).toContain("margin: 0;");
+    expect(ruleBody(".vex-appr__dl")).toContain("border-top: 1px solid var(--vex-alias-rule)");
     const cell = ruleBody(".vex-appr__dl dt,\n.vex-appr__dl dd");
-    expect(cell).toContain("border-top: 1px solid var(--vex-alias-rule)");
+    expect(cell).toContain("border-bottom: 1px solid var(--vex-alias-rule)");
+    // The last row leaves its rule to the cell under the table, so no rule doubles.
+    expect(ruleBody(".vex-appr__dl > :last-child > dt,\n.vex-appr__dl > :last-child > dd")).toContain("border-bottom: 0");
     expect(cell).toContain("padding: 8px 0");
     expect(cell).toContain("line-height: 17px");
     const label = ruleBody(".vex-appr__dl dt");
@@ -1368,7 +1508,9 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       renderCard(SWAP, false);
       const key = signed().querySelector("summary");
       expect(key?.className).toBe("vex-appr__more-key");
-      expect(key?.firstElementChild?.className).toBe("vex-appr__chev");
+      expect(key?.firstElementChild?.className).toBe("vex-appr__chev vex-appr__chev--swap");
+      // Cloud's chevron swaps its glyph with the state; both are drawn, the sheet shows one.
+      expect(key?.querySelectorAll(".vex-appr__chev-closed, .vex-appr__chev-open")).toHaveLength(2);
       expect(key?.querySelector(".vex-appr__more-sum")?.textContent).toBe(
         "kyberswap:swap.execute, wallet broadcast, raw arguments",
       );
@@ -1401,22 +1543,25 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(details.textContent).toContain("kyberswap:swap.execute");
     });
 
-    it("sets the key in caps and tracked sans 13, ruled like a row, its note in sentence case", () => {
+    it("sets the key as Cloud's toggle: 36 high, tracked sans 12 caps in ink 2, ruled like a row, its note in sentence case", () => {
       const key = ruleBody(".vex-appr__more-key");
-      expect(key).toContain("font-size: 13px");
+      expect(key).toContain("font-size: 12px");
       expect(key).toContain("text-transform: uppercase");
       expect(key).toContain("letter-spacing: var(--tracking-label)");
       expect(key).toContain("border-top: 1px solid var(--vex-alias-rule)");
       expect(key).toContain("padding: 0 var(--vex-appr-inset)");
-      expect(key).toContain("min-height: 34px");
-      // Ink, not the old blue link: blue is for the primary key only.
-      expect(key).toContain("color: var(--vex-alias-label-primary)");
+      expect(key).toContain("min-height: 36px");
+      // Ink 2, not the old blue link: blue is for the primary key only.
+      expect(key).toContain("color: var(--vex-alias-label-secondary)");
       expect(key).not.toContain("accent");
       const note = ruleBody(".vex-appr__more-sum");
       expect(note).toContain("text-transform: none");
       expect(note).toContain("letter-spacing: normal");
       // H3's focus: the 2px ring inside the cell.
       expect(ruleBody(".vex-appr__more-key:focus-visible")).toContain("outline-offset: -2px");
+      // The chevron is muted and never turns; it swaps its glyph.
+      expect(ruleBody(".vex-appr__chev--swap")).toContain("color: var(--vex-alias-label-tertiary)");
+      expect(ruleBody(".vex-appr__more[open] .vex-appr__chev:not(.vex-appr__chev--swap)")).toContain("rotate(90deg)");
     });
 
     it("rules every open field edge to edge, its key in mono and never in caps", () => {
@@ -1426,7 +1571,12 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(key).toContain("font-family: var(--font-mono)");
       expect(key).toContain("padding-left: var(--vex-appr-inset)");
       expect(key).not.toContain("text-transform");
+      expect(key).toContain("font-size: 12px");
       expect(ruleBody(".vex-appr__well dd")).toContain("padding-right: var(--vex-appr-inset)");
+      // Cloud's signed fields: values mono 13 in ink, no fill, the names in a column up to 200.
+      expect(ruleBody(".vex-appr__well dd")).toContain("font-size: 13px");
+      expect(ruleBody(".vex-appr__well")).toContain("grid-template-columns: minmax(0, 200px) minmax(0, 1fr)");
+      expect(ruleBody(".vex-appr__well")).not.toContain("background");
     });
   });
 });
@@ -1749,6 +1899,66 @@ describe("ApprovalCard, every kind in the same frame", () => {
  * same footer with the same state, so every gate the card keeps inside itself
  * holds docked too, and these cases press the docked keys to prove it.
  */
+describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
+  const BRIDGE = {
+    toolName: "execute_tool",
+    preview: {
+      toolName: "swap.execute",
+      namespace: "kyberswap",
+      criticalArgs: { toolId: "kyberswap.swap.execute", chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "200" },
+    },
+  } as const;
+
+  /** Lays the card out: every row's bottom at `rowBottom`, the scroller ending at 500, the footer's top at 600. */
+  function layoutWith(rowBottom: number): () => void {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number): DOMRect =>
+        ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      if (this.matches(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt")) return box(rowBottom - 34, rowBottom);
+      if (this.matches('[data-vex-area="approval-foot"]')) return box(600, 672);
+      return box(0, 500);
+    });
+    return () => spy.mockRestore();
+  }
+
+  function renderScrolled(): void {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <div style={{ overflowY: "auto" }}>
+          <ApprovalCard summary={makeSummary(BRIDGE)} sessionId={SESSION} focusOnMount={false} />
+        </div>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("says how many rows are out of view, over the keys and hidden from screen readers", () => {
+    const restore = layoutWith(900);
+    try {
+      renderScrolled();
+      const cue = document.querySelector('[data-vex-area="approval-clip-cue"]');
+      const rows = document.querySelectorAll(".vex-appr__dl dt, .vex-appr__more-key, .vex-appr__well dt").length;
+      expect(rows).toBeGreaterThan(1);
+      expect(cue?.textContent).toBe(`${rows} more lines below`);
+      expect(cue?.getAttribute("aria-hidden")).toBe("true");
+      // The footer's first row: over the keys, never over a row.
+      expect(cue?.parentElement?.getAttribute("data-vex-area")).toBe("approval-foot");
+      expect(cue?.parentElement?.firstElementChild).toBe(cue);
+    } finally {
+      restore();
+    }
+  });
+
+  it("draws nothing while every row is in view", () => {
+    const restore = layoutWith(200);
+    try {
+      renderScrolled();
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("ApprovalCard, its decision row docked in the shell's bottom row", () => {
   let dock: HTMLElement;
   beforeEach(() => {
@@ -1779,12 +1989,12 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(foot().getAttribute("aria-labelledby")).toBe(title.id);
   });
 
-  it("orders the cells as H3 does: the reason field, Reject, the gate line, the approve key", () => {
+  it("orders the cells as H3 does: the reason field, the failure line, Reject, the gate line, the approve key", () => {
     renderDocked(makeSummary());
     const cells = Array.from(foot().children).map((child) =>
       child.getAttribute("data-vex-key") ?? child.getAttribute("data-vex-area") ?? child.tagName.toLowerCase(),
     );
-    expect(cells).toEqual(["input", "reject", "approval-gate", "approve"]);
+    expect(cells).toEqual(["approval-reason", "approval-failure", "reject", "approval-gate", "approve"]);
     expect(screen.getByLabelText(REJECT_REASON_LABEL).getAttribute("placeholder")).toBe(REJECT_REASON_PLACEHOLDER);
   });
 
@@ -1793,6 +2003,14 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe(
       "Two presses decide: the first arms the key for 4 s.",
     );
+  });
+
+  it("makes the middle cell the card's status: the gate line at rest, the running decision's word while it runs", () => {
+    rejectPending = true;
+    renderDocked(makeSummary());
+    const gate = dock.querySelector('[data-vex-area="approval-gate"]');
+    expect(gate?.getAttribute("role")).toBe("status");
+    expect(gate?.textContent).toBe("Rejecting…");
   });
 
   it("says nothing signs until you approve on a card that decides on one press", () => {
@@ -1829,6 +2047,46 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(mockApproveMutate).not.toHaveBeenCalled();
   });
 
+  it("draws the reason as Cloud's instruction field: 16, wrapping and growing to 144, the ring on the row", () => {
+    renderDocked(makeSummary());
+    const field = screen.getByLabelText(REJECT_REASON_LABEL);
+    expect(field.tagName).toBe("TEXTAREA");
+    expect(field.getAttribute("maxlength")).toBe("500");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const body = (selector: string): string =>
+      new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    expect(body(".vex-appr__reason-field")).toContain("font-size: 16px");
+    expect(body(".vex-appr__reason-field")).toContain("max-height: 144px");
+    expect(body(".vex-appr__reason-field")).toContain("field-sizing: content");
+    expect(body(".vex-appr__reason-row:focus-within")).toContain("outline-offset: -2px");
+  });
+
+  it("keeps the reason one line, as before: a typed or pasted break adds nothing to what Reject sends", () => {
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    const field = screen.getByLabelText(REJECT_REASON_LABEL) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "Use 100 USDC\ninstead\r\n" } });
+    expect(field.value).toBe("Use 100 USDCinstead");
+    // Enter adds no line and sends nothing.
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    field.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1", reason: "Use 100 USDCinstead" }, expect.any(Object));
+  });
+
+  it("counts the reason near desktop's 500 cap, and not before", () => {
+    renderDocked(makeSummary());
+    const field = screen.getByLabelText(REJECT_REASON_LABEL);
+    fireEvent.change(field, { target: { value: "a".repeat(449) } });
+    expect(dock.querySelector('[data-vex-area="approval-reason-count"]')).toBeNull();
+    fireEvent.change(field, { target: { value: "a".repeat(450) } });
+    expect(dock.querySelector('[data-vex-area="approval-reason-count"]')?.textContent).toBe("450 / 500");
+  });
+
   it("never lets the reason ride along with an approve", () => {
     renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
     fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "ignored" } });
@@ -1856,6 +2114,58 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
     expect(foot().querySelector('[data-vex-key="approve"]')?.hasAttribute("data-vex-approve-working")).toBe(true);
   });
 
+  it("says a failed decision over the docked keys, never in the card behind them (DG5-28)", () => {
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Wallet rejected the request.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-x",
+        },
+      });
+    });
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+    const line = screen.getByRole("alert");
+    expect(line.textContent).toBe("Wallet rejected the request.");
+    expect(dock.contains(line)).toBe(true);
+    expect(card().contains(line)).toBe(false);
+    expect(line.nextElementSibling?.getAttribute("data-vex-key")).toBe("reject");
+    // The keys are live again for the next try.
+    expect((screen.getByRole("button", { name: "Approve transfer" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("draws the footer outside the dock as Cloud's key row: cells 44 high, 13 caps, Reject 120 raised, approve 200 blue", () => {
+    renderCard(makeSummary(), false);
+    const inCard = card().querySelector('[data-vex-area="approval-foot"]');
+    expect(inCard?.getAttribute("data-vex-keys")).toBe("cells");
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const scope = '.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *)';
+    const body = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+    };
+    expect(body(`${scope} > button`)).toContain("height: 44px");
+    expect(body(`${scope} > button`)).toContain("font-size: 13px");
+    expect(body(`${scope} > button`)).toContain("text-transform: uppercase");
+    expect(body(`${scope} > [data-vex-key="reject"]`)).toContain("min-width: 120px");
+    expect(body(`${scope} > [data-vex-key="reject"]`)).toContain("background: var(--vex-alias-interactive-solid)");
+    expect(body(`${scope} > [data-vex-key="approve"]`)).toContain("min-width: 200px");
+    expect(body(`${scope} > [data-vex-key="approve"]`)).toContain("background: var(--vex-alias-button-accent-fill)");
+    // A held key is never blue and never the raised Reject.
+    expect(body(`${scope} > button:disabled:not([data-vex-approve-working])`)).toContain(
+      "background: var(--vex-alias-bg-layer-3)",
+    );
+  });
+
   it("keeps the footer in the card when no dock is given, as on every other surface", () => {
     renderCard(makeSummary(), false);
     expect(card().hasAttribute("data-vex-decision-docked")).toBe(false);
@@ -1880,7 +2190,9 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       const block = /@media \(min-width: 1024px\) and \(max-height: 820px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
       expect(block).toMatch(/\.vex-appr__head \{\s*padding: 8px 0 10px;\s*\}/);
       expect(block).toMatch(/\.vex-appr__title \{\s*margin-top: 7px;\s*\}/);
-      expect(block).toMatch(/\.vex-appr__foot\[data-docked\] > input \{\s*height: 40px;\s*\}/);
+      expect(block).toMatch(
+        /\.vex-appr__foot\[data-docked\] > \.vex-appr__reason-row \{\s*min-height: 40px;\s*padding-block: 8px;\s*\}/,
+      );
       // The rows and the decision row keep their measures: nothing else steps down.
       expect(block).not.toMatch(/vex-appr__dl|> button|--vex-h3-bottom-h/);
     });
@@ -1894,13 +2206,28 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       const row = rule(".vex-appr__foot[data-docked]");
       expect(row).toContain("grid-template-columns: 168px minmax(0, 1fr) 200px");
       expect(row).toContain('"reason reason reason"');
+      expect(row).toContain('"fail fail fail"');
       expect(row).toContain('"reject gate approve"');
+      // An empty failure line is out of the layout, so a card with no failure keeps the row's measures.
+      expect(rule(".vex-appr__fail:empty")).toContain("position: absolute");
+      expect(rule(".vex-appr__fail")).toContain("padding: 10px var(--vex-appr-inset)");
       expect(row).toContain("position: static");
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
-      expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
+      // Cloud's instruction row: at least 56 high, 16 around the words.
+      expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("min-height: 56px");
+      expect(rule(".vex-appr__foot[data-docked] > .vex-appr__reason-row")).toContain("padding: 16px var(--vex-appr-inset)");
       // Cloud's keys: 13 caps, the approve key 32 each side of its word.
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("font-size: 13px");
       expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain("padding: 0 32px");
+    });
+
+    it("steps the keys down on a narrow column as Cloud does: Reject 128, approve 168 at 20 a side, the middle 18 in", () => {
+      const narrow = /@container \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
+      expect(narrow).toMatch(/\.vex-appr__foot\[data-docked\] \{\s*grid-template-columns: 128px minmax\(0, 1fr\) 168px;\s*\}/);
+      expect(narrow).toMatch(/\[data-vex-key="approve"\] \{\s*padding: 0 20px;\s*\}/);
+      expect(narrow).toMatch(/\.vex-appr__gate \{\s*padding: 0 18px;\s*\}/);
+      // The 560 step comes after it, so the narrowest chat still stacks its keys.
+      expect(sheet.indexOf("@container (max-width: 720px)")).toBeLessThan(sheet.indexOf("@container (max-width: 560px)"));
     });
 
     it("fills Reject raised and the approve key blue, an armed key in reversed ink and never a second blue", () => {

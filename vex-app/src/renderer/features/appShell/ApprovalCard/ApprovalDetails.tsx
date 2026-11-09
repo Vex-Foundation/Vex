@@ -26,6 +26,7 @@
  * the approval does not carry renders no row at all, never a placeholder.
  */
 
+import { useEffect, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import type {
   ApprovalPreview,
@@ -36,7 +37,7 @@ import { approvalMoneyLines, MONEY_NOT_AVAILABLE, type MoneyLine } from "./appro
 import {
   actionKindWords,
   approvalConsequence,
-  approvalExpiryWords,
+  approvalExpiryCountdown,
   approvalEyebrowWord,
   approvalSentence,
   isUserMcpApproval,
@@ -44,7 +45,8 @@ import {
   riskTagIsInk,
   riskTagWord,
 } from "./approval-sentence.js";
-import { LineChevronRight } from "../../../components/icons/line/index.js";
+import { LineChevronDown, LineChevronRight } from "../../../components/icons/line/index.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { Stamp, Tag } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import {
@@ -245,20 +247,40 @@ function toolLabel(namespace: string | null, toolName: string): string {
   return namespace !== null ? `${namespace}:${toolName}` : toolName;
 }
 
-/** A line of words with its figures set in mono ("Expires at 15:30 UTC"). */
-function withFigures(text: string): ReactNode[] {
-  return text.split(/(\d(?:[\d:.,]*\d)?)/).map((part, index) =>
-    index % 2 === 1 ? (
-      <span key={index} className="vex-num">
-        {part}
-      </span>
-    ) : (
-      part
-    ),
+/**
+ * THE LIVE EXPIRY (Cloud's `TakeoverTimer`, H3-DESKTOP.md Appendix A.7): the
+ * strip counts down to the approval's own bound `expiresAt`, "Expires in 14
+ * min", then "Expires in m:ss" for the last two minutes, in ink for the last
+ * one, "Expired" at zero. `role="timer"`, which is not live, so it never
+ * talks over the card. It wakes at the next change of its words only, and
+ * again when the window comes back into view. Words only: the deadline is
+ * the engine's, and the keys do not read this.
+ */
+function ApprovalExpiry({ expiresAt }: { readonly expiresAt: string }): JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now());
+  const countdown = approvalExpiryCountdown(expiresAt, now);
+  const nextChangeMs = countdown?.nextChangeMs ?? null;
+  useEffect(() => {
+    if (nextChangeMs === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), nextChangeMs);
+    return () => clearTimeout(timer);
+  }, [now, nextChangeMs]);
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+  if (countdown === null) return null;
+  return (
+    <span role="timer" data-warn={countdown.warn ? "" : undefined} className="vex-appr__expiry">
+      {countdown.text}
+    </span>
   );
 }
 
-/** One money line's value: figures in mono, words in sans, notes muted. */
+/** One money line's value: figures in mono, words in sans, a note muted on its own line under it. */
 function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
   const parts: ReactNode[] = [];
   line.parts.forEach((part, index) => {
@@ -271,7 +293,13 @@ function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
         parts.push(<span key={index}>{part.text}</span>);
         break;
       case "note":
-        parts.push(<span key={index} className="vex-appr__sub">{part.text}</span>);
+        // Cloud's row note (`.vx-fr-note`): its own line under the value, so
+        // the inline separator the words carry ("· on Base") is not drawn.
+        parts.push(
+          <span key={index} className="vex-appr__note">
+            {part.text.replace(/^·\s*/, "")}
+          </span>,
+        );
         break;
       case "missing":
         parts.push(
@@ -288,11 +316,12 @@ function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
   readonly titleId: string;
+  /** The eyebrow's id: the card's accessible name (Cloud's strip title). */
+  readonly eyebrowId?: string;
   readonly namespace: string | null;
   readonly toolName: string;
   /** `preview.criticalArgs` (JSON-safe scalars) or null, the shape the parent reads. */
   readonly criticalArgs: ApprovalPreview["criticalArgs"] | null;
-  readonly inlineError: string | null;
   /**
    * The joined Vex Studio project NAME, when the caller's read carried one
    * (`ApprovalPendingGlobalDto`). The inline session card reads
@@ -306,17 +335,23 @@ export interface ApprovalDetailsProps {
    * light in the approvals flow; reject never sets it.
    */
   readonly signedGlint?: boolean;
+  /**
+   * A decision is running: the strip's square blinks (`ongoing`) instead of
+   * the target (`warning`, your move). Paint only.
+   */
+  readonly busy?: boolean;
 }
 
 export function ApprovalDetails({
   summary,
   titleId,
+  eyebrowId,
   namespace,
   toolName,
   criticalArgs,
-  inlineError,
   projectName = null,
   signedGlint = false,
+  busy = false,
 }: ApprovalDetailsProps): JSX.Element {
   const actorLine = approvalActorLine({
     origin: summary.origin,
@@ -328,7 +363,6 @@ export function ApprovalDetails({
   const realFunds = !isUserMcpApproval(summary);
   const consequence = approvalConsequence(summary);
   const risks = riskSentences(summary);
-  const expiry = summary.expiresAt === null ? null : approvalExpiryWords(summary.expiresAt, Date.now());
   const moneyLines = approvalMoneyLines(summary);
   const orderFacts = criticalArgs === null ? null : lighterOrderFacts(criticalArgs);
   const curated =
@@ -412,9 +446,15 @@ export function ApprovalDetails({
             does not draw here, because both are bound and both decide how
             the person should read the card: the expiry and the risk tag. */}
         <header className="vex-appr__top">
-          <span className="vex-appr__eyebrow">{approvalEyebrowWord(summary)}</span>
+          {/* THE STATUS SQUARE (Cloud's strip `StateDot`): the target while
+              the card waits for you, the blinking square while a decision
+              runs. The eyebrow carries the meaning. */}
+          <StateSquare state={busy ? "ongoing" : "warning"} className="vex-appr__sq" />
+          <span id={eyebrowId} className="vex-appr__eyebrow">
+            {approvalEyebrowWord(summary)}
+          </span>
           <span className="vex-appr__sp" />
-          {expiry !== null ? <span className="vex-appr__expiry">{withFigures(expiry)}</span> : null}
+          {summary.expiresAt !== null ? <ApprovalExpiry expiresAt={summary.expiresAt} /> : null}
           {riskTag !== null ? (
             <Tag data-testid="risk-chip" quiet={!riskTagIsInk(summary.riskLevel)} className="shrink-0">
               {riskTag}
@@ -495,8 +535,11 @@ export function ApprovalDetails({
           this is the record the person is checking, not a label to read. */}
       <details className="vex-appr__more" open={facts === null}>
         <summary className="vex-appr__more-key">
-          <span aria-hidden className="vex-appr__chev">
-            <LineChevronRight size={14} />
+          {/* Cloud's toggle (`SignedFields`): the muted chevron swaps its
+              glyph with the state, it never turns. */}
+          <span aria-hidden className="vex-appr__chev vex-appr__chev--swap">
+            <LineChevronRight size={14} className="vex-appr__chev-closed" />
+            <LineChevronDown size={14} className="vex-appr__chev-open" />
           </span>
           All signed fields
           <span className="vex-appr__more-sum">{signedSummary}</span>
@@ -555,17 +598,6 @@ export function ApprovalDetails({
         {curated ? null : argsList}
       </details>
 
-      {/* THE FAILURE LINE (Cloud's DG5-28): one ink line with the cross, a
-          ruled cell one step lighter than the card, right above the
-          decision band (the card's footer follows it; a docked card's band
-          is the bottom row under it). Never red: nothing was refused here,
-          the decision did not go through, and the keys are live again. */}
-      {inlineError !== null ? (
-        <p role="alert" data-vex-area="approval-failure" className="vex-appr__fail">
-          <Swatch state="error" size={9} className="vex-appr__fail-mark" />
-          <span>{inlineError}</span>
-        </p>
-      ) : null}
     </>
   );
 }

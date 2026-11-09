@@ -28,6 +28,9 @@
 
 /* ── The card ──────────────────────────────────────────────────────────── */
 
+/* The card's ground is Cloud's `--vx-card` (#030405, `--vex-alias-card`),
+ * the takeover's and the result card's own (`styles/takeover.css`,
+ * `styles/cards.css`). */
 .vex-appr {
   --vex-appr-inset: 24px;
   position: relative;
@@ -45,7 +48,7 @@
 /* 1. THE HEAD: one cell, the eyebrow row, the sentence, the consequence line
  * and who asked. Measured at 1440 (section 1.7): the eyebrow row's 24px line
  * (the stamp's height, Cloud's tag) starts 10 under the card's top rule, the sentence 9
- * under it, the consequence 4 under that, and the first rule 14 under the
+ * under it, the consequence 6 under that, and the first rule 14 under the
  * last line. */
 .vex-appr__head {
   padding: 10px 0 14px;
@@ -71,10 +74,18 @@
   flex: none;
   color: var(--vex-alias-label-primary);
 }
-/* The act, "Confirm this swap": sans 13 caps, muted, tracked (section 2.3). */
+/* The strip's status square (Cloud's `StateDot` in `.vx-tk-strip`): first in
+ * the row, the target while the card waits, the blinking square while a
+ * decision runs (`StateSquare`, marks.css). */
+.vex-appr__sq {
+  flex: none;
+}
+/* The act, "Confirm this swap": sans 12 / 1.2 caps, muted, tracked (Cloud's
+ * `.vx-tk-title`). */
 .vex-appr__eyebrow {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.2;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -82,23 +93,34 @@
 .vex-appr__sp {
   flex: 1;
 }
+/* The live expiry (Cloud's `.vx-tk-timer`): 12 caps muted, tabular figures at
+ * 0.04em; the last minute in ink. */
 .vex-appr__expiry {
-  font-size: 13px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-appr__expiry .vex-num {
-  font-size: 12.5px;
+.vex-appr__expiry[data-warn] {
+  color: var(--vex-alias-label-primary);
 }
-/* MAINNET and the stamp, held together as one unit of the row. */
+.vex-appr__expiry .vex-num {
+  font-size: 12px;
+}
+/* MAINNET and the stamp, held together as one unit of the row, 18 apart
+ * (Cloud's `.vx-tk-pair`). */
 .vex-appr__funds {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
 }
-/* MAINNET: a statement in ink caps beside the stamp, never a menu. */
+/* MAINNET: a statement in ink caps 12 beside the stamp, never a menu
+ * (Cloud's `.vx-tk-net`). */
 .vex-appr__net {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -146,12 +168,13 @@
   color: var(--vex-alias-label-primary);
 }
 
-/* The consequence line: sans 15, ink 2. */
+/* The consequence line (Cloud's `.vx-tk-warn`): sans 14 / 1.45, ink 2, 6
+ * under the sentence. */
 .vex-appr__consequence {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   padding: 0 var(--vex-appr-inset);
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 14px;
+  line-height: 1.45;
   color: var(--vex-alias-label-secondary);
 }
 
@@ -174,20 +197,29 @@
  * the element; the row gives it only its muted ink), at Cloud's card measure,
  * mono 12 tracked 0.06em (`.vex-appr .vex-field-label` below; H3 app.css
  * `.fr > dt`), and the value at the right, 24 in, sans 13 in ink with its
- * figures in mono 12 (`.vex-appr__num`). The label column grows to
- * the longest label and never past half the card; a long value wraps inside
- * its own cell. The rows and their data are exactly the bound ones. */
+ * figures in mono 12 (`.vex-appr__num`). A long value wraps inside its own
+ * cell. The rows and their data are exactly the bound ones. */
+/* Cloud's field row grid (`rows.css` `.vx-fr`): the name column at least
+ * 120 and as wide as its longest name, the value the rest, 16 between, and
+ * each row's rule under it. The table draws the rule over its first row and
+ * its last row leaves its own off, so the cell under the table keeps the one
+ * rule it draws. */
 .vex-appr__dl {
   display: grid;
-  grid-template-columns: fit-content(50%) minmax(0, 1fr);
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
   margin: 0;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__dl dt,
 .vex-appr__dl dd {
   margin: 0;
   padding: 8px 0;
   line-height: 17px;
-  border-top: 1px solid var(--vex-alias-rule);
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__dl > :last-child > dt,
+.vex-appr__dl > :last-child > dd {
+  border-bottom: 0;
 }
 .vex-appr__dl dt {
   padding-right: 16px;
@@ -214,10 +246,19 @@
   font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
-/* A value the tool did not quote: the word in ink 2, as H3 sets "Not
- * available", never a figure and never a zero. */
+/* A row's note (Cloud's `.vx-fr-note`): its own line under the value, 11
+ * muted, 3 above ("Slippage limit 0.5%" under the minimum receipt). */
+.vex-appr__note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A value the tool did not quote: the word in muted, as Cloud sets "Not
+ * available" (`.vx-fr[data-na] > dd`), never a figure and never a zero. */
 .vex-appr__missing {
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__wrap {
   min-width: 0;
@@ -260,12 +301,14 @@
   border-top: 1px solid var(--vex-alias-rule);
 }
 
-/* 4. "ALL SIGNED FIELDS": H3's disclosure (section 1.7), one ruled cell on
- * the table's 34px pitch: the chevron 24 in, then the words in sans 13 caps,
- * tracked, in ink, as H3 sets every key word. Desktop's note of what it folds
- * ("kyberswap:swap.execute, wallet broadcast, expiry, raw arguments") sits at
- * the right in muted sentence case and gives way first. The chevron turns
- * when the fields are open. Focus is H3's 2px ring inside the cell. */
+/* 4. "ALL SIGNED FIELDS": Cloud's disclosure (`SignedFields`,
+ * `styles/takeover.css` `.vx-tk-signed-k`), one ruled cell 36 high: the
+ * chevron 24 in, muted, 14, swapping its glyph with the state (it never
+ * turns), then the words in sans 12 caps, tracked, in ink 2. Desktop's note
+ * of what it folds ("kyberswap:swap.execute, wallet broadcast, expiry, raw
+ * arguments") sits at the right in muted sentence case and gives way first.
+ * Focus is H3's 2px ring inside the cell. A card with no readable facts
+ * above opens it on mount, as before. */
 .vex-appr__more {
   margin: 0;
 }
@@ -273,14 +316,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 var(--vex-appr-inset);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
   border-top: 1px solid var(--vex-alias-rule);
   cursor: pointer;
   list-style: none;
@@ -301,8 +344,17 @@
   flex: none;
   transition: transform var(--vex-duration-base) var(--vex-ease-standard);
 }
-.vex-appr__more[open] .vex-appr__chev {
+/* The funding card's chevron still turns; the approval card's swaps. */
+.vex-appr__more[open] .vex-appr__chev:not(.vex-appr__chev--swap) {
   transform: rotate(90deg);
+}
+.vex-appr__chev--swap {
+  color: var(--vex-alias-label-tertiary);
+  transition: none;
+}
+.vex-appr__more[open] .vex-appr__chev-closed,
+.vex-appr__more:not([open]) .vex-appr__chev-open {
+  display: none;
 }
 .vex-appr__more-sum {
   min-width: 0;
@@ -316,24 +368,24 @@
   white-space: nowrap;
 }
 
-/* The fields, open: the record as bound, one ruled row per field on the cell
- * fill, edge to edge like the table above it. Key and value are both mono 12:
- * the key exactly as bound, never in caps (a person checking `amountIn` must
- * see `amountIn`), muted, 24 in; the value in ink, at the left of its column
- * so a long address or quote line reads from its start, wrapping inside its
- * cell. */
+/* The fields, open: the record as bound, one ruled row per field, edge to
+ * edge like the table above it, with no fill (Cloud's `.vx-tk-sg`). The key
+ * in mono 12, exactly as bound, never in caps (a person checking `amountIn`
+ * must see `amountIn`), muted, 24 in, in a column up to 200; the value in
+ * mono 13 in ink, at the left of its column so a long address or quote line
+ * reads from its start, wrapping inside its cell. */
 .vex-appr__well {
   display: grid;
-  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
   margin: 0;
   font-size: 12px;
-  background: var(--vex-alias-bg-layer-3);
 }
 .vex-appr__well dt,
 .vex-appr__well dd {
   margin: 0;
   padding: 7px 0;
   line-height: 16px;
+  overflow-wrap: anywhere;
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__well dt {
@@ -341,48 +393,64 @@
   padding-left: var(--vex-appr-inset);
   font-family: var(--font-mono);
   font-size: 12px;
-  overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__well dd {
   padding-right: var(--vex-appr-inset);
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--vex-alias-label-primary);
 }
 .vex-appr__well .vex-appr__num {
-  font-size: 12px;
+  font-size: 13px;
 }
 
-/* THE FAILURE LINE (Cloud's DG5-28, the money gaps sheet's `.tk-fail`): when
- * a decision does not go through, one ink line above the decision band: the
- * cross (the error swatch, ink, never red), then the sentence in sans 14 ink.
- * A ruled cell edge to edge like every other, its text 24 in, on the raised
- * ground, one lightness step over the card. `role="alert"` is on the element;
- * nothing here is a refusal, so nothing here is red. */
+/* THE FAILURE LINE (Cloud's DG5-28, `.vx-tk-fail`): when a decision does not
+ * go through, one ink line right over the decision band, in the card or in
+ * the chat's dock: the sentence in sans 14 ink, padding 10, no mark. A ruled
+ * cell edge to edge like every other, its text 24 in, on the raised ground,
+ * one lightness step over the card. `role="alert"` is on the element, which
+ * is mounted empty so its first text is said; empty, it is out of the layout
+ * but stays in the tree (Cloud's `.vx-tk-fail:empty`). Nothing here is a
+ * refusal, so nothing here is red. */
 .vex-appr__fail {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
   margin: 0;
-  padding: 12px var(--vex-appr-inset);
+  padding: 10px var(--vex-appr-inset);
   font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
   background: var(--vex-alias-interactive-solid);
   border-top: 1px solid var(--vex-alias-rule);
 }
-/* The cross sits on the first line's baseline, as Cloud's square does. */
-.vex-appr__fail-mark {
-  flex: none;
+.vex-appr__fail:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-/* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07;
- * `ApprovalCard/ClosedApprovalCard.tsx`): the card's frame with what the
- * attempt recorded. The strip: the square (an empty frame for Rejected and
- * Expired, the ink square for Result uncertain) and the words in sans 13
- * caps, ink. Then the card's own sentence, the answer row when the person
- * chose here, the line in ink 15 (`.tk-alert`: 14 above, 18 under), and the
- * footer's keys, each at least 160 wide. No network, no stamp: nothing is
- * decided here. */
+/* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07 and
+ * its `RefusalCard`, `styles/takeover.css` `.vx-tk-answers`, `.vx-tk-alert`,
+ * `.vx-tk-band[data-closed]`; `ApprovalCard/ClosedApprovalCard.tsx`): the
+ * card's frame with what the attempt recorded. The strip, 44 high: the
+ * square (an empty frame for Rejected and Expired, the target for Result
+ * uncertain) and the title, the card's only heading, in sans 12 caps ink.
+ * The body: the answer row (the card's title 11 caps muted, its sentence 14
+ * ink, "You chose to ..." ink 2), and for an expiry its line in ink 15 (14
+ * above, 18 under). Then the alert line over the band (the failure line's
+ * look), and the band: 72 high and its rule, a fill, the keys at its end,
+ * each a cell at least 160 wide with its left rule, sans 13 caps, never
+ * blue. No network, no stamp: nothing is decided here. */
+.vex-appr__closed-strip {
+  min-height: 44px;
+}
+.vex-appr__in > .vex-appr__top.vex-appr__closed-strip {
+  padding-top: 0;
+}
 .vex-appr__closed-sq {
   display: inline-flex;
   flex: none;
@@ -393,11 +461,42 @@
 }
 .vex-appr__closed-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.2;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
+}
+.vex-appr__answers {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__answers > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px var(--vex-appr-inset);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__answer-k {
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__answer-v {
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__answer-said {
+  color: var(--vex-alias-label-secondary);
 }
 .vex-appr__closed-alert {
   margin: 0;
@@ -407,8 +506,40 @@
   color: var(--vex-alias-label-primary);
   border-top: 1px solid var(--vex-alias-rule);
 }
-.vex-appr--closed .vex-appr__foot > button {
+.vex-appr__foot[data-closed] {
+  position: static;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  min-height: var(--vex-h3-bottom-h);
+  padding: 0;
+}
+.vex-appr__closed-fill {
+  flex: 1;
+}
+.vex-appr__closed-key {
+  flex: none;
   min-width: 160px;
+  margin: 0;
+  padding: 0 20px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  cursor: pointer;
+}
+.vex-appr__closed-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-appr__closed-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
 }
 
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
@@ -429,12 +560,155 @@
   border-top: 1px solid var(--vex-alias-rule);
 }
 
+/* THE CLIP CUE (Cloud's `.vx-tk-more`, `ApprovalCard/clip-cue.tsx`): while
+ * rows of the card are out of view, "{n} more lines below" is the footer's
+ * first row, over the keys and never over a row: 29 high, sans 11 caps,
+ * tracked, ink 2. In the card's own footer it runs edge to edge over the
+ * keys; docked, it is the dock's first row. `aria-hidden`: every row is in
+ * the card's reading order already. */
+.vex-appr__more-cue {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 29px;
+  margin: 0;
+  padding: 0 var(--vex-appr-inset);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-appr__foot:has(> .vex-appr__more-cue):not([data-docked]) {
+  flex-wrap: wrap;
+}
+.vex-appr__foot:not([data-docked]) > .vex-appr__more-cue {
+  flex: 0 0 calc(100% + 2 * var(--vex-appr-inset));
+  margin: -12px calc(-1 * var(--vex-appr-inset)) 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-docked] > .vex-appr__more-cue {
+  grid-area: cue;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+/* THE REASON FIELD (Cloud's instruction field, `CustomRow` and
+ * `AnswerField`; `styles/takeover.css` `.vx-tk-custom`): a row of its own
+ * with the words in sans 16 / 1.45, wrapping and growing with them up to 144
+ * high, then scrolling; the focus ring is on the whole row. Near the cap the
+ * count shows under the words, mono 12 muted, at the right. The row's size
+ * and inset are set where it stands: the docked row (6.) and the key row
+ * outside the dock (5b.). */
+.vex-appr__reason-row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.vex-appr__reason-row:focus-within {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__reason-field {
+  max-height: 144px;
+  margin: 0;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1.45;
+  field-sizing: content;
+  overflow-y: auto;
+}
+.vex-appr__reason-field::placeholder {
+  color: var(--vex-alias-label-placeholder);
+}
+.vex-appr__count {
+  align-self: flex-end;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* 5b. THE KEY ROW OUTSIDE THE DOCK (Cloud 6f067702, `styles/cards.css`
+ * `.vx-xc-foot`): on the Needs you page, in the global panel and on a card
+ * whose band the chat's dock does not hold, the footer is a row of cells on
+ * the card's rule: the reason field as a cell, then the keys, each 44 high
+ * with its own left rule, in sans 13 caps at 400. Reject is the raised cell
+ * in ink, at least 120 wide; the approve key is the view's one blue, at
+ * least 200. An armed key turns to the reversed ink fill, as docked; a held
+ * key keeps Cloud's held look (Held keys, below). Only the drawing changes:
+ * the keys, words, guards and states are the card's own. The Lighter desk's
+ * Review order card keeps the keys of its approved plate (lighter-ticket.css),
+ * so it is left out here. */
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) {
+  align-items: stretch;
+  gap: 0;
+  min-height: 44px;
+  padding: 0;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > .vex-appr__reason-row {
+  min-height: 44px;
+  padding: 10px var(--vex-appr-inset);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button {
+  height: 44px;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: normal;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  outline: none;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="reject"] {
+  min-width: 120px;
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-solid);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="reject"]:enabled:hover {
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-active);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"] {
+  min-width: 200px;
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > [data-vex-key="approve"]:enabled:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed],
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed]:enabled:hover {
+  color: var(--vex-alias-label-on-primary);
+  background: var(--vex-alias-rule-ink);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-armed]:focus-visible {
+  outline-color: var(--vex-alias-label-on-primary);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button:disabled:not([data-vex-approve-working]) {
+  color: var(--vex-alias-label-tertiary);
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-appr__foot[data-vex-keys="cells"]:not(.lit-order-review *) > button[data-vex-key="reject"][aria-busy="true"]:disabled {
+  color: var(--vex-alias-label-primary);
+}
+
 /* 6. THE DECISION ROW (docs/design/H3-DESKTOP.md sections 1.8 and 4.3).
  *
  * While a card waits in a chat, the chat's bottom-row cell (the composer seat,
  * `SessionPanel`) holds the card's footer in its dock (`.vex-appr-dock`,
  * `ApprovalCard/approval-dock.tsx`) and the composer gives way. The footer is
- * then a grid of cells: the reason field across the top, 56 high where the
+ * then a grid of cells: the reason field across the top, at least 56 high where the
  * composer's strip stood, sans 18; under it the bottom row, 72 high
  * (`--vex-h3-bottom-h`): REJECT on the raised fill | the gate line | the
  * approve key in the one blue, 168 | 392 | 200 at 1440 as H3 measures them,
@@ -469,7 +743,9 @@
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr) 200px;
   grid-template-areas:
+    "cue cue cue"
     "reason reason reason"
+    "fail fail fail"
     "reject gate approve";
   gap: 0;
   margin: 0;
@@ -477,25 +753,22 @@
   background: var(--vex-alias-bg-base);
   border-top: 1px solid var(--vex-alias-rule);
 }
-.vex-appr__foot[data-docked] > input {
+.vex-appr__foot[data-docked] > .vex-appr__reason-row {
   grid-area: reason;
-  width: 100%;
-  height: 56px;
-  margin: 0;
-  padding: 0 var(--vex-appr-inset);
-  font-family: var(--font-sans);
-  font-size: 18px;
-  color: var(--vex-alias-label-primary);
+  min-height: 56px;
+  padding: 16px var(--vex-appr-inset);
   background: var(--vex-alias-bg-base);
-  border: 0;
   border-bottom: 1px solid var(--vex-alias-rule);
 }
-.vex-appr__foot[data-docked] > input::placeholder {
-  color: var(--vex-alias-label-placeholder);
+/* The failure line, docked: its own row between the reason field and the
+ * keys. The reason field draws the rule under itself, so the line draws none. */
+.vex-appr__foot[data-docked] > .vex-appr__fail {
+  grid-area: fail;
+  border-top: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
 }
-.vex-appr__foot[data-docked] > input:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
+.vex-appr__foot[data-docked] > .vex-appr__fail:empty {
+  border: 0;
 }
 .vex-appr__foot[data-docked] > button {
   height: var(--vex-h3-bottom-h);
@@ -588,6 +861,12 @@
 .vex-appr__foot > button[data-vex-approve-working] {
   cursor: progress;
 }
+/* Cloud's busy mark (`keys.css` `.vx-busy-mark`): the blinking 8 square in
+ * the working key's own ink, not the running hud, so it reads on the blue.
+ * Reduced motion holds it still as half a square (marks.css). */
+.vex-appr__foot .vex-appr__busy {
+  color: inherit;
+}
 /* The middle cell: the gate line in ink 2, sans 14, 24 in. No control. */
 .vex-appr__gate {
   grid-area: gate;
@@ -602,13 +881,30 @@
   color: var(--vex-alias-label-secondary);
   border-right: 1px solid var(--vex-alias-rule);
 }
+/* A narrow column (Cloud's `@container vx-tk (width <= 720px)`, the content
+ * column at 1280 and 1366): shorter outer keys, Reject 128 and the approve
+ * key 168 with 20 each side of its word, and the middle cell 18 in, so the
+ * gate line keeps its room. */
+@container (max-width: 720px) {
+  .vex-appr__foot[data-docked] {
+    grid-template-columns: 128px minmax(0, 1fr) 168px;
+  }
+  .vex-appr__foot[data-docked] > [data-vex-key="approve"] {
+    padding: 0 20px;
+  }
+  .vex-appr__gate {
+    padding: 0 18px;
+  }
+}
 /* A narrow chat (the 1024 window's 469) keeps both keys whole: the gate line
  * moves to a slim row of its own over them, and the keys share the row. */
 @container (max-width: 560px) {
   .vex-appr__foot[data-docked] {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
+      "cue cue"
       "reason reason"
+      "fail fail"
       "gate gate"
       "reject approve";
   }
@@ -633,8 +929,9 @@
   .vex-appr__title {
     margin-top: 7px;
   }
-  .vex-appr__foot[data-docked] > input {
-    height: 40px;
+  .vex-appr__foot[data-docked] > .vex-appr__reason-row {
+    min-height: 40px;
+    padding-block: 8px;
   }
 }
 
@@ -657,11 +954,12 @@
   display: inline-flex;
   color: var(--vex-alias-label-primary);
 }
+/* The decision, 15 / 1.3 at 400 (Cloud's kit has no 500 weight). */
 .vex-appr-row__title {
   margin: 0;
-  font-size: 15.5px;
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.3;
   color: var(--vex-alias-label-primary);
 }
 .vex-appr-row__go {
@@ -693,12 +991,14 @@
   font-size: 12.5px;
   color: var(--vex-alias-label-tertiary);
 }
+/* The stamp at Cloud's tag measure, 24 high with caps 11. */
 .vex-appr-row__stamp.vex-stamp {
-  height: 18px;
-  font-size: 10px;
+  box-sizing: border-box;
+  height: 24px;
+  font-size: 11px;
 }
 /* In the folded row the failure line is the row's foot, bled to its frame. */
-.vex-appr-row__fail {
+.vex-appr-row__fail:not(:empty) {
   grid-column: 1 / -1;
   margin: 11px -16px -13px;
   padding: 10px 16px;

@@ -605,33 +605,32 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 }
 
 /* ── The filled receipt ──────────────────────────────────────────────────
- * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, measured in
- * the signed-moment capture at 1440: a framed card the column's full width,
- * 12 under the steps. Its head, 16 in: the kind and the chain in caps 11
- * tracked muted, the time in the mono 11 muted at the figures' 0.04em and
- * the stamp (the status green fill, white caps 11, 24 high) at the right
- * (VEX Cloud's `.xc-top.cap`, `.xc-when` and `.tag`); under them the pair in
- * sans 20 ink and the chain in 16 ink 2. Then the rows on a 34 pitch, each on
- * the rule: the label in the mono caps of the field-label register, muted,
- * and the value in the mono 13 ink at the right. */
-/* The card stands a step off the ground: the cell fill, as the capture's
- * receipt reads #030507 against the ground's #020202. */
+ * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, at Cloud's
+ * result card measures (`styles/cards.css` `.vx-xc`, 6f067702): a framed
+ * card the column's full width, 12 under the steps, on the card ground
+ * (`--vex-alias-card`, #030405). Its head, 16 in: a row at least 44 high with
+ * the kind and the chain in caps 13 tracked muted, the quiet MAINNET mark,
+ * the time in the mono 13 muted and the status tag at the right (the status
+ * green fill, its square and the word in caps 11, 24 high, padding 0 7, 6
+ * between); under them the title line, the pair in sans 18 / 1.3 at -0.01em
+ * in ink and where it happened in 15 ink 2, 16 over the first row. Then the
+ * rows on a 34 pitch, each on the rule: the label in mono caps 12 at 0.06em,
+ * muted, and the value in the mono 12 at 0.01em, ink, at the right. */
 .vex-receipt {
   margin-top: 12px;
   border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-bg-layer-3);
+  background: var(--vex-alias-card);
 }
 .vex-receipt__head {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 16px 16px;
+  padding: 0 16px 16px;
 }
 .vex-receipt__eyebrow {
   display: flex;
   align-items: center;
   gap: 16px;
-  min-height: 24px;
+  min-height: 44px;
 }
 .vex-receipt__kind {
   flex: 1 1 auto;
@@ -652,29 +651,52 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   font-variant-numeric: tabular-nums;
   color: var(--vex-alias-label-tertiary);
 }
-/* The stamp's fill and ink are the `bg-stamp-filled` and
- * `text-ink-on-stamp-filled` utilities at the call site. */
+/* The tag (Cloud's `.vx-xc-tag`, PD-03: a fill, a square, a word). Its fill
+ * and ink are the `bg-stamp-filled` and `text-ink-on-stamp-filled` utilities
+ * at the call site; on the fill the square takes the fill's ink, so its
+ * solid drawing still reads. */
 .vex-receipt__stamp {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
   height: 24px;
-  padding: 0 10px;
+  padding: 0 7px;
   font-size: 11px;
   font-weight: 400;
+  line-height: 1;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
 }
+.vex-receipt__stamp > .vex-sq {
+  color: inherit;
+}
 .vex-receipt__title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 400;
   line-height: 1.3;
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-primary);
 }
+/* The route: from, the arrow read as "to", to (Cloud's `.vx-xc-route`). */
+.vex-receipt__pair {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+.vex-receipt__arrow {
+  flex: none;
+  transform: rotate(90deg);
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-receipt__where {
-  font-size: 16px;
+  font-size: 15px;
+  letter-spacing: 0;
   color: var(--vex-alias-label-secondary);
 }
 .vex-receipt__rows {
@@ -690,12 +712,15 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-receipt__label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-receipt__value {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   text-align: right;
   overflow-wrap: anywhere;

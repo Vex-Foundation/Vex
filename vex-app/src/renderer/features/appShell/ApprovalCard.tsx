@@ -48,8 +48,11 @@
  *     retry a dangerous action.
  *   - `Result.ok === false` surfaces as an inline error (TanStack `isError`
  *     does not catch application-level `Result` failures: Codex F3 #1).
- *   - `aria-live="polite"` so screen readers announce the card without
- *     stealing focus from existing content.
+ *   - Named as Cloud names its card (`TakeoverCard.tsx`): by the eyebrow
+ *     ("Confirm this swap"), described by the sentence, `aria-busy` while a
+ *     decision runs. No card-wide live region: what changes is said by the
+ *     footer's `role="status"` (the in-flight and settled words) and the
+ *     failure line's `role="alert"`, never the whole card at once.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -65,6 +68,7 @@ import { approvalGateLine, approvalReviewWord } from "./ApprovalCard/approval-se
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
 import { APPROVING_WORD, ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
 import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
+import { ClipCue, useRowsBelow } from "./ApprovalCard/clip-cue.js";
 
 const CONFIRM_RESET_MS = 4_000;
 
@@ -195,6 +199,9 @@ export function ApprovalCard({
   const approve = useApprove();
   const reject = useReject();
   const rejectRef = useRef<HTMLButtonElement | null>(null);
+  // The card's box, for the clip cue's measure (display only).
+  const cardRef = useRef<HTMLElement | null>(null);
+  const rowsOutOfView = useRowsBelow(cardRef, layout === "card" ? decisionDock : null, layout === "card");
 
   const isHighRisk = useMemo(
     () => classifyHighRisk(summary),
@@ -321,6 +328,7 @@ export function ApprovalCard({
   const titleId = `approval-card-${summary.id}${
     idVariant ? `-${idVariant}` : ""
   }-title`;
+  const eyebrowId = `approval-card-${summary.id}${idVariant ? `-${idVariant}` : ""}-eyebrow`;
   const previewTool = summary.preview?.toolName ?? null;
   const namespace = summary.preview?.namespace ?? null;
   const toolName = previewTool ?? summary.toolName ?? "(unknown tool)";
@@ -331,13 +339,15 @@ export function ApprovalCard({
 
   const settledDecision = decision === "approved" || decision === "rejected" ? decision : null;
   const rejectPending = reject.isPending || decision === "rejecting";
+  const approvePending = approve.isPending || decision === "approving";
+  const busy = approvePending || rejectPending;
 
   if (layout === "row") {
     return (
       <section
         role="region"
         aria-labelledby={titleId}
-        aria-live="polite"
+        aria-busy={approve.isPending || rejectPending || undefined}
         data-vex-area="approval-card"
         data-vex-approval-layout="row"
         data-approval-id={summary.id}
@@ -370,6 +380,9 @@ export function ApprovalCard({
   // are exactly the card's either way. Docked, it names itself by the card's
   // title and adds the gate line in its middle cell (Appendix A.7).
   const docked = decisionDock !== null;
+  // The failure line rides with the footer (Cloud's `FooterAlert`, DG5-28):
+  // right over the keys wherever they are drawn, so a docked card's failure
+  // is said over the bottom row, not in the transcript behind it.
   const decisionActions = (
     <ApprovalDecisionActions
       isHighRisk={isHighRisk}
@@ -383,20 +396,26 @@ export function ApprovalCard({
       approveLabel={approveLabel}
       confirmApproveLabel={confirmApproveLabel}
       pendingApproveLabel={pendingApproveLabel}
-      approvePending={approve.isPending || decision === "approving"}
+      approvePending={approvePending}
       rejectPending={rejectPending}
       settledDecision={settledDecision}
       wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
       rejectReasonInput={summary.origin !== "desk"}
+      failure={inlineError}
+      cue={<ClipCue below={rowsOutOfView} />}
       dock={docked ? { labelledBy: titleId, gateLine: approvalGateLine(isHighRisk, CONFIRM_RESET_MS) } : null}
     />
   );
 
   return (
     <section
+      ref={cardRef}
       role="region"
-      aria-labelledby={titleId}
-      aria-live="polite"
+      // Cloud's card: named by the eyebrow, described by the sentence, busy
+      // while a decision runs. No card-wide live region (module note).
+      aria-labelledby={eyebrowId}
+      aria-describedby={titleId}
+      aria-busy={busy || undefined}
       data-vex-area="approval-card"
       data-vex-approval-layout="card"
       // Where this card's decision row is drawn: in the shell's bottom row,
@@ -425,9 +444,10 @@ export function ApprovalCard({
           namespace={namespace}
           toolName={toolName}
           criticalArgs={criticalArgs}
-          inlineError={inlineError}
           projectName={projectName}
           signedGlint={signedGlint}
+          eyebrowId={eyebrowId}
+          busy={busy}
         />
         {decisionDock === null ? decisionActions : createPortal(decisionActions, decisionDock)}
       </div>

@@ -10,8 +10,10 @@
  *     (docs/design/R3-MINIMAL.md sections 8.1 and 12).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -280,7 +282,17 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     const closed = document.querySelector("[data-vex-area='approval-closed']");
     expect(closed?.getAttribute("data-vex-closed")).toBe("expired");
     expect(closed?.textContent).toContain("Expired. Nothing was run.");
-    expect(screen.getByRole("alert").textContent).toBe("This confirmation expired before it was answered.");
+    // Cloud's RefusalCard: the expiry line is the card's description, never an alert.
+    const body = closed?.querySelector("[data-vex-area='approval-closed-body']");
+    expect(closed?.getAttribute("aria-describedby")).toBe(body?.id);
+    expect(body?.querySelector(".vex-appr__closed-alert")?.textContent).toBe(
+      "This confirmation expired before it was answered.",
+    );
+    expect(within(closed as HTMLElement).getByRole("alert").textContent).toBe("");
+    // The strip's title is the only heading; the sentence is the answer row's.
+    expect(within(closed as HTMLElement).getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Expired. Nothing was run.",
+    ]);
     // In its place: still first, the waiting card after it.
     expect(stackIds()).toEqual(["appr-a", "appr-b"]);
     // No network, no stamp, no outcome the record does not hold.
@@ -314,7 +326,13 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     expect(closed?.getAttribute("data-vex-closed")).toBe("rejected");
     expect(closed?.textContent).toContain("Rejected. Nothing was run.");
     expect(closed?.textContent).toContain("You chose to reject.");
-    expect(screen.getByRole("alert").textContent).toBe("You rejected it, so nothing from this confirmation ran.");
+    // The answer row: the card's title, its sentence, what the person chose.
+    const answer = closed?.querySelector(".vex-appr__answers > li");
+    expect(answer?.querySelector(".vex-appr__answer-said")?.textContent).toBe("You chose to reject.");
+    // The line over the band is the alert, right before the band.
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("You rejected it, so nothing from this confirmation ran.");
+    expect(alert.nextElementSibling?.getAttribute("data-vex-area")).toBe("approval-closed-foot");
   });
 
   it("says Result uncertain with Agent Scan next for an approve the engine could not prove", () => {
@@ -363,5 +381,33 @@ describe("ApprovalsRegion, closed confirmations (H3-DESKTOP.md section 4.3; Clou
     expect(document.querySelector("[data-vex-area='approval-closed']")).not.toBeNull();
     rerenderWith([], "00000000-0000-4000-8000-00000000aa02");
     expect(document.querySelector("[data-vex-area='approval-closed']")).toBeNull();
+  });
+});
+
+describe("the closed card's sheet (Cloud's RefusalCard band)", () => {
+  const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const body = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet)?.[1] ?? "";
+  };
+
+  it("draws the band 72 high with its keys as cells of at least 160, 13 caps, each on its left rule, never blue", () => {
+    expect(body(".vex-appr__foot[data-closed]")).toContain("min-height: var(--vex-h3-bottom-h)");
+    const key = body(".vex-appr__closed-key");
+    expect(key).toContain("min-width: 160px");
+    expect(key).toContain("font-size: 13px");
+    expect(key).toContain("text-transform: uppercase");
+    expect(key).toContain("border-left: 1px solid var(--vex-alias-rule)");
+    expect(key).not.toMatch(/accent/);
+  });
+
+  it("sets the strip title 12 caps in ink and the answer row's title 11 caps muted", () => {
+    expect(body(".vex-appr__closed-title")).toContain("font-size: 12px");
+    expect(body(".vex-appr__closed-title")).toContain("color: var(--vex-alias-label-primary)");
+    expect(body(".vex-appr__answer-k")).toContain("font-size: 11px");
+    expect(body(".vex-appr__answer-k")).toContain("color: var(--vex-alias-label-tertiary)");
   });
 });

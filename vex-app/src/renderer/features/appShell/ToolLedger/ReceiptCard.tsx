@@ -1,16 +1,25 @@
 /**
  * THE FILLED RECEIPT (docs/design/H3-DESKTOP.md section 1.7 and Appendix A.8;
  * H3's signed moment and its phone band draw it under the turn's thinking
- * row): a framed card for a swap that went through, from the ACTIVITY LEDGER'S
- * OWN ENTRY for it, never from the tool's output.
+ * row): a framed card for a swap, a transfer or a bridge that went through
+ * (Cloud's result cards, 6f067702), from the ACTIVITY LEDGER'S OWN ENTRY for
+ * it, never from the tool's output.
  *
  *   SWAP · BASE                     //// MAINNET  14:28  [CONFIRMED]
- *   USDC → ETH · Base
+ *   USDC (arrow) ETH · Base
  *   ---------------------------------------------------------------
  *   SELL                                                   200 USDC
  *   VALUE (USD)                                       about $200.00
  *   RECEIVED                                           0.05709 ETH
  *   VEX FEE                                               0.5 USDC
+ *
+ * A TRANSFER (Cloud's TransferCard) titles its sent amount, "0.5 ETH · Base",
+ * with Value (USD) and any Vex fee the row records; the entry names no
+ * recipient, so Cloud's Recipient row is left out. A BRIDGE (Cloud's
+ * BridgeCard) titles its route, "200 USDC · Base", the arrow, "USDC ·
+ * Arbitrum", from the route ends' slugs, with Received, Value (USD) and the
+ * Vex fee; Cloud's "It arrives at your own trading wallet" line is left out,
+ * since the entry names no wallet.
  *
  * WHERE THE NUMBERS COME FROM. The act row's output is the tool's own word,
  * untrusted; the activity entry is what main recorded and checked
@@ -35,13 +44,16 @@
  * success, whose operation is PROVEN fund-moving (`toolOperation.ts`), that
  * carries a validated explorer reference: its transaction hash is the join
  * key. The card then shows only when the session's activity feed holds an
- * entry with that SAME hash, of kind `swap`, and its status is `confirmed`.
+ * entry with that SAME hash (its own, or for a bridge, whose logical row is
+ * the destination fill, one of its legs'), of kind `swap`, `transfer` or
+ * `bridge`, and its status is `confirmed`.
  * Anything short of that draws no card, and the act row says what it knows.
  *
  * THE STAMP. H3's FILLED stamp is a status green fill with white caps
- * (`bg-stamp-filled`). Desktop knows a transaction CONFIRMED, not an order
- * filled, so the stamp says desktop's outcome word for the entry, "Confirmed"
- * (Appendix A.3, `agent-scan-outcome.ts`).
+ * (`bg-stamp-filled`), and Cloud's tag leads its word with the state square
+ * (PD-03: a fill, a square and a word). Desktop knows a transaction
+ * CONFIRMED, not an order filled, so the stamp says desktop's outcome word
+ * for the entry, "Confirmed" (Appendix A.3, `agent-scan-outcome.ts`).
  *
  * LEFT OUT. H3's APPROVAL row ("Approved by you"): approvals are not joined
  * to activity, and the transcript holds no resolved approval for the act, so
@@ -52,6 +64,8 @@
 import { useMemo, type JSX } from "react";
 import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
+import { LineArrowUp } from "../../../components/icons/line/index.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { MainnetMark } from "../../../components/ui/stamp.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import {
@@ -87,16 +101,27 @@ export function sameTransaction(a: string, b: string): boolean {
   return a === b;
 }
 
+/** The activity kinds a receipt is drawn for (Cloud's swap, transfer and bridge result cards). */
+export const RECEIPT_KINDS: ReadonlySet<string> = new Set(["swap", "transfer", "bridge"]);
+
+/**
+ * Whether the entry is the record of `txRef`: its own transaction, or, for a
+ * bridge whose logical row is the destination fill, one of its execution legs
+ * (the source deposit the act signed is a leg).
+ */
+function entryHolds(entry: AgentScanActivityEntry, txRef: string): boolean {
+  if (entry.txHash !== null && sameTransaction(entry.txHash, txRef)) return true;
+  return entry.legs.some((leg) => leg.txHash !== null && sameTransaction(leg.txHash, txRef));
+}
+
 /** The activity entry a receipt is drawn from, or `null` when none proves one. */
 export function receiptEntry(
   entries: readonly AgentScanActivityEntry[],
   txRef: string,
 ): AgentScanActivityEntry | null {
-  const entry = entries.find(
-    (candidate) => candidate.txHash !== null && sameTransaction(candidate.txHash, txRef),
-  );
+  const entry = entries.find((candidate) => entryHolds(candidate, txRef));
   if (entry === undefined) return null;
-  if (entry.activityKind !== "swap" || entry.status !== "confirmed") return null;
+  if (!RECEIPT_KINDS.has(entry.activityKind) || entry.status !== "confirmed") return null;
   return entry;
 }
 
@@ -108,15 +133,46 @@ function chainNameOf(entry: AgentScanActivityEntry): string | null {
   return entry.chainId !== null ? chainDisplay(entry.chainId).name : null;
 }
 
-/** "200 USDC", marked "~" when the entry says its amounts are quoted. */
+/**
+ * One end of a bridge route, by name, from its slug only: a route end's
+ * chain id is the provider's own numbering, never read as an EVM id.
+ */
+function routeEndName(end: AgentScanActivityEntry["fromChain"]): string | null {
+  return end?.slug != null && end.slug.length > 0 ? chainDisplayBySlug(end.slug).name : null;
+}
+
+/** "Swap", "Transfer", "Bridge": the kind word of the head. */
+function kindWord(entry: AgentScanActivityEntry): string {
+  if (entry.activityKind === "transfer") return "Transfer";
+  if (entry.activityKind === "bridge") return "Bridge";
+  return "Swap";
+}
+
+/**
+ * "200 USDC", said as "about 200 USDC" when the entry says its amounts are
+ * quoted (Cloud's DG5-40: an estimate says "about", never "~").
+ */
 function legText(
   entry: AgentScanActivityEntry,
   leg: AgentScanActivityEntry["input"],
 ): string | null {
   const amount = legAmountText(leg);
   if (amount === null) return null;
-  const figure = isEstimatedBasis(entry) ? `~${amount}` : amount;
+  const figure = isEstimatedBasis(entry) ? `about ${amount}` : amount;
   return `${figure} ${legSymbolText(leg)}`;
+}
+
+/**
+ * The route's arrow (Cloud's `RouteArrow`): a 14 glyph, unseen by a screen
+ * reader, which reads " to " in its place.
+ */
+function RouteArrow(): JSX.Element {
+  return (
+    <>
+      <LineArrowUp size={14} className="vex-receipt__arrow" />
+      <span className="sr-only"> to </span>
+    </>
+  );
 }
 
 interface ReceiptRow {
@@ -125,16 +181,83 @@ interface ReceiptRow {
 }
 
 function receiptRows(entry: AgentScanActivityEntry): readonly ReceiptRow[] {
-  const rows: { label: string; value: string | null }[] = [
-    { label: "Sell", value: legText(entry, entry.input) },
-    { label: "Value (USD)", value: usdEstText(entry.input.usdEst) },
-    { label: "Received", value: legText(entry, entry.output) },
-    { label: "Vex fee", value: vexFeeText(entry) },
-  ];
+  const rows: { label: string; value: string | null }[] =
+    entry.activityKind === "transfer"
+      ? [
+          // The amount is the title (Cloud's TransferCard); the entry names
+          // no recipient, so that row is left out.
+          { label: "Value (USD)", value: usdEstText(entry.input.usdEst) },
+          { label: "Vex fee", value: vexFeeText(entry) },
+        ]
+      : entry.activityKind === "bridge"
+        ? [
+            // The sent amount and the route are the title (Cloud's BridgeCard).
+            { label: "Received", value: legText(entry, entry.output) },
+            { label: "Value (USD)", value: usdEstText(entry.input.usdEst) },
+            { label: "Vex fee", value: vexFeeText(entry) },
+          ]
+        : [
+            { label: "Sell", value: legText(entry, entry.input) },
+            { label: "Value (USD)", value: usdEstText(entry.input.usdEst) },
+            { label: "Received", value: legText(entry, entry.output) },
+            { label: "Vex fee", value: vexFeeText(entry) },
+          ];
   return rows.filter((row): row is ReceiptRow => row.value !== null);
 }
 
-/** The card itself, from one confirmed swap entry. Presentational. */
+/**
+ * The title line: a swap's pair, a transfer's amount, a bridge's route
+ * ("200 USDC · Base", the arrow, "USDC · Arbitrum"), each from the entry
+ * alone; the place word follows where the title does not name it.
+ */
+function ReceiptTitle({
+  entry,
+  chain,
+}: {
+  readonly entry: AgentScanActivityEntry;
+  readonly chain: string | null;
+}): JSX.Element {
+  if (entry.activityKind === "transfer") {
+    return (
+      <p className="vex-receipt__title">
+        <span className="vex-receipt__pair">{legText(entry, entry.input) ?? legSymbolText(entry.input)}</span>
+        {chain !== null ? <span className="vex-receipt__where"> · {chain}</span> : null}
+      </p>
+    );
+  }
+  if (entry.activityKind === "bridge") {
+    const from = routeEndName(entry.fromChain);
+    const to = routeEndName(entry.toChain) ?? chain;
+    const sent = legText(entry, entry.input) ?? legSymbolText(entry.input);
+    return (
+      <p className="vex-receipt__title">
+        <span className="vex-receipt__pair">
+          <span>
+            {sent}
+            {from !== null ? <span className="vex-receipt__where"> · {from}</span> : null}
+          </span>
+          <RouteArrow />
+          <span>
+            {legSymbolText(entry.output)}
+            {to !== null ? <span className="vex-receipt__where"> · {to}</span> : null}
+          </span>
+        </span>
+      </p>
+    );
+  }
+  return (
+    <p className="vex-receipt__title">
+      <span className="vex-receipt__pair">
+        {legSymbolText(entry.input)}
+        <RouteArrow />
+        {legSymbolText(entry.output)}
+      </span>
+      {chain !== null ? <span className="vex-receipt__where"> · {chain}</span> : null}
+    </p>
+  );
+}
+
+/** The card itself, from one confirmed swap, transfer or bridge entry. Presentational. */
 export function ReceiptCard({
   entry,
 }: {
@@ -144,17 +267,21 @@ export function ReceiptCard({
   const clock = entryClockText(entry.createdAt);
   const rows = receiptRows(entry);
   const outcome = activityOutcome(entry);
+  const kind = kindWord(entry);
+  // A bridge's route is its title; its own chain is only the far end.
+  const place = entry.activityKind === "bridge" ? null : chain;
   return (
     <section
       data-vex-receipt=""
+      data-vex-receipt-kind={entry.activityKind}
       data-vex-receipt-status={entry.status}
-      aria-label={chain === null ? "Swap receipt" : `Swap receipt on ${chain}`}
+      aria-label={place === null ? `${kind} receipt` : `${kind} receipt on ${place}`}
       className="vex-receipt"
     >
       <div className="vex-receipt__head">
         <div className="vex-receipt__eyebrow">
           <span className="vex-receipt__kind">
-            {chain === null ? "Swap" : `Swap · ${chain}`}
+            {place === null ? kind : `${kind} · ${place}`}
           </span>
           <MainnetMark data-vex-receipt-net="" />
           {clock !== null ? (
@@ -166,17 +293,11 @@ export function ReceiptCard({
             data-vex-receipt-stamp=""
             className="vex-receipt__stamp bg-stamp-filled text-ink-on-stamp-filled"
           >
+            <StateSquare state="done" />
             {outcome.word}
           </span>
         </div>
-        <p className="vex-receipt__title">
-          <span className="vex-receipt__pair">
-            {legSymbolText(entry.input)} → {legSymbolText(entry.output)}
-          </span>
-          {chain !== null ? (
-            <span className="vex-receipt__where"> · {chain}</span>
-          ) : null}
-        </p>
+        <ReceiptTitle entry={entry} chain={chain} />
       </div>
       {rows.length > 0 ? (
         <dl className="vex-receipt__rows">

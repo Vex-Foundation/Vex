@@ -442,6 +442,59 @@ export function approvalExpiryWords(expiresAt: string, nowMs: number): string | 
   return /^\d/.test(at) ? `Expires at ${at}` : `Expires ${at}`;
 }
 
+/** Below this the strip counts `m:ss` every second (Cloud's `CLOCK_FROM_MS`). */
+export const EXPIRY_CLOCK_FROM_MS = 120_000;
+/** At or below this the countdown is in ink (Cloud's `WARNING_FROM_MS`). */
+export const EXPIRY_WARN_FROM_MS = 60_000;
+/** Above this the strip names the clock time instead of counting minutes. */
+export const EXPIRY_MINUTES_UP_TO_MS = 60 * 60_000;
+
+export interface ApprovalExpiryCountdown {
+  /** "Expires in 14 min", "Expires in 0:45", "Expired", or the clock time. */
+  readonly text: string;
+  /** The last minute: the words in ink. */
+  readonly warn: boolean;
+  /** When the words next change, in ms from `nowMs`; null once expired. */
+  readonly nextChangeMs: number | null;
+}
+
+/**
+ * The strip's live expiry (Cloud's `TakeoverTimer` and `remainingDisplay`,
+ * H3-DESKTOP.md Appendix A.7), counted down from the approval's own bound
+ * `expiresAt`: "Expires in N min" (N rounded up) while an hour or less is
+ * left, "Expires in m:ss" for the last two minutes, in ink for the last one,
+ * and "Expired" at zero. Further out than an hour it names the clock time,
+ * as `approvalExpiryWords` does, since a count of hundreds of minutes reads
+ * worse than a time. Words only: the engine's sweep owns the deadline, and
+ * nothing here enables, disables or decides anything. `null` for an
+ * unreadable value.
+ */
+export function approvalExpiryCountdown(expiresAt: string, nowMs: number): ApprovalExpiryCountdown | null {
+  const at = Date.parse(expiresAt);
+  if (!Number.isFinite(at)) return null;
+  const remaining = at - nowMs;
+  if (remaining <= 0) return { text: "Expired", warn: false, nextChangeMs: null };
+  if (remaining > EXPIRY_MINUTES_UP_TO_MS) {
+    const words = approvalExpiryWords(expiresAt, nowMs);
+    if (words === null) return null;
+    // Wake once a minute: the day can turn, and the hour mark is coming.
+    return { text: words, warn: false, nextChangeMs: Math.min(60_000, remaining - EXPIRY_MINUTES_UP_TO_MS) };
+  }
+  if (remaining > EXPIRY_CLOCK_FROM_MS) {
+    return {
+      text: `Expires in ${Math.ceil(remaining / 60_000)} min`,
+      warn: false,
+      nextChangeMs: ((remaining - 1) % 60_000) + 1,
+    };
+  }
+  const total = Math.ceil(remaining / 1000);
+  return {
+    text: `Expires in ${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`,
+    warn: remaining <= EXPIRY_WARN_FROM_MS,
+    nextChangeMs: ((remaining - 1) % 1000) + 1,
+  };
+}
+
 // -- Risk in words -----------------------------------------------------------
 
 /** The readable risk tag ("High risk"); the style sets it in caps. */
