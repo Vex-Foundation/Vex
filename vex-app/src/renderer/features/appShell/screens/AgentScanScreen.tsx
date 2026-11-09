@@ -51,6 +51,7 @@ import { ShellScreen } from "./ShellScreen.js";
 import { PageBar } from "./PageBar.js";
 import { useKeptRead } from "./kept-read.js";
 import { LoadFailedBlock, RefreshFailedNotice } from "./RefreshNotice.js";
+import { CoverRows, PageLoading } from "./PageLoading.js";
 import {
   activeFilterCount,
   AgentScanFilterBar,
@@ -262,7 +263,13 @@ export function AgentScanScreen({
   const retry = query.refetch;
   let body: JSX.Element;
   if (query.isLoading) {
-    body = <FeedNote tone="quiet">Loading…</FeedNote>;
+    // The first read in the feed's shape (H3-DESKTOP section 1.9): the word
+    // over five cover rows, one status.
+    body = (
+      <PageLoading label="Loading activity…">
+        <CoverRows rows={5} />
+      </PageLoading>
+    );
   } else if (kept.value === null && kept.failed) {
     // Nothing was read for these filters: the block, with Retry. A timeout
     // is NEVER rendered as an empty history.

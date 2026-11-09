@@ -496,6 +496,15 @@ const REFUSED_PAGE: Result<AgentScanDto> = {
 };
 
 describe("AgentScanScreen - states matrix", () => {
+  it("loads in the feed's shape: the word over five cover rows, one status, no history claim", () => {
+    mockQuery([], { isLoading: true });
+    mountScreen();
+    const status = screen.getByRole("status", { name: "Loading activity…" });
+    expect(status.querySelector(".vex-stripes")).not.toBeNull();
+    expect(status.querySelectorAll("[data-vex-cover-rows] > li")).toHaveLength(5);
+    expect(screen.queryByText(/No activity recorded yet/)).toBeNull();
+  });
+
   it("renders a timed-out page as the calm try-again note, NEVER as empty history", () => {
     mockQuery([UNAVAILABLE_PAGE]);
     mountScreen();
