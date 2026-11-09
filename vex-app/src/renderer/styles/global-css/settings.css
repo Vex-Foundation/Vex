@@ -24,7 +24,7 @@
  * H3-DESKTOP section 4.9, look only; Cloud's `settings.css` and the page kit,
  * W5 9b6ec94c and e1083f44). The nav (Cloud's `.vx-setnav`): 248 wide,
  * group words 11 caps muted at padding 12 24 6; rows 36 high, the name in
- * sentence case 14, ink 2, the 18 icon muted; hover and the chosen row take
+ * sentence case 14, ink 2, the 16 icon muted (the line set has no 18); hover and the chosen row take
  * the chosen row's fill and ink. The nav stays in the page (moving it into the
  * left column is the owner's call); the sections, their words and their
  * controls stay desktop's. A section (the page kit): no visible title (the
@@ -60,7 +60,7 @@
 }
 
 /* THE NAV (Cloud's `.vx-setnav`): group words 11 caps muted, rows 36 high
- * with an 18 line icon, the name in sentence case 14 and desktop's status word
+ * with a 16 line icon, the name in sentence case 14 and desktop's status word
  * at the right (12, muted). Hover and the chosen row = the chosen row's fill and
  * ink. */
 .vex-set__nav {
