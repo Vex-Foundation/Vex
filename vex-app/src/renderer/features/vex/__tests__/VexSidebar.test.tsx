@@ -49,10 +49,6 @@ vi.mock("../useVexPresence.js", () => ({
   // Every session's missions, the open one's included: the console's row.
   useAllMissions: () => presenceRef.current?.background ?? null,
 }));
-vi.mock("../../../lib/api/shell-backdrop.js", () => ({
-  useShellBackdrop: () => ({ data: undefined }),
-  currentShellBackdrop: () => null,
-}));
 vi.mock("../../../lib/api/projects.js", () => ({
   useProject: (projectId: string | null) => ({
     isLoading: false,

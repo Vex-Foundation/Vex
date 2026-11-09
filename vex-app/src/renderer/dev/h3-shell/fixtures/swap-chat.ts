@@ -267,7 +267,6 @@ export function swapChatAnswers(stage: SwapStage): BridgeAnswers {
           reasoning: MODEL.reasoning,
         }),
     },
-    shellBackdrop: { read: () => ok({ backdrop: null }) },
     poolsLaunch: { getAwaiting: () => ok({ awaiting: null }) },
     lighterTrading: { getPendingAgentSetup: () => ok({ interaction: null }) },
   };
