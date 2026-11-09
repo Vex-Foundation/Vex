@@ -81,6 +81,22 @@
   letter-spacing: -0.005em;
   text-wrap: pretty;
   color: var(--vex-alias-accent-primary);
+  /* It fades in over 500 ms (VEX Cloud's welcome); still under reduced
+   * motion and Save-Data. */
+  animation: vex-greeting-in 500ms var(--vex-ease-standard) both;
+}
+@keyframes vex-greeting-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-welcome__greeting {
+    animation: none;
+  }
+}
+html[data-still] .vex-welcome__greeting {
+  animation: none;
 }
 
 /* The notes under the bubble, as VEX Cloud's runtime rows (`.t-sys`): each
@@ -186,8 +202,39 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: minmax(113px, auto);
+  margin: 0;
+  padding: 0;
   border-top: 1px solid var(--vex-alias-rule);
   border-left: 1px solid var(--vex-alias-rule);
+  list-style: none;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+/* A list item per cell; the cell's key fills it. */
+.vex-starter-item {
+  display: flex;
+  min-width: 0;
+}
+.vex-starter-item > .vex-starter {
+  flex: 1 1 auto;
+}
+/* While the draft has text: hidden at once, keeping the box (VEX Cloud's
+ * `SuggestionRows`); the 200 ms is the way back only. */
+.vex-starter-grid[data-concealed] {
+  visibility: hidden;
+  opacity: 0;
+  transition: none;
+}
+/* While a send is being made: 0.4, no press. */
+.vex-starter-grid[data-locked] {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-starter-grid {
+    transition: none;
+  }
+}
+html[data-still] .vex-starter-grid {
+  transition: none;
 }
 /* One cell, one key (VEX Cloud's `.starters a`): the icon 20 in, the title
  * and its line after it 14 apart, the arrow 18 from the right, everything

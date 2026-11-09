@@ -14,7 +14,13 @@
  * A prompt cell seeds the draft with its line, which IS the prompt
  * (`composer-quick-actions.ts`), through `onPick`; the mission cell opens the
  * new session form with Mission preselected through `onCreateMission`. The
- * parent shows the grid only on the welcome stage while the draft is empty.
+ * parent shows the grid on the welcome stage.
+ *
+ * A LIST (VEX Cloud's `SuggestionRows`): `ul[aria-label="Suggestions"]`, a
+ * cell per item. While the draft has text the cells are concealed at once,
+ * keeping their box (`aria-hidden`, `inert`), and fade back over 200 ms when
+ * it empties; nothing moves. While the composer is locked (a send is being
+ * made) they stand at 0.4 and take no press.
  */
 
 import { useId, type JSX } from "react";
@@ -25,10 +31,12 @@ function Suggestion({
   action,
   onPick,
   onCreateMission,
+  locked,
 }: {
   readonly action: QuickAction;
   readonly onPick: (prompt: string) => void;
   readonly onCreateMission: () => void;
+  readonly locked: boolean;
 }): JSX.Element {
   const id = useId();
   const titleId = `${id}-title`;
@@ -39,6 +47,7 @@ function Suggestion({
       data-vex-starter={action.kind}
       aria-labelledby={titleId}
       aria-describedby={lineId}
+      disabled={locked}
       onClick={() => (action.kind === "mission" ? onCreateMission() : onPick(action.prompt))}
       className="vex-starter"
     >
@@ -61,20 +70,36 @@ function Suggestion({
 export function ComposerQuickActions({
   onPick,
   onCreateMission,
+  concealed = false,
+  locked = false,
 }: {
   readonly onPick: (prompt: string) => void;
   readonly onCreateMission: () => void;
+  /** The draft has text: hidden at once, keeping the box. */
+  readonly concealed?: boolean;
+  /** A send is being made: dimmed, no press. */
+  readonly locked?: boolean;
 }): JSX.Element {
   return (
-    <div data-vex-area="composer-starters" className="vex-starter-grid">
+    <ul
+      aria-label="Suggestions"
+      aria-hidden={concealed ? true : undefined}
+      inert={concealed ? true : undefined}
+      data-concealed={concealed ? "" : undefined}
+      data-locked={locked ? "" : undefined}
+      data-vex-area="composer-starters"
+      className="vex-starter-grid"
+    >
       {QUICK_ACTIONS.map((action) => (
-        <Suggestion
-          key={action.label}
-          action={action}
-          onPick={onPick}
-          onCreateMission={onCreateMission}
-        />
+        <li key={action.label} className="vex-starter-item">
+          <Suggestion
+            action={action}
+            onPick={onPick}
+            onCreateMission={onCreateMission}
+            locked={locked}
+          />
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }

@@ -172,3 +172,43 @@ describe("ComposerQuickActions", () => {
     }
   });
 });
+
+describe("ComposerQuickActions - list, conceal and lock (VEX Cloud's SuggestionRows)", () => {
+  it("is a list named Suggestions, a cell per item", () => {
+    renderRows();
+    const list = screen.getByRole("list", { name: "Suggestions" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(QUICK_ACTIONS.length);
+    for (const item of screen.getAllByRole("listitem")) {
+      expect(item.parentElement).toBe(list);
+      expect(item.querySelector("button.vex-starter")).not.toBeNull();
+    }
+  });
+
+  it("conceals the cells while the draft has text, keeping their box, out of reach", () => {
+    const { container } = render(
+      <ComposerQuickActions onPick={() => {}} onCreateMission={() => {}} concealed />,
+    );
+    const list = container.querySelector("ul.vex-starter-grid");
+    expect(list?.getAttribute("aria-hidden")).toBe("true");
+    expect(list?.hasAttribute("inert")).toBe(true);
+    expect(list?.hasAttribute("data-concealed")).toBe(true);
+    // Hidden from the tree, still in the page: the box is kept.
+    expect(screen.queryByRole("button", { name: "Check wallet balances" })).toBeNull();
+    expect(list?.querySelectorAll("button")).toHaveLength(QUICK_ACTIONS.length);
+    expect(rule(".vex-starter-grid[data-concealed]")).toContain("visibility: hidden");
+    expect(rule(".vex-starter-grid")).toContain("transition: opacity 200ms");
+  });
+
+  it("dims the cells to 0.4 and takes no press while the composer is locked", () => {
+    const onPick = vi.fn();
+    const { container } = render(
+      <ComposerQuickActions onPick={onPick} onCreateMission={() => {}} locked />,
+    );
+    expect(container.querySelector("ul")?.hasAttribute("data-locked")).toBe(true);
+    const cell = screen.getByRole("button", { name: "Check wallet balances" }) as HTMLButtonElement;
+    expect(cell.disabled).toBe(true);
+    fireEvent.click(cell);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(rule(".vex-starter-grid[data-locked]")).toContain("opacity: 0.4");
+  });
+});
