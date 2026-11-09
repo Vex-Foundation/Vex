@@ -310,6 +310,33 @@ describe("XtermHost lifecycle", () => {
     expect(bridge.resizes).toContainEqual({ terminalId: "t1", cols: 120, rows: 40 });
   });
 
+  it("fits again and tells the host once the WebGL renderer has attached", async () => {
+    // The first fit reads the DOM renderer's cell; WebGL attaches later with a
+    // narrower one (it floors to whole device pixels), so without a second fit
+    // the grid keeps too few columns and leaves the pane's right edge empty.
+    let attach: (attached: boolean) => void = () => undefined;
+    vi.spyOn(registry, "rendererSettled").mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        attach = resolve;
+      }),
+    );
+    render(<XtermHost terminalId="t1" visible registry={registry} />);
+    await act(async () => {
+      await settle();
+    });
+    // From here on the fit answers with the WebGL renderer's wider grid.
+    const refit = vi.spyOn(registry, "refit").mockReturnValue({ cols: 99, rows: 34 });
+    expect(bridge.resizes).not.toContainEqual({ terminalId: "t1", cols: 99, rows: 34 });
+
+    await act(async () => {
+      attach(true);
+      await settle();
+    });
+
+    expect(refit).toHaveBeenCalledWith("t1");
+    expect(bridge.resizes).toContainEqual({ terminalId: "t1", cols: 99, rows: 34 });
+  });
+
   it("keeps decorative marks outside the terminal glyph background", () => {
     const { container } = render(<XtermHost terminalId="t1" visible registry={registry} />);
     const mark = container.querySelector("svg.text-brand-mark");

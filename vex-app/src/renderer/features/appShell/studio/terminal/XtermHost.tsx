@@ -411,6 +411,19 @@ export function XtermHost({
     };
   }, [pushSize, registry, terminalId]);
 
+  // THE RENDERER, once WebGL has attached (terminal-registry.ts,
+  // `rendererSettled`): its cell is not the DOM renderer's the first fit read,
+  // so the grid is fitted again and the host told its size.
+  useEffect(() => {
+    let live = true;
+    void registry.rendererSettled(terminalId).then((attached) => {
+      if (live && attached) pushSize(registry.refit(terminalId));
+    });
+    return () => {
+      live = false;
+    };
+  }, [pushSize, registry, terminalId]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (container === null || typeof ResizeObserver !== "function") return undefined;

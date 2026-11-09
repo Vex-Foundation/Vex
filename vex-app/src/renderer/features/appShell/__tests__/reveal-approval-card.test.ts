@@ -14,6 +14,7 @@ import { findApprovalCard, rejectKeyOf, revealApprovalCard } from "../ApprovalCa
 // Loaded with the file, not inside a case: the console's module graph is
 // large, and loading it in a test body spends that test's timeout on imports.
 import { openNeedsYouItem } from "../../vex/VexSidebar.js";
+import { needsYouItemIsHere } from "../../vex/needs-you-open.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
 /** A frame clock stepped by hand. */
@@ -188,6 +189,37 @@ describe("revealApprovalCard", () => {
       origin: null,
       approvalId: "appr-studio",
     });
+  });
+
+  it("opens a Studio approval on the Needs you page even though it carries the project's backing session", () => {
+    // The read gives a Studio approval the project's backing session as its
+    // `sessionId` (`approval_queue.session_id`); that session is no chat, so
+    // opening it left Studio for "Session not found" (the APV-1 walk).
+    const backing = "00000000-0000-4000-8000-00000000bb01";
+    const chat = "00000000-0000-4000-8000-00000000bb02";
+    useUiStore.setState({ runtimeMode: "studio", activeSessionId: chat, shellRoute: { kind: "none" } });
+    const item = {
+      key: "approval:appr-studio-backed",
+      kind: "approval",
+      title: "Send 1.5 ETH.",
+      metaLead: "Mainnet, real funds · since",
+      metaTime: "14:39 UTC",
+      go: "Review",
+      where: "vault-tools",
+      groupKey: "project:vault-tools",
+      sessionId: backing,
+      projectId: "55555555-5555-4555-8555-555555555556",
+      approvalId: "appr-studio-backed",
+      createdAt: null,
+      expiresAt: null,
+    } as const;
+    openNeedsYouItem(item);
+    const state = useUiStore.getState();
+    expect(state.shellRoute).toEqual({ kind: "needsYou", origin: null, approvalId: "appr-studio-backed" });
+    expect(state.runtimeMode).toBe("studio");
+    expect(state.activeSessionId).toBe(chat);
+    // Its card is never in a chat beside the console, whichever chat is open.
+    expect(needsYouItemIsHere(item, { runtimeMode: "agent", activeSessionId: backing })).toBe(false);
   });
 
   it("presses nothing: focus is all it moves", () => {
