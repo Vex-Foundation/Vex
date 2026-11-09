@@ -55,17 +55,17 @@ import { useTurnClock } from "../TurnIsland/turnClock.js";
 import type { MessageForkActions } from "./useMessageForkActions.js";
 
 /**
- * G12 - the day label: "Today", "Yesterday" or the date, 12 muted and centred
- * (docs/design/R3-MINIMAL.md section 6), between rows from different LOCAL
- * calendar days and above the very first loaded row, so a resumed session
- * names its day. Chrome, not content: aria-hidden.
+ * G12 - the day line: "Today", "Yesterday" or the date, caps 11 muted and
+ * centred between two fading hairlines (VEX Cloud's `.vx-tx-day`), between
+ * rows from different LOCAL calendar days and above the very first loaded
+ * row, so a resumed session names its day. Chrome, not content: aria-hidden.
  */
 function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
   const label = dayLabel(iso, Date.now());
   if (label === null) return null;
   return (
     <div aria-hidden data-vex-day-separator="" className="vex-day">
-      {label}
+      <span>{label}</span>
     </div>
   );
 }

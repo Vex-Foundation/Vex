@@ -10,6 +10,8 @@
  * it there.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { TranscriptRows } from "../../SessionTranscript/TranscriptRows.js";
@@ -165,5 +167,28 @@ describe("TranscriptRows - the animation must not sit on the anchored element", 
     // the reader's message (22 above the user block).
     const { container } = renderRows([row(1, "user")], new Set());
     expect(entry(container, 1).className).toContain("mt-1");
+  });
+});
+
+describe("TranscriptRows - the day line", () => {
+  it("names the day in its own span between the two hairlines, caps 11 muted", () => {
+    const { container } = renderRows([row(1, "user")], new Set([1]));
+    const line = container.querySelector("[data-vex-day-separator]");
+    expect(line?.getAttribute("aria-hidden")).toBe("true");
+    expect(line?.className).toBe("vex-day");
+    expect(line?.children).toHaveLength(1);
+    expect(line?.firstElementChild?.tagName).toBe("SPAN");
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    // VEX Cloud's `.vx-tx-day`: caps 11, 14 from the hairlines, which fade
+    // from the chosen rule to nothing.
+    expect(css).toMatch(
+      /\.vex-day \{[^}]*gap: 14px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/,
+    );
+    expect(css).toMatch(
+      /\.vex-day::before,\s*\.vex-day::after \{[^}]*background: linear-gradient\(90deg, transparent, var\(--vex-alias-rule-chosen\)\);/,
+    );
   });
 });

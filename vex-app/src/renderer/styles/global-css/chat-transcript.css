@@ -90,14 +90,37 @@
   zoom: var(--vex-zoom);
 }
 
-/* The day label: 12 muted, centred. The row stack's 18 gap plus 8 here is the
- * 26 above it; the gap below is the 18. */
+/* The day line (VEX Cloud's `.vx-tx-day`, H3's `.t-day`): caps 11 tracked,
+ * muted, centred between two hairlines that fade from the chosen rule (24%)
+ * to nothing, 14 from the word. The row stack's 18 gap plus 8 here is the 26
+ * above it; the gap below is the 18. */
 .vex-day {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
   padding-top: 8px;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
-  text-align: center;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
+}
+.vex-day::before,
+.vex-day::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--vex-alias-rule-chosen));
+}
+.vex-day::after {
+  background: linear-gradient(90deg, var(--vex-alias-rule-chosen), transparent);
+}
+.vex-day > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ── The person's message ────────────────────────────────────────────────
