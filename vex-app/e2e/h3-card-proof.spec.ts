@@ -1,30 +1,35 @@
 /**
- * THE CARD PROOF (docs/design/H3-DESKTOP.md section 3.6; plan row S4-16): a
- * waiting money card never moves when Kimm's section opens or closes, on any
- * frame. Desktop's port of the H3 mockup's own proof (`h3-merged__plate-proof`),
- * run as a CI gate: a card that moves fails the build.
+ * THE CARD PROOF (docs/design/H3-DESKTOP.md sections 3.6 and 6.4; plan row
+ * S4-16): a waiting money card never moves, and is never covered, when Vex
+ * hides or shows, on any frame. Desktop's port of the H3 mockup's own proof
+ * (`h3-merged__plate-proof`), rewritten for D2 (owner decision 2026-11-09:
+ * Vex's column at the right edge, hidden and shown whole), run as a CI gate:
+ * a card that moves fails the build.
  *
  * WHAT IS READ, in the H3 shell harness's `swap-waiting` state (the real
  * shell and the real approval card, with only the preload bridge stood in
  * for), at the five widths the mockup proved, 1280, 1366, 1440, 1920 and 2560:
  *
- *   1. SEEKED, the mockup's `&seek=` frames. Her corner key is pressed, every
- *      CSS transition of her motion (the clip, the scan head, her drop) is
- *      paused, and all are set to the same time every 30ms from 0 to the
- *      motion's end: Hide Vex (420ms), then Show Vex (720ms). On each frame
- *      the card's box and her section's box are read, and her clip.
- *   2. LIVE. The same two presses as a person makes them, the card read on
- *      every frame the browser paints until her section rests again.
- *   3. TURNED AROUND. Hide Vex, then Show Vex 80ms later: read on every
- *      painted frame; the wipe goes no deeper after the second press and
- *      ends open (section 3.4).
- *   4. PIXELS. The card's own pixels in the open render of the state against
- *      the closed render (`?vex=closed`): not one may differ.
+ *   1. HIDE AND SHOW, LIVE. The header's VEX key pressed as a person
+ *      presses it, Hide Vex then Show Vex, the card, Vex's column and the
+ *      grid's tracks read on every frame the browser paints for longer than
+ *      her old wipe took (720ms). D2 has no wipe: her column's body goes and
+ *      comes at the press, so the frames must also show it hidden and shown,
+ *      and a press that did nothing cannot pass.
+ *   2. TURNED AROUND. Hide Vex, then Show Vex 80ms later: read on every
+ *      painted frame; the card never moves and she ends shown.
+ *   3. THE CHORD. Ctrl+Shift+B (Cmd+Shift+B on a Mac) hides and shows her
+ *      the same way, the card standing.
+ *   4. PIXELS. The card's own pixels in the shown render of the state
+ *      against the hidden render (`?vex=closed`): not one may differ.
  *
- * On every frame of every path the card's box must equal the open render's,
- * and her section's box must not change either: only her clip moves (section
- * 3.2). The seeks must also show her moving, from open to the strip and
- * back, so a wipe that never ran cannot pass.
+ * On every frame of every path the card's box must equal the shown render's,
+ * and Vex's column's box and the grid's column template must not change
+ * either: hidden, her column keeps its room and shows its ground and rule
+ * only (section 6.4).
+ *
+ * The Lighter desk keeps its approved plate (section 4.9) and Kimm's section
+ * with its wipe there, so its leg still seeks her motion frame by frame.
  *
  * WHY THE HARNESS. The built app stops at SystemCheck without a running
  * runtime and an unlocked vault (`smoke.spec.ts`), so a waiting card cannot
@@ -54,8 +59,13 @@ interface Size {
 }
 
 const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]';
+/** Kimm's section: the desk's, and her band's under 1024. */
 const SECTION = '[data-vex-area="kimm-section"]';
+/** Her section's own key: the desk's corner key, the band's foot row. */
 const KEY = '[data-vex-area="kimm-key"]';
+/** D2's column at the right edge, and the header's VEX key that hides and shows it. */
+const COLUMN = '[data-vex-area="vex-sidebar"]';
+const HEAD_KEY = '[data-vex-area="vex-key"]';
 
 /** The seek step, as the mockup's proof read it. */
 const SEEK_STEP_MS = 30;
@@ -99,7 +109,10 @@ test.use({
   contextOptions: { reducedMotion: "no-preference" },
 });
 
-/** Open the swap-waiting state with her section as asked and wait until it is whole. */
+/**
+ * Open the swap-waiting state with Vex as asked and wait until it is whole:
+ * her column shown or hidden from 1024 up, her band resting closed under it.
+ */
 async function open(page: Page, size: Size, vex: "open" | "closed"): Promise<void> {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -108,7 +121,11 @@ async function open(page: Page, size: Size, vex: "open" | "closed"): Promise<voi
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
-  await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", vex);
+  if (size.width >= 1024) {
+    await expect(page.locator(COLUMN)).toHaveAttribute("data-vex-shown", vex === "open" ? "true" : "false");
+  } else {
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+  }
   expect(await page.evaluate(() => window.__vexH3Harness.unanswered())).toEqual([]);
   expect(errors).toEqual([]);
 }
@@ -251,6 +268,72 @@ function onScreen(box: Box, size: Size): Box {
   };
 }
 
+/** One painted frame of a D2 press: the card, her column, the tracks, and whether she shows. */
+interface D2Frame {
+  readonly at: number;
+  readonly card: Box;
+  readonly column: Box;
+  readonly columns: string;
+  readonly shown: string | null;
+}
+
+/**
+ * Press the header's VEX key at each of `presses` (ms after the first, which
+ * is at 0) and read the card, her column, the grid's column template and her
+ * shown state on every painted frame until `ms` has passed. Each later press
+ * is marked by a frame read just before it, at `at: -1`.
+ */
+async function d2Frames(page: Page, presses: readonly number[], ms: number): Promise<D2Frame[]> {
+  return page.evaluate(
+    async ({ card, column, key, presses, ms }) => {
+      const cardEl = document.querySelector(card);
+      const columnEl = document.querySelector<HTMLElement>(column);
+      const keyEl = document.querySelector<HTMLElement>(key);
+      const frameEl = document.querySelector<HTMLElement>(".vex-shell-frame");
+      if (cardEl === null || columnEl === null || keyEl === null || frameEl === null) {
+        throw new Error("the card, her column, the VEX key or the frame is missing");
+      }
+      const box = (el: Element): Box => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const frames: D2Frame[] = [];
+      const read = (at: number): D2Frame => ({
+        at,
+        card: box(cardEl),
+        column: box(columnEl),
+        columns: getComputedStyle(frameEl).gridTemplateColumns,
+        shown: columnEl.getAttribute("data-vex-shown"),
+      });
+      const start = performance.now();
+      for (const at of presses) {
+        if (at === 0) {
+          keyEl.click();
+          continue;
+        }
+        window.setTimeout(() => {
+          frames.push(read(-1));
+          keyEl.click();
+        }, at);
+      }
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          const at = performance.now() - start;
+          frames.push(read(at));
+          if (at > ms) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return frames;
+    },
+    { card: CARD, column: COLUMN, key: HEAD_KEY, presses, ms },
+  );
+}
+
 /**
  * THE DESK LEG (docs/design/H3-DESKTOP.md sections 3.6 and 4.9; plan row
  * S8-11): on the Lighter desk the waiting card is the desk's own Review
@@ -340,9 +423,9 @@ test.describe("H3 card proof on the Lighter desk: the Review order never moves",
 });
 
 /**
- * THE CHATS PANEL LEG (docs/design/H3-DESKTOP.md section 4.12): under 1280
- * the chats column is the rail at every moment, and its key slides the chats
- * panel over Vex's column. Nothing in the grid changes, so a waiting card
+ * THE CHATS PANEL LEG (docs/design/H3-DESKTOP.md sections 4.12 and 6): under
+ * 1280 the chats column is the rail at every moment, and its key slides the
+ * chats panel over the chat beside it. Nothing in the grid changes, so a waiting card
  * never moves while the panel opens or closes, on any frame: read seeked
  * every 30ms through both slides and live on every painted frame, with the
  * grid's column template read beside the card. The panel must be seen to
@@ -438,7 +521,7 @@ async function panelPress(page: Page, mode: "seek" | "live", durationMs: number)
 
 test.describe("H3 card proof: the chats panel never moves a waiting card", () => {
   for (const size of PANEL_SIZES) {
-    test(`the chats panel opens and closes over Vex's column at ${sizeName(size)}`, async ({ page }) => {
+    test(`the chats panel opens and closes over the chat at ${sizeName(size)}`, async ({ page }) => {
       await open(page, size, "open");
       const card = await cardBox(page);
       const columns = await page.evaluate(
@@ -623,22 +706,23 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
 });
 
 /**
- * THE WIDE WINDOWS (docs/design/H3-DESKTOP.md section 1.11), against VEX
- * Cloud's measured boxes (`h3-merged/renders/checks.json`, approval-open at
- * 1920 and 2560): the chat's title and the card's text start on the reading
- * line (983.6 at 1920, 1270 at 2560); her section starts under a console
- * zoomed with the window (Cloud's 188 x zoom less desktop's missing 40-high
- * strategies row: 76 + 148 x zoom) and folds to a 56 x zoom strip (Cloud's
- * stub, 61 and 81.5); the foot row is 72 x zoom and its rule.
+ * THE READING COLUMN AND THE WIDE WINDOWS (docs/design/H3-DESKTOP.md
+ * sections 1.11 and 6.6): the chat's title, the transcript's text and the
+ * card's text start on D2's reading line, anchored at the chat's left (the
+ * chats' 248, then 100 x zoom: 348 at 1440, 357.1 at 1920, 393.5 at 2560);
+ * Vex's column is 280 at the right edge, her portrait card its width and
+ * 280 / 0.78 high flush under the header (her column does not zoom); the
+ * foot row is 72 x zoom and its rule.
  */
 const WIDE = [
-  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 983.6, sectionY: 237.47, strip: 61.1, foot: 79.55 },
-  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 1270, sectionY: 291.34, strip: 81.48, foot: 105.76 },
+  { size: { width: 1440, height: 900 }, zoom: 1, line: 348, foot: 73 },
+  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 357.1, foot: 79.55 },
+  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 393.5, foot: 105.76 },
 ] as const;
 
-test.describe("H3 card proof: Cloud's boxes at the wide windows", () => {
+test.describe("D2 card proof: the reading column, her column and the foot row", () => {
   for (const wide of WIDE) {
-    test(`the reading line, her box and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
+    test(`the reading line, her portrait card and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
       await open(page, wide.size, "open");
       expect(zoomAt(wide.size.width)).toBe(wide.zoom);
       const read = await page.evaluate(
@@ -668,69 +752,78 @@ test.describe("H3 card proof: Cloud's boxes at the wide windows", () => {
       expect(Math.abs(read.transcript - wide.line), `transcript ${String(read.transcript)}`).toBeLessThanOrEqual(0.5);
       expect(Math.abs(read.cardText - wide.line), `card ${String(read.cardText)}`).toBeLessThanOrEqual(0.5);
       expect(read.foot).toBeCloseTo(wide.foot, 1);
-      const section = (await page.locator(SECTION).boundingBox()) as Box;
-      expect(section.x).toBe(248);
-      expect(section.y).toBeCloseTo(wide.sectionY, 1);
-      expect(section.y + section.height).toBeCloseTo(wide.size.height - wide.foot, 1);
-      const key = (await page.locator(KEY).boundingBox()) as Box;
-      expect(key.height).toBeCloseTo(wide.strip, 1);
+      const column = (await page.locator(COLUMN).boundingBox()) as Box;
+      expect(column.x).toBe(wide.size.width - 280);
+      expect(column.width).toBe(280);
+      // Her card fills the column inside its 1px rule on the left.
+      const portrait = (await page.locator('[data-vex-area="vex-portrait-card"]').boundingBox()) as Box;
+      expect(portrait.x).toBe(wide.size.width - 279);
+      expect(portrait.y).toBe(76);
+      expect(portrait.width).toBe(279);
+      expect(portrait.height).toBeCloseTo(280 / 0.78, 0);
+      // The card never runs under her column.
+      const card = await cardBox(page);
+      expect(card.x + card.width).toBeLessThanOrEqual(column.x);
     });
   }
 });
 
 test.describe.configure({ mode: "serial" });
 
-test.describe("H3 card proof: a waiting money card never moves", () => {
+test.describe("D2 card proof: a waiting money card never moves when Vex hides or shows", () => {
   for (const size of SIZES) {
-    test(`seeked, live and turned around at ${sizeName(size)}`, async ({ page }) => {
+    test(`hidden and shown, live, turned around and by the chord at ${sizeName(size)}`, async ({ page }) => {
       await open(page, size, "open");
       const card = await cardBox(page);
-      const section = (await page.locator(SECTION).boundingBox()) as Box;
-      expect(section).not.toBeNull();
-      // Her strip zooms with her console (section 1.11): 56 x zoom.
-      const zoom = zoomAt(size.width);
-      const closedInset = section.height - STRIP_PX * zoom;
+      const column = (await page.locator(COLUMN).boundingBox()) as Box;
+      expect(column).not.toBeNull();
+      // Her column stands at the right edge, a fixed 280 (section 6.1).
+      expect(column.x + column.width).toBe(size.width);
+      expect(column.width).toBe(280);
+      const columns = await page.evaluate(
+        () => getComputedStyle(document.querySelector(".vex-shell-frame") as Element).gridTemplateColumns,
+      );
+      const same = (frames: readonly D2Frame[], name: string): void => {
+        for (const frame of frames) {
+          expect(frame.card, `${name} ${frame.at.toFixed(1)}ms`).toEqual(card);
+          expect(frame.column, `${name} ${frame.at.toFixed(1)}ms`).toEqual(column);
+          expect(frame.columns, `${name} ${frame.at.toFixed(1)}ms`).toBe(columns);
+        }
+      };
 
-      // 1. Seeked: Hide Vex every 30ms to 420, then Show Vex every 30ms to 720.
-      const close = await seekedPress(page, CLOSE_MS);
-      await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
-      const reopen = await seekedPress(page, OPEN_MS);
-      await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "open");
-      expect(close).toHaveLength(Math.floor(CLOSE_MS / SEEK_STEP_MS) + 1);
-      expect(reopen).toHaveLength(Math.floor(OPEN_MS / SEEK_STEP_MS) + 1);
-      for (const frame of [...close, ...reopen]) {
-        expect(frame.card, `seek ${String(frame.at)}ms`).toEqual(card);
-        expect(frame.section, `seek ${String(frame.at)}ms`).toEqual(section);
-      }
-      // The seeks moved her: open to the strip, and back to open.
-      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height, zoom));
-      expect(insets(close)[0]).toBeCloseTo(0, 0);
-      expect(insets(close).at(-1)).toBeCloseTo(closedInset, 0);
-      expect(insets(reopen)[0]).toBeCloseTo(closedInset, 0);
-      expect(insets(reopen).at(-1)).toBeCloseTo(0, 0);
+      // 1. Live: Hide Vex, every painted frame past her old 720ms wipe, then
+      // Show Vex the same way. Each press acted: she is hidden, then shown.
+      const hide = await d2Frames(page, [0], OPEN_MS + 120);
+      same(hide, "hide");
+      expect(hide.length).toBeGreaterThanOrEqual(2);
+      expect(hide.at(-1)?.shown).toBe("false");
+      await expect(page.locator(HEAD_KEY)).toHaveAttribute("aria-label", "Show Vex");
+      const show = await d2Frames(page, [0], OPEN_MS + 120);
+      same(show, "show");
+      expect(show.at(-1)?.shown).toBe("true");
+      await expect(page.locator(HEAD_KEY)).toHaveAttribute("aria-label", "Hide Vex");
 
-      // 2. Live: every painted frame of a close, then of an open.
-      const liveClose = await liveFrames(page, false, "closed");
-      const liveOpen = await liveFrames(page, false, "open");
-      for (const frame of [...liveClose, ...liveOpen]) {
-        expect(frame.card, `live ${frame.at.toFixed(1)}ms`).toEqual(card);
-        expect(frame.section, `live ${frame.at.toFixed(1)}ms`).toEqual(section);
-      }
-      expect(liveClose.length).toBeGreaterThanOrEqual(2);
-      expect(liveOpen.length).toBeGreaterThanOrEqual(2);
-
-      // 3. Turned around: Hide Vex, then Show Vex 80ms later.
-      const turned = await liveFrames(page, true, "open");
-      for (const frame of turned) expect(frame.card, `turned ${frame.at.toFixed(1)}ms`).toEqual(card);
+      // 2. Turned around: Hide Vex, then Show Vex 80ms later.
+      const turned = await d2Frames(page, [0, 80], OPEN_MS + 120);
+      same(turned, "turned");
       const second = turned.findIndex((frame) => frame.at === -1);
       expect(second).toBeGreaterThan(0);
-      const atPress = bottomInset(turned[second - 1]?.clip ?? "", section.height, zoom);
-      const after = turned.slice(second + 1).map((frame) => bottomInset(frame.clip, section.height, zoom));
-      for (const inset of after) expect(inset).toBeLessThanOrEqual(atPress + 0.5);
-      expect(after.at(-1)).toBeCloseTo(0, 0);
+      // The first press hid her before the second showed her again.
+      expect(turned[second]?.shown).toBe("false");
+      expect(turned.at(-1)?.shown).toBe("true");
+
+      // 3. The chord, from anywhere: the same, the card standing.
+      const chord = process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B";
+      for (const shown of ["false", "true"]) {
+        await page.keyboard.press(chord);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await expect(page.locator(COLUMN)).toHaveAttribute("data-vex-shown", shown);
+        expect(await cardBox(page)).toEqual(card);
+        expect((await page.locator(COLUMN).boundingBox()) as Box).toEqual(column);
+      }
     });
 
-    test(`the card's pixels open and closed at ${sizeName(size)}`, async ({ page }) => {
+    test(`the card's pixels shown and hidden at ${sizeName(size)}`, async ({ page }) => {
       await open(page, size, "open");
       const openBox = await cardBox(page);
       const openPixels = await page.screenshot({
