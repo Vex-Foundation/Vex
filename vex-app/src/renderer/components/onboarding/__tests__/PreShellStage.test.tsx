@@ -176,6 +176,22 @@ describe("StagePlate", () => {
     expect(useUiStore.getState().vexOpenChat).toBe(true);
   });
 
+  it("keeps her glyph field under her strip while she is closed: the stage's column is never empty", () => {
+    useUiStore.setState({ vexOpenChat: false });
+    stand("unlock");
+    const { container } = render(<StagePlate />);
+    expect(sectionOf(container)?.getAttribute("data-kimm-open")).toBe("false");
+    const ground = container.querySelector<HTMLElement>("[data-vex-area='vex-stage-ground']");
+    expect(ground).not.toBeNull();
+    // Her field's baked frame, drawn as her section draws its ground, and no figure.
+    expect(ground?.classList.contains("vex-kimm__ground")).toBe(true);
+    expect(ground?.getAttribute("aria-hidden")).toBe("true");
+    expect(ground?.style.getPropertyValue("--vex-kimm-baked")).toBe('url("/art/kimm/field-still.webp")');
+    expect(ground?.querySelector("img")).toBeNull();
+    // Under her section, in the column she stands in.
+    expect(ground?.parentElement?.getAttribute("data-vex-area")).toBe("vex-sidebar");
+  });
+
   it("binds the chord once while her stage stands, and leaves it to the shell under the crossfade", () => {
     stand("systemCheck");
     render(<StagePlate />);

@@ -35,7 +35,8 @@ import { cn } from "../../lib/utils.js";
 import { useUiStore, type View } from "../../stores/uiStore.js";
 import { vexOpenPatch } from "../../stores/uiStore/layout.js";
 import { KimmHint } from "../vex/kimm/KimmHint.js";
-import { KimmSection } from "../vex/kimm/KimmSection.js";
+import { useKimmArt } from "../vex/kimm/kimm-art-context.js";
+import { KimmSection, kimmGroundStyle } from "../vex/kimm/KimmSection.js";
 import {
   getStageVex,
   stageVexEnd,
@@ -88,6 +89,7 @@ function StageVexColumn(): JSX.Element {
   const view = stageVexView(useStageVex());
   const open = useUiStore((s) => s.vexOpenChat);
   const hint = useKimmFirstCloseHint(open);
+  const art = useKimmArt();
   return (
     <div className="vex-pre-vex">
       <div className="vex-pre-vex__key">
@@ -109,6 +111,16 @@ function StageVexColumn(): JSX.Element {
         <VexSectionAnnouncer />
       </div>
       <div className="vex-pre-vex__kimm" data-vex-area="vex-sidebar">
+        {/* Her ground, under her section. Open, her section covers it; closed,
+            the column under her strip keeps her glyph field, without her
+            figure, never an empty column: the stage has no console to stand
+            there (owner decision, 2026-11-09). */}
+        <div
+          aria-hidden="true"
+          data-vex-area="vex-stage-ground"
+          className="vex-kimm__ground"
+          style={kimmGroundStyle(art.field)}
+        />
         <KimmSection
           mood={view.mood}
           open={open}

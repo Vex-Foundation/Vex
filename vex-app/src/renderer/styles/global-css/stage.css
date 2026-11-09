@@ -1321,6 +1321,15 @@ html[data-still] .vex-unl__go {
 .vex-pre-vex__kimm .vex-kimm {
   bottom: 0;
 }
+/* Her ground under her section on the stage (owner decision, 2026-11-09):
+ * closed, the column under her strip keeps her glyph field. The column is
+ * tall and narrow, so it takes the tall frame baked from a 1600 window
+ * (`field-still-wide.webp`, 1536 x 1972, which holds its own fall to the
+ * page) at every width: the small frame stretched to the column's height
+ * would draw its glyphs far larger than her strip's. */
+.vex-pre-vex__kimm > [data-vex-area="vex-stage-ground"] {
+  background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
+}
 /* Her figure stands the column's whole height on the stage, centred in it,
  * as the approved plates draw her (the shell's box is shorter, and there she
  * fills its width from the top; `kimm.css`). Open with her files, as in the
