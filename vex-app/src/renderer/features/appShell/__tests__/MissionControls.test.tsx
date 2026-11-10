@@ -1180,6 +1180,7 @@ describe("MissionControls - the next-step bar", () => {
     expect(group.getAttribute("data-vex-next-step")).toBe("start");
     expect(within(group).getByText("Nothing runs until you start it.")).toBeTruthy();
     expect(key.textContent).toBe("Start mission");
+    expect(group.querySelector('.vex-sq[data-state="ongoing"]')).not.toBeNull();
     expect(key.getAttribute("data-vex-button")).toBe("primary");
     fireEvent.click(key);
     await waitFor(() => expect(startMock).toHaveBeenCalledWith({ sessionId: SESSION, missionId: MISSION }));
@@ -1197,6 +1198,9 @@ describe("MissionControls - the next-step bar", () => {
       within(group).getByText("Renew drafts a new contract; it runs only after you accept it."),
     ).toBeTruthy();
     expect(key.textContent).toBe("Renew mission");
+    // Nothing runs: the square is the still target, never the running blink.
+    expect(group.querySelector('.vex-sq[data-state="warning"]')).not.toBeNull();
+    expect(group.querySelector('.vex-sq[data-state="ongoing"]')).toBeNull();
     expect(key.getAttribute("data-vex-button")).toBe("primary");
     const restart = within(group).getByRole("button", { name: "Tell Vex what to do differently" });
     // The secondary action is never a blue key.

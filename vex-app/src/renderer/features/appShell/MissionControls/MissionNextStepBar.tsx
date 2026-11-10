@@ -3,9 +3,12 @@
  * bar on the reading column (docs/design/H3-DESKTOP.md section 5.10; owner
  * decision 2026-11-10, "Next-step bar").
  *
- *   left   the blinking state square, a caps eyebrow (the state) and one
+ *   left   the state square, a caps eyebrow (the state) and one
  *          line in ink 2 saying what happens next; a quiet secondary action
- *          may stand under the line, never blue
+ *          may stand under the line, never blue. The square blinks (the
+ *          running square) while the mission moves toward a run (review,
+ *          start); an ended mission runs nothing, so its square is the still
+ *          target, your move (section 2.2)
  *   right  the action as Vex's blue key with the arrow glyph, a full height
  *          cell at least 200 wide on the bar's right edge
  *
@@ -38,6 +41,17 @@ import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 
 /** Which next step the bar stands for (`data-vex-next-step`). */
 export type MissionNextStep = "review" | "start" | "renew";
+
+/**
+ * The square beside the eyebrow: the blinking running square while the
+ * mission moves toward a run, the still target once it has ended (nothing
+ * runs, so nothing may read as running).
+ */
+const STEP_SQUARE: Readonly<Record<MissionNextStep, "ongoing" | "warning">> = {
+  review: "ongoing",
+  start: "ongoing",
+  renew: "warning",
+};
 
 export interface MissionNextStepBarProps {
   readonly step: MissionNextStep;
@@ -119,7 +133,7 @@ export function MissionNextStepBar({
       <div className="vex-next-step__row">
         <div className="vex-next-step__body">
           <p className="vex-next-step__eyebrow">
-            <StateSquare state="ongoing" />
+            <StateSquare state={STEP_SQUARE[step]} />
             <span id={eyebrowId}>{eyebrow}</span>
           </p>
           <p className="vex-next-step__line">{line}</p>
