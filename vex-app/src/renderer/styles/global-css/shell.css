@@ -212,6 +212,12 @@
   margin-top: 40px;
   max-height: calc(100% - 40px - max(0px, var(--vex-panel-floor, 0px) - var(--vex-h3-foot)));
 }
+/* Where no composer row stands under her (Studio's centre has none, and a
+ * page's sheet covers the chat to the window's foot), she may run on into
+ * the bottom row, to the window's foot, rather than end over an empty cell. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"]:has(> .vex-shell-centre :is([data-vex-area="studio-center"], .vex-ov)) > .vex-shell-vex {
+  grid-row: 2 / -1;
+}
 /* Studio's centre stands in the chat's room, as the reading column does: its
  * terminals and tabs end where her panel's room starts, shown or hidden. */
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] [data-vex-area="studio-center"] {

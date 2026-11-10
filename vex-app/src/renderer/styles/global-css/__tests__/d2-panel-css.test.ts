@@ -88,6 +88,15 @@ describe("her panel's place (section 6.3)", () => {
     );
   });
 
+  it("runs on to the window's foot where no composer row stands under her: Studio, a page", () => {
+    expect(
+      rule(
+        shell,
+        `${PANEL}:has(> .vex-shell-centre :is([data-vex-area="studio-center"], .vex-ov)) > .vex-shell-vex`,
+      ),
+    ).toBe("grid-row: 2 / -1;");
+  });
+
   it("has no bars cell in the bottom row any more", () => {
     expect(shell).not.toContain(".vex-shell-tagline");
   });
