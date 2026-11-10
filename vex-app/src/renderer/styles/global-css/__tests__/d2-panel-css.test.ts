@@ -100,12 +100,44 @@ describe("the conversation column fills the centre of the room (section 6.6)", (
     ).toBe("margin-inline: 0;");
   });
 
-  it("stands the live-step row's words on the column, its rule across the chat", () => {
-    expect(
-      rule(sheet("composer.css"), '.vex-shell-frame[data-vex-frame="h3"] [data-vex-area="composer-mission-strip"] > :last-child'),
-    ).toBe(
-      "padding-inline: var(--vex-read-x) max(8px, calc(var(--vex-chat-track) - var(--vex-read-x) - var(--vex-read-w)));",
+});
+
+/** A sheet with its whitespace collapsed, for selectors written over lines. */
+const flat = (name: string): string => sheet(name).replace(/\s+/g, " ");
+const SHELL_DOCK =
+  '[data-vex-area="session-panel"][data-vex-session-surface="shell"] [data-vex-composer-dock]';
+
+describe("the composer is a framed box on the column (section 6.5; owner decision 2026-11-10)", () => {
+  it("stands the dock on the conversation column: the reading column's x, width and zoom", () => {
+    // The dock is a `.vex-reading-col` (SessionPanel), so the column's rule
+    // places it, as it places the transcript.
+    expect(rule(sheet("chat-transcript.css"), '.vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre .vex-reading-col')).toBe(
+      "zoom: var(--vex-zoom); width: calc(var(--vex-read-w) / var(--vex-zoom)); margin-inline: calc(var(--vex-read-x) / var(--vex-zoom)) 0;",
     );
+    // No rule of the dock's own runs it across the chat any more.
+    expect(rule(flat("composer.css"), `.vex-shell-frame[data-vex-frame="h3"] ${SHELL_DOCK}`)).toBe(
+      "align-self: flex-start; max-width: none; padding: 0 0 16px;",
+    );
+  });
+
+  it("lifts the box 24 off the window's foot from 1280 up, 16 under it, and 16 from the chat's sides under 1024", () => {
+    expect(rule(flat("composer.css"), `.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="wide"] ${SHELL_DOCK}`)).toBe(
+      "padding-bottom: 24px;",
+    );
+    expect(rule(flat("composer.css"), `.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] ${SHELL_DOCK}`)).toBe(
+      "align-self: stretch; width: auto; margin-inline: 16px;",
+    );
+  });
+
+  it("sits the live-step row and the queue on the box's top rule, in its chosen rule", () => {
+    expect(
+      rule(
+        flat("composer.css"),
+        '.vex-shell-frame[data-vex-frame="h3"] [data-vex-composer-dock] :is([data-vex-area="composer-mission-strip"] > .border-rule, [data-vex-area="composer-queue-dock"])',
+      ),
+    ).toBe("border-color: var(--vex-alias-rule-chosen);");
+    // The old full-width rule that stood its words on the column is gone.
+    expect(sheet("composer.css")).not.toContain('[data-vex-area="composer-mission-strip"] > :last-child');
   });
 });
 
@@ -184,14 +216,14 @@ describe("what else stands in the chat keeps clear of her (section 6.3)", () => 
     expect(rule(shell, `${PANEL} [data-vex-area="studio-center"]`)).toBe("padding-right: var(--vex-panel-w);");
   });
 
-  it("the slash menu stands in the room; the context panel opens left of her while she shows", () => {
-    expect(rule(sheet("composer.css"), `${PANEL} .vex-slash`)).toBe("right: var(--vex-panel-w);");
-    expect(
-      rule(
-        sheet("console.css"),
-        '.vex-shell-frame[data-vex-frame="h3"][data-vex-panel="shown"] .vex-composer-strip__context [role="dialog"]',
-      ),
-    ).toBe("right: var(--vex-panel-w);");
+  it("the slash menu and the context panel rise from the box on the column, never under her", () => {
+    // The box stands on the conversation column, which ends where her room
+    // starts (section 6.6): neither needs a rule of her panel's width.
+    expect(sheet("composer.css")).not.toContain(`${PANEL} .vex-slash`);
+    expect(rule(sheet("composer.css"), ".vex-composer-box > .vex-slash")).toBe(
+      "right: -1px; bottom: calc(100% + 1px); left: -1px; border-inline: 1px solid var(--vex-alias-rule-chosen);",
+    );
+    expect(sheet("console.css")).not.toContain('[data-vex-panel="shown"] .vex-composer-strip__context');
   });
 
   it("the chat's scrollbar track starts under her panel", () => {

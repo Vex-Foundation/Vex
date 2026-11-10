@@ -454,12 +454,9 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 .vex-composer-strip [role="dialog"] {
   white-space: normal;
 }
-/* The context panel rises from the strip's right end, under where Vex's
- * panel stands (docs/design/H3-DESKTOP.md section 6.3): while she shows it
- * opens left of her panel instead, so she never covers it. */
-.vex-shell-frame[data-vex-frame="h3"][data-vex-panel="shown"] .vex-composer-strip__context [role="dialog"] {
-  right: var(--vex-panel-w);
-}
+/* The context panel rises from the key's right end. In the shell the key
+ * stands in the box on the conversation column, which never reaches under
+ * Vex's panel (docs/design/H3-DESKTOP.md section 6.6), so neither does it. */
 /* No session, no context to measure (the welcome): the cell leaves rather
  * than stand empty beside H3's empty state cell. */
 .vex-composer-strip__context:empty {
@@ -555,6 +552,130 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 @container (max-width: 700px) {
   .vex-composer-context {
     padding: 0 16px;
+  }
+}
+
+/* ── THE BOX (docs/design/H3-DESKTOP.md section 6.5; owner decision
+ * 2026-11-10, "Framed box on the column") ───────────────────────────────
+ * In the shell the composer is one framed box standing on the conversation
+ * column (its place and its lift off the window's foot are composer.css's):
+ * the card ground in the chosen rule, 1px, square, no shadow, no blur. The
+ * field on top, 16 / 24 sans, 16 20 in, its resting words in ink 2; under
+ * it, on the 7% rule, one row 56 high: the model cell (the cell fill, its
+ * right rule), the strip's cells (AI PERMISSION and the promise as caps
+ * chips in the 7% rule, the state taking the room left, the context key in
+ * its left rule) and SEND at the right end, the row's height. While the
+ * field holds the focus the frame brightens to the kit's white focus rule:
+ * the frame is the focus, so the field still draws no ring of its own. The
+ * Lighter desk's composer (no `.vex-composer-box`) keeps the cells above. */
+.vex-composer-box {
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-card);
+}
+.vex-composer-box:has(> .vex-composer-field [data-vex-composer-field]:focus) {
+  border-color: var(--vex-alias-focus);
+}
+/* While an approval waits the frame is the ink, in place of the outline. */
+.vex-composer-box[data-vex-composer-state="approval"] {
+  border-color: var(--vex-alias-rule-ink);
+  outline: 0;
+}
+.vex-composer-box > .vex-composer-field {
+  min-height: 0;
+  padding: 16px 20px;
+  border-top: 0;
+}
+.vex-composer-box [data-vex-composer-placeholder] {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-composer-box > .vex-composer-row {
+  align-items: stretch;
+  height: 56px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-composer-box .vex-composer-modelcell {
+  height: auto;
+  border-top: 0;
+}
+.vex-composer-box .vex-composer-modelcell .vex-composer-model {
+  width: 48px;
+}
+/* The strip's cells in the row: no strip of their own and no rules between
+ * them but the context key's. The row is the query container, so the strip
+ * is none. */
+.vex-composer-box .vex-composer-row > .vex-composer-strip {
+  flex: 1 1 auto;
+  height: auto;
+  border-top: 0;
+  container-type: normal;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__cell {
+  border-left: 0;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__access {
+  padding: 0 0 0 16px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__promise {
+  padding: 0 0 0 8px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__state {
+  min-width: 0;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__state:not(:empty) {
+  padding: 0 12px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__context {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+/* The chips: caps 11, 24 high in the 7% rule, 8 in; AI PERMISSION muted,
+ * the promise in ink 2. */
+.vex-composer-box .vex-composer-strip__label,
+.vex-composer-box .vex-composer-promise {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--vex-alias-rule);
+}
+/* The context key stands inside the box: it reaches no higher than its row. */
+.vex-composer-box .vex-composer-context::before {
+  content: none;
+}
+.vex-composer-box .vex-composer-row .vex-composer-context {
+  padding: 0 16px;
+}
+.vex-composer-box .vex-composer-row .vex-composer-key {
+  height: auto;
+  border-top: 0;
+}
+/* A narrow box gives way in steps: the context's word first, then the
+ * AI PERMISSION caption and "Reasoning:" (both aria-hidden: the grant and
+ * the effort key name themselves), then the promise's words to its icon
+ * (its name stays on the seat). The strip never
+ * shrinks under its cells: the model cell's name truncates first. */
+.vex-composer-box .vex-composer-row > .vex-composer-strip {
+  min-width: min-content;
+}
+@container composer-row (max-width: 900px) {
+  .vex-composer-box .vex-composer-context__label {
+    display: none;
+  }
+}
+@container composer-row (max-width: 760px) {
+  .vex-composer-box .vex-composer-strip > .vex-composer-strip__access,
+  .vex-composer-box .vex-composer-options__prefix {
+    display: none;
+  }
+  .vex-composer-box .vex-composer-strip > .vex-composer-strip__promise {
+    padding-left: 16px;
+  }
+}
+@container composer-row (max-width: 640px) {
+  .vex-composer-box [data-vex-permission-label] {
+    display: none;
+  }
+  .vex-composer-box .vex-composer-promise > svg {
+    display: block;
   }
 }
 

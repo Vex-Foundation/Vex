@@ -27,8 +27,9 @@
  * the opening, the greeting bubble and its notes, stands at the column's top
  * and the composer at its foot, so the seat grows to the scroll body's whole
  * height and the opening's auto bottom margin takes the room between them.
- * The composer's row stands on the window's foot, so the seat has no foot
- * padding. A window too short for both lets the stack scroll from the top. */
+ * The seat has no foot padding: in H3's frame the dock's own lifts the box
+ * off the window's foot (below). A window too short for both lets the stack
+ * scroll from the top. */
 [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
   flex: 1 0 auto;
   align-items: center;
@@ -366,38 +367,58 @@ html[data-still] .vex-starter-grid {
   [data-vex-composer-dock] {
   padding-bottom: 22px;
 }
-/* In H3's frame (docs/design/H3-DESKTOP.md section 1.8) the chat's column runs
- * on into the bottom row, so this floor ends at the window's foot, in the
- * row's chat cell: never shorter than the row (`--vex-h3-bottom-h`, the
- * token the frame's row reads),
- * its composer sitting on the row's foot. A taller composer, a draft grown
- * past one line, rises over the transcript; the frame's row keeps its 72. */
+/* In H3's frame (docs/design/H3-DESKTOP.md sections 1.8 and 6.5) the chat
+ * runs on to the window's foot, so this floor ends there, never shorter than
+ * the frame's foot row (`--vex-h3-bottom-h`), the composer box standing in
+ * it off the foot. A taller box, a draft grown past one line, rises over the
+ * transcript; the frame's row, the account cell's, keeps its 72. */
 .vex-shell-frame[data-vex-frame="h3"]
   [data-vex-area="session-panel"][data-vex-session-surface="shell"][data-phase="active"]
   [data-vex-composer-seat] {
   justify-content: flex-end;
   min-height: var(--vex-h3-bottom-h);
 }
-/* THE DOCK IN H3's FRAME, on every phase: the composer's cells run the chat
- * column's whole width, from its left rule to the window's edge, and its row
- * stands on the window's foot (docs/design/H3-DESKTOP.md section 1.8), so the
- * reading column's width, sides and R3's 22 under the field all drop here.
- * Text inside the cells keeps H3's 24 in. */
+/* THE BOX'S PLACE IN H3's FRAME, on every phase (docs/design/H3-DESKTOP.md
+ * section 6.5; owner decision 2026-11-10, "Framed box on the column"): the
+ * dock is the conversation column (`.vex-reading-col`, chat-transcript.css:
+ * the column's x and width from the variables the transcript reads, zoomed
+ * with it), so the composer box and everything over it (the live-step row,
+ * the queue, a notice, the slash menu, the suggestions without a welcome)
+ * stand on the column. The box stands 24 off the window's foot from 1280 up
+ * and 16 under it; the chats column's account cell keeps the foot row. The
+ * hero's seat centres its children, so the dock takes its own start. Under
+ * 1024 (the band) the box spans the chat with 16 each side. */
 .vex-shell-frame[data-vex-frame="h3"]
   [data-vex-area="session-panel"][data-vex-session-surface="shell"]
   [data-vex-composer-dock] {
-  width: 100%;
+  align-self: flex-start;
   max-width: none;
-  margin-inline: 0;
-  padding: 0;
+  padding: 0 0 16px;
 }
-
-/* The live-step row over the strip (the run strip, `ComposerMissionStrip`)
- * keeps its rule across the chat, and its words stand on the conversation
- * column (owner decision 2026-11-10): the state at the column's left edge,
- * the timer at its right. */
-.vex-shell-frame[data-vex-frame="h3"] [data-vex-area="composer-mission-strip"] > :last-child {
-  padding-inline: var(--vex-read-x) max(8px, calc(var(--vex-chat-track) - var(--vex-read-x) - var(--vex-read-w)));
+.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="wide"]
+  [data-vex-area="session-panel"][data-vex-session-surface="shell"]
+  [data-vex-composer-dock] {
+  padding-bottom: 24px;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"]
+  [data-vex-area="session-panel"][data-vex-session-surface="shell"]
+  [data-vex-composer-dock] {
+  align-self: stretch;
+  width: auto;
+  margin-inline: 16px;
+}
+/* The live-step row and the queue sit on the box's top rule, their own
+ * sides in the box's chosen rule, so they read as its head (a mission paused
+ * on an error keeps its ink frame). */
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-composer-dock] :is([data-vex-area="composer-mission-strip"] > .border-rule, [data-vex-area="composer-queue-dock"]) {
+  border-color: var(--vex-alias-rule-chosen);
+}
+/* Without a welcome slot the suggestions stand over the box, on its width. */
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-composer-dock] > .vex-starters {
+  padding: 0 0 16px;
+}
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-composer-dock] > .vex-starters .vex-starter-grid {
+  width: 100%;
 }
 
 /* SETTLING - a session is opening and its transcript is still unknown, so
@@ -430,10 +451,15 @@ html[data-still] .vex-starter-grid {
   border-top: 1px solid var(--vex-alias-rule-chosen);
   background: var(--vex-alias-card);
 }
-/* It rises into the chat over the composer, so it stands in the chat's room,
- * clear of Vex's panel (docs/design/H3-DESKTOP.md section 6.3). */
-.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-slash {
-  right: var(--vex-panel-w);
+/* On the box (docs/design/H3-DESKTOP.md section 6.5) it is the box's width,
+ * its frame continuing the box's, its foot on the box's top rule. The box
+ * stands on the conversation column, so the menu never reaches under Vex's
+ * panel (section 6.3). */
+.vex-composer-box > .vex-slash {
+  right: -1px;
+  bottom: calc(100% + 1px);
+  left: -1px;
+  border-inline: 1px solid var(--vex-alias-rule-chosen);
 }
 .vex-slash__head {
   display: flex;

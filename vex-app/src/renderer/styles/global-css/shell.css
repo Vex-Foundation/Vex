@@ -182,8 +182,8 @@
  * (20), so she never covers the chats panel; the chat's own ground shows
  * under her. She never comes down past the top of the chat's composer group
  * (`--vex-panel-floor`, measured by the frame, `vex-panel-geometry.ts`):
- * the status strip, the bottom row and anything the composer raises over
- * them stay clear of her, her card giving way first. Hidden, the box is
+ * the composer box and anything it raises over itself stay clear of her,
+ * her card giving way first. Hidden, the box is
  * empty and 0 high, so the chat's ground shows there. Offline she starts
  * under the centre's connection row, as a page does. */
 .vex-shell-frame[data-vex-frame="h3"] > .vex-shell-vex {
@@ -219,9 +219,10 @@
 /* THE BOTTOM ROW (docs/design/H3-DESKTOP.md sections 1.8 and 6.5): the
  * frame's last row, 72 high. The chats column stops over it and its cell
  * takes it: the account cell (the column's own foot rule and paper,
- * `.vex-ls`). The chat runs on into it, to the window's right edge: its
- * composer seat ends at the window's foot, and a page sheet covers the
- * whole column, so a page has no bottom row (section 1.9). The account cell
+ * `.vex-ls`). The chat runs on into it, to the window's foot, and has no
+ * cells there: its composer is a box on the conversation column lifted off
+ * the foot (composer.css), and a page sheet covers the whole column, so a
+ * page has no bottom row (section 1.9). The account cell
  * stacks over the chats column, so the account menu it opens rises over it. */
 .vex-shell-frame[data-vex-frame="h3"] > .vex-shell-centre {
   grid-row: 2 / -1;

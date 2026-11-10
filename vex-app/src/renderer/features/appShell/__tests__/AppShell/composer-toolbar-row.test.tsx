@@ -1,8 +1,9 @@
 /**
- * Composer status strip (docs/design/H3-DESKTOP.md section 1.8 and Appendix
- * A.5; once the toolbar row) - its four cells ("{model} HIGH", the promise,
- * the state, CONTEXT), the shrink chain, the protected seats, the model cell
- * under it, and the context meter's panel (UIUX round 3, lane F2; codex Bug
+ * Composer status strip (docs/design/H3-DESKTOP.md sections 1.8 and 6.5 and
+ * Appendix A.5; once the toolbar row) - its four cells (AI PERMISSION, the
+ * promise, the state, CONTEXT), standing in the shell box's row between the
+ * model cell and SEND, the shrink chain, the protected seats, the model
+ * cell, and the context meter's panel (UIUX round 3, lane F2; codex Bug
  * 3 + the deepseek cross-check §2).
  *
  * WHAT THIS FILE CAN AND CANNOT PROVE. jsdom performs no layout: `offsetWidth`
@@ -171,16 +172,21 @@ function toolbarRow(container: HTMLElement): HTMLElement {
 }
 
 describe("composer toolbar - the shrink chain (Bug 3)", () => {
-  it("the strip is the query container the permission collapse answers to", () => {
+  it("in the box the row is the query container the permission collapse answers to, the strip none", () => {
+    // docs/design/H3-DESKTOP.md section 6.5: the strip's cells stand in the
+    // box's row, so its steps answer to the row's width (console.css,
+    // `.vex-composer-row`'s `container: composer-row / inline-size`).
     const { container } = mountDocked();
     const strip = toolbarRow(container);
     expect(strip.getAttribute("data-vex-area")).toBe("composer-strip");
-    expect(strip.className).toContain("@container");
+    expect(strip.className).not.toContain("@container");
+    expect(strip.parentElement?.className).toBe("vex-composer-row");
   });
 
-  it("the strip is D2's four cells: AI permission, the promise, the state, the context", () => {
-    // docs/design/H3-DESKTOP.md section 6.5: the model and its effort went
-    // down into the bottom row's model cell.
+  it("the strip is D2's four cells, in the box's row between the model cell and SEND", () => {
+    // docs/design/H3-DESKTOP.md section 6.5: the model and its effort are the
+    // model cell's; the strip's cells (AI permission, the promise, the
+    // state, the context) follow it in the one row, and SEND ends it.
     const { container } = mountDocked();
     const strip = toolbarRow(container);
     expect(Array.from(strip.children).map((cell) => cell.className.split(" ")[1])).toEqual([
@@ -191,8 +197,8 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ]);
     expect(strip.querySelector(".vex-composer-strip__access")?.textContent).toBe("AI permission");
     expect(strip.querySelector('[data-vex-area="composer-options"]')).toBeNull();
-    // Over the composer row, inside the one form.
-    expect(strip.nextElementSibling?.getAttribute("data-vex-area")).toBe("composer-row");
+    expect(strip.previousElementSibling?.getAttribute("data-vex-area")).toBe("composer-model-group");
+    expect(strip.nextElementSibling?.getAttribute("aria-label")).toBe("Send message");
     // No daily budget: the context meter takes its cell (section 4.1).
     expect(strip.textContent).not.toMatch(/budget/i);
     expect(
