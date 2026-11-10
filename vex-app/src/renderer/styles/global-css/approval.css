@@ -851,6 +851,48 @@
   background: var(--vex-alias-bg-layer-3);
 }
 
+/* 6b. THE BAND'S BOX IN THE SHELL (docs/design/H3-DESKTOP.md section 6.5;
+ * owner decision 2026-11-10, "Framed box on the column"). In the shell's
+ * chat the docked band takes the composer box's seat: one framed box on the
+ * conversation column (the column's x and width, zoomed as the column is),
+ * 24 off the window's foot from 1280 up and 16 under it, 16 from the chat's
+ * sides under 1024; the card ground in the chosen rule, 1px, square, no
+ * shadow. The reason field on top, then the decision row (Reject | the gate
+ * line | the approve key) 56 high, the composer box's row. The clip cue lies
+ * over the box's top rule, its sides continuing the box's frame. The keys,
+ * their widths and steps, their words, their focus ring and the reason
+ * row's are the rules above. The desk chat's dock keeps the row above. */
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr-dock {
+  align-self: flex-start;
+  width: calc(var(--vex-read-w) / var(--vex-zoom));
+  margin-inline: calc(var(--vex-read-x) / var(--vex-zoom)) 0;
+  padding-bottom: 16px;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="wide"] [data-vex-session-surface="shell"] .vex-appr-dock {
+  padding-bottom: 24px;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] [data-vex-session-surface="shell"] .vex-appr-dock {
+  width: calc(var(--vex-chat-track) - 32px);
+  margin-inline: 16px 0;
+}
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr__foot[data-docked] {
+  background: var(--vex-alias-card);
+  border: 1px solid var(--vex-alias-rule-chosen);
+}
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr__foot[data-docked] > .vex-appr__reason-row {
+  background: transparent;
+}
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr__foot[data-docked] > button {
+  height: 56px;
+}
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr__foot[data-docked] > .vex-appr__more-cue {
+  right: -1px;
+  bottom: calc(100% + 1px);
+  left: -1px;
+  border-inline: 1px solid var(--vex-alias-rule-chosen);
+  border-top-color: var(--vex-alias-rule-chosen);
+}
+
 /* THE SEND BAND (Cloud's `sendMode`, C3-D-27; H3-DESKTOP.md section 4.3):
  * while the reason holds words, Clear takes Reject's cell, quiet (no fill,
  * the word in ink), and "Reject and send" takes the approve key's cell and

@@ -1,28 +1,31 @@
 /**
- * Session composer (docs/design/H3-DESKTOP.md section 1.8 and Appendix A.5):
- * the chat's cells of the bottom row, and over them the status strip.
+ * Session composer (docs/design/H3-DESKTOP.md sections 1.8 and 6.5, Appendix
+ * A.5). In the shell it is ONE framed box standing on the conversation
+ * column (owner decision 2026-11-10, "Framed box on the column"), lifted off
+ * the window's foot:
  *
- *   form.vex-composer-card[data-vex-area="chat-composer"]
- *     .vex-composer-strip  the status strip, 31 high: "{model} HIGH", the
- *                          permission as its promise, the composer's state
- *                          while it lasts, and CONTEXT with its meter
- *     .vex-composer-row    the composer row, 72 high at the window's foot:
- *       model cell         the model's glyph: the model choice
- *       field cell         "Ask Vex...", running on to the send key (no
- *                          image key: attachments are not supported)
+ *   form.vex-composer-card.vex-composer-box[data-vex-area="chat-composer"]
+ *     .vex-composer-field  "Ask Vex...", growing with the draft to its cap
+ *     .vex-composer-row    under a 1px rule:
+ *       model cell         the provider's mark, the model's name over
+ *                          "Reasoning: High" (the model menu and the effort)
+ *       .vex-composer-strip the status strip's cells: AI PERMISSION and the
+ *                          promise as caps chips, the composer's state while
+ *                          it lasts, CONTEXT with its meter
  *       send cell          the blue SEND, or STOP while a turn runs
  *
- * A draft past one line grows the field's cell upward over the transcript;
- * the model and send cells keep the row's 72 at the foot, so the frame's
- * bottom row never changes height. No focus ring on the field: the caret
+ * The Lighter desk keeps its approved composer (section 4.9): the status
+ * strip over the row, and the row's mark-only model cell, the field and the
+ * send cell at the window's foot. No focus ring on the field: in the box the
+ * frame brightens while the field holds the focus; on the desk the caret
  * carries it. One component serves the welcome and the docked session stage
  * (`variant` names the stage; the textarea DOM survives a hero->docked move
  * because the parent keeps the mount position stable), and the whole seat is
- * one component, so the bottom row's chat cell can give it way to a waiting
- * card's decision row. Owns wiring only: drafts (per-session store), submit
- * + queue (composer-submit), slash commands (commands/), seats
- * (SessionComposer/), and the welcome's suggestions. Chrome lives in
- * console.css, the seat and the welcome in composer.css.
+ * one component, so a waiting card's decision band can take its place. Owns
+ * wiring only: drafts (per-session store), submit + queue (composer-submit),
+ * slash commands (commands/), seats (SessionComposer/), and the welcome's
+ * suggestions. Chrome lives in console.css, the seat, its place on the
+ * column and the welcome in composer.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -358,6 +361,138 @@ export function SessionComposer({
     />
   );
 
+  /* THE STATUS STRIP'S CELLS (docs/design/H3-DESKTOP.md sections 1.8 and
+   * 6.5). In the shell they stand in the box's bottom row, between the model
+   * cell and SEND; on the Lighter desk they stay its strip over the row (its
+   * approved plate, section 4.9). Left to right:
+   *
+   *   access  AI PERMISSION, the grant's caption (and the legacy plan seat
+   *           while a session has one); the desk's model and effort instead
+   *   promise FUNDS REQUIRE APPROVAL in Restricted, FULL ACCESS in Full
+   *           access
+   *   state   the room left; desktop's composer states stand here while
+   *           they last ("Waiting for approval", "Stopping...")
+   *   context CONTEXT, its meter and the real share, where Cloud draws
+   *           DAILY BUDGET, which desktop has not
+   *
+   * The permission's words collapse to its icon by a container query: the
+   * desk's strip is its own query container (`@container`); in the box the
+   * row is (`.vex-composer-row`, console.css), so the seat answers to the
+   * composer's own width rather than the viewport.
+   *
+   * SHRINK CHAIN (codex Bug 3, cross-check section 2). The model cell is
+   * `min-w-0` and shrinkable, the model name truncating first; the state cell
+   * takes the room left, and the promise and the context are the protected
+   * seats that never shrink. Nothing is blanket-clipped: every focusable
+   * control stays visible and focus-ringed. */
+  const strip = (
+    <div
+      data-vex-area="composer-strip"
+      // While the state cell holds words, the promise gives them its room
+      // sooner (console.css): the strip says which state it holds.
+      data-vex-strip-state={awaitingApproval ? "approval" : stopping ? "stopping" : undefined}
+      className={onLighterDesk ? "vex-composer-strip @container" : "vex-composer-strip"}
+    >
+      {onLighterDesk ? (
+        // The desk keeps its approved strip (section 4.9): the model and its
+        // effort first.
+        <div className="vex-composer-strip__cell vex-composer-strip__model min-w-0">
+          <ComposerOptions modelId={composerModel.modelId} effort={effortKey} />
+          <ComposerPlanChip
+            sessionId={sessionId}
+            missionStatus={runStatus}
+            open={planOpen}
+            onOpenChange={setPlanOpen}
+          />
+        </div>
+      ) : (
+        // AI PERMISSION (D2, section 6.5): a caption for the grant beside it,
+        // which names itself. The legacy plan seat stands after it while a
+        // session has one.
+        <div className="vex-composer-strip__cell vex-composer-strip__access flex-none">
+          <span className="vex-composer-strip__label" aria-hidden="true">
+            AI permission
+          </span>
+          <ComposerPlanChip
+            sessionId={sessionId}
+            missionStatus={runStatus}
+            open={planOpen}
+            onOpenChange={setPlanOpen}
+          />
+        </div>
+      )}
+      <div className="vex-composer-strip__cell vex-composer-strip__promise flex-none">
+        <ComposerPermissionSeat
+          permission={
+            activeSession?.permission ??
+            // The welcome has no session yet: the new session form's own
+            // preselect is Restricted, and the form is where the grant is
+            // chosen.
+            (sessionId === null ? "restricted" : null)
+          }
+        />
+      </div>
+      {/* The state cell: the target swatch and "Waiting for approval" while
+          an approval waits (status by fill and word), the rule outline while
+          a stop is being acknowledged; else H3's empty cell. The words
+          truncate before they push a neighbour out. */}
+      <div className="vex-composer-strip__cell vex-composer-strip__state">
+        {awaitingApproval ? (
+          <span data-vex-console-status="approval" className="vex-composer-tag">
+            <Swatch state="awaiting" size={10} className="text-accent-primary" />
+            <span className="min-w-0 truncate">Waiting for approval</span>
+          </span>
+        ) : stopping ? (
+          // Exact "Stopping…" text - the stop-acknowledgment contract pinned
+          // by the composer stop test.
+          <span data-vex-console-status="stopping" className="vex-composer-tag">
+            <span className="min-w-0 truncate">Stopping…</span>
+          </span>
+        ) : null}
+      </div>
+      {/* The context cell. The welcome has no session yet, so no context to
+          measure: the cell stands empty rather than show a share it does not
+          have. */}
+      <div className="vex-composer-strip__cell vex-composer-strip__context flex-none">
+        {sessionId !== null ? (
+          <ComposerContextMeter sessionId={sessionId} permission={activeSession?.permission ?? null} />
+        ) : null}
+      </div>
+    </div>
+  );
+
+  // The field's cell: "Ask Vex...", growing with the draft to its cap.
+  const field = (
+    <div className="vex-composer-field">
+      <ComposerField
+        fieldSlotRef={fieldSlotRef}
+        textareaRef={textareaRef}
+        draft={draft}
+        placeholder={placeholder}
+        reducedMotion={reducedMotion}
+        onDraftChange={(value) => {
+          setDraft(value);
+          clearNotice();
+        }}
+        onSubmitRequest={() => formRef.current?.requestSubmit()}
+        onCaretChange={slashMenu.onCaretChange}
+        onMenuKeyDown={slashMenu.handleKeyDown}
+        activeDescendant={activeDescendant}
+      />
+    </div>
+  );
+
+  const sendControl = (
+    <ComposerSendControl
+      stopAvailable={stopAvailable}
+      stopLabel={stopLabel}
+      stopRequested={stopRequested}
+      onStop={onStop}
+      submitDisabled={submitDisabled}
+      onKeepFocus={keepFocus}
+    />
+  );
+
   const starters = (
     <div data-vex-composer-starters="" className="vex-starters">
       <ComposerQuickActions
@@ -454,7 +589,7 @@ export function SessionComposer({
           data-vex-area="chat-composer"
           data-vex-composer-state={awaitingApproval ? "approval" : "input"}
           data-vex-drop={dropActive ? "active" : undefined}
-          className="vex-composer-card w-full"
+          className={onLighterDesk ? "vex-composer-card w-full" : "vex-composer-card vex-composer-box w-full"}
           onDragOver={(event) => {
             if (!dragHasFiles(event)) return;
             event.preventDefault();
@@ -475,164 +610,44 @@ export function SessionComposer({
             onPickAt={slashMenu.pickAt}
           />
 
-          {/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md sections
-           * 1.8 and 6.5): 31 high across the chat column, four cells divided
-           * by the rule. D2 moved the model and its effort down into the
-           * model cell; the strip reads, left to right:
-           *
-           *   access  AI PERMISSION, the grant's caption (and the legacy
-           *           plan seat while a session has one)
-           *   promise FUNDS REQUIRE APPROVAL in Restricted, FULL ACCESS in
-           *           Full access
-           *   state   the room left; desktop's composer states stand here
-           *           while they last ("Waiting for approval", "Stopping...")
-           *   context at the right: CONTEXT, its meter and the real share,
-           *           where Cloud draws DAILY BUDGET, which desktop has not
-           *
-           * `@container` (container-type: inline-size) makes the strip the
-           * query container for the promise's collapse, so the seat answers to
-           * the composer's own width rather than the viewport - the composer
-           * follows the chat column, and a viewport media query would fire at
-           * the wrong moment.
-           *
-           * SHRINK CHAIN (codex Bug 3, cross-check section 2). In the row the
-           * model cell is `min-w-0` and shrinkable, the model name truncating
-           * first; in the strip the state cell takes the room left, and the
-           * promise and the context are the protected seats that never
-           * shrink. The promise's WORDS collapse second, at the 600px
-           * container threshold, to the grant's icon. Nothing is
-           * blanket-clipped: every focusable control stays visible and
-           * focus-ringed. */}
-          <div
-            data-vex-area="composer-strip"
-            // While the state cell holds words, the promise gives them its
-            // room sooner (console.css): the strip says which state it holds.
-            data-vex-strip-state={awaitingApproval ? "approval" : stopping ? "stopping" : undefined}
-            className="vex-composer-strip @container"
-          >
-            {onLighterDesk ? (
-              // The desk keeps its approved strip (section 4.9): the model
-              // and its effort first.
-              <div className="vex-composer-strip__cell vex-composer-strip__model min-w-0">
-                <ComposerOptions modelId={composerModel.modelId} effort={effortKey} />
-                <ComposerPlanChip
-                  sessionId={sessionId}
-                  missionStatus={runStatus}
-                  open={planOpen}
-                  onOpenChange={setPlanOpen}
-                />
-              </div>
-            ) : (
-              // AI PERMISSION, the strip's first words (D2, section 6.5): a
-              // caption for the grant beside it, which names itself. The
-              // legacy plan seat stands after it while a session has one.
-              <div className="vex-composer-strip__cell vex-composer-strip__access flex-none">
-                <span className="vex-composer-strip__label" aria-hidden="true">
-                  AI permission
-                </span>
-                <ComposerPlanChip
-                  sessionId={sessionId}
-                  missionStatus={runStatus}
-                  open={planOpen}
-                  onOpenChange={setPlanOpen}
-                />
-              </div>
-            )}
-            <div className="vex-composer-strip__cell vex-composer-strip__promise flex-none">
-              <ComposerPermissionSeat
-                permission={
-                  activeSession?.permission ??
-                  // The welcome has no session yet: the new session form's own
-                  // preselect is Restricted, and the form is where the grant
-                  // is chosen.
-                  (sessionId === null ? "restricted" : null)
-                }
-              />
-            </div>
-            {/* The state cell: the target swatch and "Waiting for approval"
-                while an approval waits (status by fill and word), the rule
-                outline while a stop is being acknowledged; else H3's empty
-                cell. The words truncate before they push a neighbour out. */}
-            <div className="vex-composer-strip__cell vex-composer-strip__state">
-              {awaitingApproval ? (
-                <span
-                  data-vex-console-status="approval"
-                  className="vex-composer-tag"
-                >
-                  <Swatch state="awaiting" size={10} className="text-accent-primary" />
-                  <span className="min-w-0 truncate">Waiting for approval</span>
-                </span>
-              ) : stopping ? (
-                // Exact "Stopping…" text - the stop-acknowledgment contract
-                // pinned by the composer stop test.
-                <span
-                  data-vex-console-status="stopping"
-                  className="vex-composer-tag"
-                >
-                  <span className="min-w-0 truncate">Stopping…</span>
-                </span>
-              ) : null}
-            </div>
-            {/* The context cell. The welcome has no session yet, so no
-                context to measure: the cell stands empty rather than show a
-                share it does not have. */}
-            <div className="vex-composer-strip__cell vex-composer-strip__context flex-none">
-              {sessionId !== null ? (
-                <ComposerContextMeter
-                  sessionId={sessionId}
-                  permission={activeSession?.permission ?? null}
-                />
-              ) : null}
-            </div>
-          </div>
-
-          {/* THE COMPOSER ROW (docs/design/H3-DESKTOP.md section 1.8): the
-           * model cell, the field and the send cell, the bottom row's chat
-           * cells. */}
-          <div data-vex-area="composer-row" className="vex-composer-row">
-            {/* THE MODEL CELL (D2, section 6.5): the provider's mark (the
-                model menu, or the key to Settings), then the model's name
-                over "Reasoning: High" and the effort key's chevron. Two
-                keys in one cell, each with its own name. The desk keeps its
-                approved mark-only cell. */}
-            {onLighterDesk ? (
-              modelCell
-            ) : (
-              <div data-vex-area="composer-model-group" className="vex-composer-modelcell">
+          {onLighterDesk ? (
+            // The desk keeps its approved composer (section 4.9): the status
+            // strip over the row, then the mark-only model cell, the field and
+            // the send cell.
+            <>
+              {strip}
+              <div data-vex-area="composer-row" className="vex-composer-row">
                 {modelCell}
-                <ComposerOptions
-                  modelId={composerModel.modelId}
-                  reasoning={effortReady}
-                  effort={effortKey}
-                />
+                {field}
+                {sendControl}
               </div>
-            )}
-            <div className="vex-composer-field">
-              <ComposerField
-                fieldSlotRef={fieldSlotRef}
-                textareaRef={textareaRef}
-                draft={draft}
-                placeholder={placeholder}
-                reducedMotion={reducedMotion}
-                onDraftChange={(value) => {
-                  setDraft(value);
-                  clearNotice();
-                }}
-                onSubmitRequest={() => formRef.current?.requestSubmit()}
-                onCaretChange={slashMenu.onCaretChange}
-                onMenuKeyDown={slashMenu.handleKeyDown}
-                activeDescendant={activeDescendant}
-              />
-            </div>
-            <ComposerSendControl
-              stopAvailable={stopAvailable}
-              stopLabel={stopLabel}
-              stopRequested={stopRequested}
-              onStop={onStop}
-              submitDisabled={submitDisabled}
-              onKeepFocus={keepFocus}
-            />
-          </div>
+            </>
+          ) : (
+            // THE BOX (docs/design/H3-DESKTOP.md section 6.5; owner decision
+            // 2026-11-10, "Framed box on the column"): the field on top, and
+            // under a 1px rule one row: the model cell, the strip's cells
+            // (AI PERMISSION and the promise as caps chips, the state, the
+            // context meter), then SEND (STOP).
+            <>
+              {field}
+              <div data-vex-area="composer-row" className="vex-composer-row">
+                {/* THE MODEL CELL (D2, section 6.5): the provider's mark (the
+                    model menu, or the key to Settings), then the model's name
+                    over "Reasoning: High" and the effort key's chevron. Two
+                    keys in one cell, each with its own name. */}
+                <div data-vex-area="composer-model-group" className="vex-composer-modelcell">
+                  {modelCell}
+                  <ComposerOptions
+                    modelId={composerModel.modelId}
+                    reasoning={effortReady}
+                    effort={effortKey}
+                  />
+                </div>
+                {strip}
+                {sendControl}
+              </div>
+            </>
+          )}
         </form>
       </div>
 
