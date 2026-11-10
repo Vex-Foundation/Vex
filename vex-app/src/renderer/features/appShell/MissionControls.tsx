@@ -12,13 +12,15 @@
  *      flight). Recover (paused_error) is the one blue key inside the
  *      paused-on-error callout in the transcript. Behaviour, dispatch and the
  *      gates below are unchanged; only which keys are drawn changed.
- *  - NO ACTIVE RUN + accepted/ready contract -> a "Start mission" key (the
- *    view's blue fill) -> mission.start.
- *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) -> a
- *    "Renew mission" key -> mission.renew (clones it into a fresh draft), with
- *    "Tell Vex what to do differently" beside it.
+ *  - NO ACTIVE RUN + accepted/ready contract -> the next-step bar,
+ *    CONTRACT ACCEPTED, with its "Start mission" key -> mission.start.
+ *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) -> the
+ *    next-step bar, MISSION ENDED, with its "Renew mission" key ->
+ *    mission.renew (clones it into a fresh draft), and "Tell Vex what to do
+ *    differently" under its line.
  *  - NO ACTIVE RUN + a ready, unaccepted draft (the "MISSION READY" state) ->
- *    the blue-outlined "Review & accept contract" key in the same slot,
+ *    the next-step bar, MISSION READY, its key named "Review & accept
+ *    contract" in the same slot,
  *    opening the contract sheet via `uiStore.reviewModal` (owned/rendered by
  *    `MissionRail`, a sibling in the title bar). Reveal is gated on
  *    `useIsChatSubmitting` settling so the key can't flash open mid-turn
@@ -35,6 +37,13 @@
  *    must take it, enumerates the engine's own `missingFields`, and offers
  *    the contract surface (only the agent's `MissionDraftUpdate` writes the
  *    fields; `mission.updateDraft` is a stub), so it is never a dead end.
+ *
+ * THE NEXT-STEP BAR (docs/design/H3-DESKTOP.md section 5.10). With no
+ * active run, the one next step (review, start, renew) stands as a ruled bar
+ * under Vex's answer with the action as Vex's blue key
+ * (`MissionControls/MissionNextStepBar.tsx`). While a money card waits in
+ * this chat the card owns the view's blue, so the bar's key stands as the
+ * ink key. A look only: every key keeps its name, its gate and its press.
  *
  * WHERE THE RUN KEYS ARE DRAWN. The keys stay owned here (one set of mutation
  * hooks, so a control in flight disables every other one, Recover in the
@@ -116,6 +125,8 @@ import { requestMissionContract } from "./mission-contract-request.js";
 import { useMissionSetupProgress } from "./MissionSetupProgress.js";
 import { MissionMissingFields } from "./MissionMissingFields.js";
 import { useMissionStripSlot } from "./MissionControls/mission-strip-slot.js";
+import { MissionNextStepBar } from "./MissionControls/MissionNextStepBar.js";
+import { usePendingApprovals } from "../../lib/api/approvals.js";
 
 /** The question "Ask Vex what happened" puts in the session's message box. */
 export const ASK_WHAT_HAPPENED = "What happened? Why did the mission pause?";
@@ -292,6 +303,17 @@ export function MissionControls({
   // Turn-gate for the review bar's reveal - see the file header comment.
   const chatSubmitting = useIsChatSubmitting(sessionId);
   const setReviewModal = useUiStore((s) => s.setReviewModal);
+
+  // A money card waiting in this chat owns the view's one blue, so the
+  // next-step bar's key gives it up. The same read and the same rule the
+  // shell's composer frame reads (`SessionPanel`): every row proposed to the
+  // chat counts, a desk row (decided in the desk's own dialog) does not. One
+  // query key, so no extra IPC.
+  const pendingQuery = usePendingApprovals(sessionId);
+  const approvalWaiting =
+    pendingQuery.data !== undefined &&
+    pendingQuery.data.ok &&
+    pendingQuery.data.data.some((row) => row.origin !== "desk");
 
   const [notice, setNotice] = useState<ControlNotice>(null);
   // The composer strip's cells for this session (none when it is not mounted).
@@ -522,15 +544,18 @@ export function MissionControls({
   if (canStart && draft !== null) {
     const missionId = draft.missionId;
     return (
-      <div
-        data-vex-area="mission-controls"
-        className="mb-4 mt-1 flex flex-wrap items-center gap-3.5"
-      >
+      <div data-vex-area="mission-controls" className="mb-4 mt-1">
         {/* The view's one blue fill: the run starts only from here. */}
-        <Button
-          variant="primary"
+        <MissionNextStepBar
+          step="start"
+          riseKey={`${sessionId}:${missionId}`}
+          eyebrow="Contract accepted"
+          line="Nothing runs until you start it."
+          label="Start mission"
+          ariaLabel="Start mission"
+          blue={!approvalWaiting}
           disabled={disabled}
-          onClick={() =>
+          onAction={() =>
             void run(async () => {
               const result = await start.mutateAsync({ sessionId, missionId });
               // Pattern 1 (VS Code `startDebugging` -> `requestWorkspaceTrust`):
@@ -550,11 +575,12 @@ export function MissionControls({
               return result;
             })
           }
-          aria-label="Start mission"
-        >
-          Start mission
-        </Button>
-        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+        />
+        {notice !== null ? (
+          <div className="mt-2">
+            <ControlNoticeLine text={notice.text} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -570,17 +596,22 @@ export function MissionControls({
   // on and no plan body the readiness is `awaiting-plan`, so the rail says
   // Preparing and the bar cannot lead it.
   const reviewable = readiness.kind === "awaiting-acceptance";
-  if (reviewable && !chatSubmitting) {
+  // `draft !== null` only narrows the type: readiness is `none` without one.
+  if (reviewable && !chatSubmitting && draft !== null) {
     return (
       <div data-vex-area="mission-controls" className="mb-4 mt-1">
-        {/* The pre-accept counterpart of Start: the blue outline key. */}
-        <Button
-          variant="ghost"
-          onClick={raiseContract}
-          aria-label="Review & accept contract"
-        >
-          Review &amp; accept contract
-        </Button>
+        {/* The pre-accept counterpart of Start: the bar's blue key opens the
+            contract; its name is still the full "Review & accept contract". */}
+        <MissionNextStepBar
+          step="review"
+          riseKey={`${sessionId}:${draft.missionId}`}
+          eyebrow="Mission ready"
+          line="Review the contract, then accept it to start the run."
+          label="Review contract"
+          ariaLabel="Review & accept contract"
+          blue={!approvalWaiting}
+          onAction={raiseContract}
+        />
       </div>
     );
   }
@@ -599,38 +630,44 @@ export function MissionControls({
   if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
     return (
-      <div
-        data-vex-area="mission-controls"
-        className="mb-[18px] mt-1 flex flex-wrap items-center gap-3.5"
-      >
+      <div data-vex-area="mission-controls" className="mb-[18px] mt-1">
         {pendingAcceptance ? (
           <AcceptancePendingNotice
             readiness={readiness}
             onOpenContract={raiseContract}
           />
         ) : null}
-        <Button
-          variant="quiet"
+        <MissionNextStepBar
+          step="renew"
+          riseKey={`${sessionId}:${previousMissionId}`}
+          eyebrow="Mission ended"
+          line="Renew drafts a new contract; it runs only after you accept it."
+          label="Renew mission"
+          ariaLabel="Renew mission"
+          blue={!approvalWaiting}
           disabled={disabled}
-          onClick={() =>
+          onAction={() =>
             void run(
               () => renew.mutateAsync({ sessionId, previousMissionId }),
               renewNoticeFor,
             )
           }
-          aria-label="Renew mission"
-        >
-          Renew mission
-        </Button>
-        {/* Same terminal state, different intent: Renew clones the contract
-            into a draft that must be accepted again; this restarts the SAME
-            accepted contract with one added instruction. */}
-        <MissionRestartAffordance
-          sessionId={sessionId}
-          missionId={previousMissionId}
-          disabled={disabled}
+          secondary={
+            // Same terminal state, different intent: Renew clones the
+            // contract into a draft that must be accepted again; this
+            // restarts the SAME accepted contract with one added instruction.
+            <MissionRestartAffordance
+              sessionId={sessionId}
+              missionId={previousMissionId}
+              disabled={disabled}
+            />
+          }
         />
-        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+        {notice !== null ? (
+          <div className="mt-2">
+            <ControlNoticeLine text={notice.text} />
+          </div>
+        ) : null}
       </div>
     );
   }

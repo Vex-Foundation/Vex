@@ -72,8 +72,8 @@ here is a defect:
   `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
   mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
   VEX Cloud, so they are a cross-app contract rather than a style step. They
-  are hers, the chats panel's and a page's re-lay's alone (below): nothing
-  else may borrow them.
+  are hers, the chats panel's, a page's re-lay's and the next-step bar's rise
+  alone (below): nothing else may borrow them.
   Her wipe animates clip-path, transform and opacity only, never a size, so
   the money card beside her never moves (section 3.6); reduced motion and
   Save-Data land her at once.
@@ -104,6 +104,20 @@ here is a defect:
   opacity, JS constants with no CSS twin (no sheet reads them), and no grid
   track moves, so a waiting card never does. Reduced motion and Save-Data
   land it at once.
+- The next-step bar's rise, 720ms (`--vex-duration-vex-open`) on the push
+  curve (`MissionControls/MissionNextStepBar.tsx`, chat-transcript.css;
+  `docs/design/H3-DESKTOP.md` section 5.10; owner decision 2026-11-10): on
+  the bar's first appearance for a given state of a given mission (review,
+  start, renew), the blue of its key rises once from the key's foot, a
+  layer under the word scaled from 0 to the full key (`scaleY`, a transform
+  only), then the layer goes and the key rests on its own blue. Attention,
+  once, on arrival: the rise is remembered for the app's run, so a
+  re-render, a remount or a return to the chat never plays it again. It
+  borrows her open step because the owner asked for the push step, not a
+  new number. Reduced motion and Save-Data never start it (the component
+  reads `prefersStillFrame()`; the sheet states its own collapse too), nor
+  does a held key or the ink key a waiting money card leaves it. No timer
+  is paired with it: the layer leaves on its own `animationend`.
 - The running blink, 600ms a cycle (`--vex-duration-blink`,
   `DURATION_BLINK_MS`) on `steps(2, end)`: a running square's opacity steps
   from 1 to 0.25 and back (PD-06, `docs/design/H3-DESKTOP.md` section 2.2).
@@ -153,7 +167,7 @@ One family, five curves, no sixth. The first four are declared in
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
-| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, the chats panel's slide, and the toast's arrival (VEX Cloud's caption curve, the same control points), and nothing else |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, the chats panel's slide, the toast's arrival (VEX Cloud's caption curve, the same control points) and the next-step bar's rise, and nothing else |
 | (none: Web Animations only) | `EASE_HOUSE` | a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press (`features/appShell/page-relay.ts`, VEX Cloud's `--vx-ease-ease`), and nothing else |
 
 The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
@@ -361,9 +375,11 @@ Live pairs:
 Kimm's wipe is no pair: its clip, its scan head, her 32px drop and the end
 of her phase are one leg of Web Animations (`kimm-wipe.ts`), timed by
 `DURATION_VEX_OPEN_MS` and `DURATION_VEX_CLOSE_MS` alone; the sheet holds
-only where she rests, and no sheet reads `--vex-duration-vex-open` or
-`--vex-duration-vex-close` (they stay declared as the JS constants' mirrors,
-which `motion-tokens.test.ts` holds equal). The lengths the leg moves by are
+only where she rests, and no sheet of hers reads `--vex-duration-vex-open`
+or `--vex-duration-vex-close` (they stay declared as the JS constants'
+mirrors, which `motion-tokens.test.ts` holds equal). The one sheet that
+reads `--vex-duration-vex-open` is the next-step bar's rise
+(chat-transcript.css), a CSS keyframe with no JS timer beside it. The lengths the leg moves by are
 read from her box, never repeated: the strip (`--vex-h3-strip-h`, or a
 seat's `--vex-kimm-stub`) and the drop (`--vex-kimm-drop`).
 

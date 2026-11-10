@@ -15,6 +15,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -25,6 +26,7 @@ import { ASK_WHAT_HAPPENED, EDIT_CONTRACT_HINT, MissionControls } from "../Missi
 import { readDraft, resetDraftsForTest, writeDraft } from "../../../lib/composer-drafts.js";
 import { MISSION_SETUP_STALL_PROMPT_MS } from "../MissionSetupProgress.js";
 import { resetMissionContractRequests } from "../mission-contract-request.js";
+import { resetNextStepRiseMemory } from "../MissionControls/MissionNextStepBar.js";
 import {
   clearMissionStripCell,
   setMissionStripCell,
@@ -49,6 +51,7 @@ const stopMock = vi.fn();
 const renewMock = vi.fn();
 const chatSubmitMock = vi.fn();
 const getPlanMock = vi.fn();
+const listPendingMock = vi.fn();
 const onTranscriptAppendMock = vi.fn(() => vi.fn());
 import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
 type MissionUpdateListener = (event: MissionUpdateEvent) => void;
@@ -75,6 +78,7 @@ function setVex(): void {
         renew: renewMock,
       },
       chat: { submit: chatSubmitMock },
+      approvals: { listPending: listPendingMock },
       engine: makeEngineBridgeStub({
         onTranscriptAppend: onTranscriptAppendMock,
         onMissionUpdate: onMissionUpdateMock,
@@ -179,6 +183,8 @@ beforeEach(() => {
   // not), so give it a safe value; renew-specific tests override it.
   getRenewableMock.mockResolvedValue(ok(null));
   getPlanMock.mockResolvedValue(ok({ enabled: false, accepted: false, planMd: "" }));
+  // Nothing waiting in the chat by default: the next-step bar keeps its blue.
+  listPendingMock.mockResolvedValue(ok([]));
   useUiStore.setState({ reviewModal: "none" });
 });
 
@@ -187,6 +193,7 @@ afterEach(() => {
   // Any request left pending by a test settles as `cancelled` - never leaks
   // into the next test, and never resolves as anything but the truth.
   resetMissionContractRequests();
+  resetNextStepRiseMemory();
   useUiStore.setState({ reviewModal: "none" });
   Reflect.deleteProperty(window, "vex");
 });
@@ -1109,5 +1116,233 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
     expect(
       document.querySelector('[data-vex-area="mission-error-alert"]'),
     ).not.toBeNull();
+  });
+});
+
+/**
+ * The next-step bar (docs/design/H3-DESKTOP.md section 5.10; owner decision
+ * 2026-11-10). A look only: each state's key keeps its accessible name, its
+ * gate and its press, and the bar adds the eyebrow, the line, the blinking
+ * square and the arrow around it. The one-blue rule reads the chat's waiting
+ * approvals (the read the shell's composer frame reads), and the key's blue
+ * rises once, on the bar's first appearance, never under the still frame.
+ */
+describe("MissionControls - the next-step bar", () => {
+  function waitingRow(origin: "agent" | "desk") {
+    return { id: `appr-${origin}`, sessionId: SESSION, status: "pending", origin };
+  }
+
+  function readyAwaiting(): void {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(false));
+  }
+
+  function readyAccepted(): void {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+  }
+
+  function ended(): void {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+  }
+
+  it("awaiting acceptance: MISSION READY, its line, and the blue key still named Review & accept contract", async () => {
+    readyAwaiting();
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Review & accept contract" });
+    const group = screen.getByRole("group", { name: "Mission ready" });
+    expect(group.getAttribute("data-vex-area")).toBe("mission-next-step");
+    expect(group.getAttribute("data-vex-next-step")).toBe("review");
+    expect(within(group).getByText("Review the contract, then accept it to start the run.")).toBeTruthy();
+    // The visible word is the short one; the name is unchanged.
+    expect(key.textContent).toBe("Review contract");
+    expect(group.contains(key)).toBe(true);
+    expect(key.getAttribute("data-vex-button")).toBe("primary");
+    expect(key.querySelector('[data-glyph="arrow-right"]')).not.toBeNull();
+    // The state square is the running square, which blinks.
+    expect(group.querySelector('.vex-sq[data-state="ongoing"]')).not.toBeNull();
+    fireEvent.click(key);
+    expect(useUiStore.getState().reviewModal).toBe("mission");
+  });
+
+  it("accepted: CONTRACT ACCEPTED, its line, and Start mission dispatching mission.start as before", async () => {
+    readyAccepted();
+    startMock.mockResolvedValue(ok({ outcome: "dispatched", missionRunId: "r1", sessionId: SESSION }));
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Start mission" });
+    const group = screen.getByRole("group", { name: "Contract accepted" });
+    expect(group.getAttribute("data-vex-next-step")).toBe("start");
+    expect(within(group).getByText("Nothing runs until you start it.")).toBeTruthy();
+    expect(key.textContent).toBe("Start mission");
+    expect(key.getAttribute("data-vex-button")).toBe("primary");
+    fireEvent.click(key);
+    await waitFor(() => expect(startMock).toHaveBeenCalledWith({ sessionId: SESSION, missionId: MISSION }));
+  });
+
+  it("ended: MISSION ENDED, its line, Renew mission dispatching mission.renew, and the restart link quiet inside the bar", async () => {
+    ended();
+    renewMock.mockResolvedValue(ok({ outcome: "renewed", newMissionId: "m-new", sourceMissionId: "m-done" }));
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Renew mission" });
+    const group = screen.getByRole("group", { name: "Mission ended" });
+    expect(group.getAttribute("data-vex-next-step")).toBe("renew");
+    expect(
+      within(group).getByText("Renew drafts a new contract; it runs only after you accept it."),
+    ).toBeTruthy();
+    expect(key.getAttribute("data-vex-button")).toBe("primary");
+    const restart = within(group).getByRole("button", { name: "Tell Vex what to do differently" });
+    // The secondary action is never a blue key.
+    expect(restart.getAttribute("data-vex-button")).toBeNull();
+    fireEvent.click(key);
+    await waitFor(() =>
+      expect(renewMock).toHaveBeenCalledWith({ sessionId: SESSION, previousMissionId: "m-done" }),
+    );
+  });
+
+  it("holds the key exactly when it was held before (a control already pending)", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false, pendingControlKind: "start" }));
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Start mission" });
+    expect((key as HTMLButtonElement).disabled).toBe(true);
+    // A held key never rises.
+    expect(key.hasAttribute("data-vex-rise")).toBe(false);
+  });
+
+  it("keeps a refusal notice under the bar", async () => {
+    readyAccepted();
+    startMock.mockResolvedValue(ok({ outcome: "not_accepted", missionId: MISSION }));
+    renderControls();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start mission" }));
+    const notice = await screen.findByText(/Accept the contract before starting/i);
+    const group = screen.getByRole("group", { name: "Contract accepted" });
+    expect(group.contains(notice)).toBe(false);
+    expect(group.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("gives the blue to a money card waiting in this chat: the key stands as the ink key, with no rise", async () => {
+    readyAwaiting();
+    listPendingMock.mockResolvedValue(ok([waitingRow("agent")]));
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Review & accept contract" });
+    await waitFor(() => expect(key.getAttribute("data-vex-button")).toBe("ink"));
+    expect(key.hasAttribute("data-vex-rise")).toBe(false);
+    expect(document.querySelector("[data-vex-next-step-rise]")).toBeNull();
+    expect(listPendingMock).toHaveBeenCalledWith({ sessionId: SESSION });
+    // The press is unchanged.
+    fireEvent.click(key);
+    expect(useUiStore.getState().reviewModal).toBe("mission");
+  });
+
+  it("keeps the blue while only a desk row waits (decided in the desk's own dialog)", async () => {
+    readyAccepted();
+    listPendingMock.mockResolvedValue(ok([waitingRow("desk")]));
+    renderControls();
+
+    const key = await screen.findByRole("button", { name: "Start mission" });
+    await waitFor(() => expect(listPendingMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(key.getAttribute("data-vex-button")).toBe("primary");
+  });
+
+  it("raises the key's blue once on the bar's first appearance, and never again on a re-render or a remount", async () => {
+    readyAccepted();
+    const view = renderControls();
+
+    const key = await screen.findByRole("button", { name: "Start mission" });
+    expect(key.hasAttribute("data-vex-rise")).toBe(true);
+    const layer = key.querySelector("[data-vex-next-step-rise]");
+    expect(layer).not.toBeNull();
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    // The layer leaves on its own animationend, and the key rests blue.
+    fireEvent.animationEnd(layer as Element);
+    expect(key.hasAttribute("data-vex-rise")).toBe(false);
+    expect(key.querySelector("[data-vex-next-step-rise]")).toBeNull();
+    expect(key.getAttribute("data-vex-button")).toBe("primary");
+
+    // A re-render does not play it again.
+    view.rerender(createElement(MissionControls, { sessionId: SESSION }));
+    expect(
+      screen.getByRole("button", { name: "Start mission" }).hasAttribute("data-vex-rise"),
+    ).toBe(false);
+
+    // Nor does a remount for the same state of the same mission.
+    view.unmount();
+    renderControls();
+    const again = await screen.findByRole("button", { name: "Start mission" });
+    expect(again.hasAttribute("data-vex-rise")).toBe(false);
+  });
+
+  it("rises again for a new state of the mission (review, then start)", async () => {
+    readyAwaiting();
+    const view = renderControls();
+    const review = await screen.findByRole("button", { name: "Review & accept contract" });
+    expect(review.hasAttribute("data-vex-rise")).toBe(true);
+    view.unmount();
+
+    readyAccepted();
+    renderControls();
+    const start = await screen.findByRole("button", { name: "Start mission" });
+    expect(start.hasAttribute("data-vex-rise")).toBe(true);
+  });
+
+  describe("under the still frame", () => {
+    let reduced = false;
+    const query = {
+      get matches() {
+        return reduced;
+      },
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    beforeEach(() => {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: vi.fn(() => query),
+      });
+    });
+
+    afterEach(() => {
+      reduced = false;
+      Reflect.deleteProperty(navigator, "connection");
+    });
+
+    it("never rises under reduced motion: the key simply stands blue", async () => {
+      reduced = true;
+      readyAccepted();
+      renderControls();
+
+      const key = await screen.findByRole("button", { name: "Start mission" });
+      expect(key.getAttribute("data-vex-button")).toBe("primary");
+      expect(key.hasAttribute("data-vex-rise")).toBe(false);
+      expect(key.querySelector("[data-vex-next-step-rise]")).toBeNull();
+    });
+
+    it("never rises under Save-Data", async () => {
+      Object.defineProperty(navigator, "connection", {
+        configurable: true,
+        value: { saveData: true },
+      });
+      readyAwaiting();
+      renderControls();
+
+      const key = await screen.findByRole("button", { name: "Review & accept contract" });
+      expect(key.getAttribute("data-vex-button")).toBe("primary");
+      expect(key.hasAttribute("data-vex-rise")).toBe(false);
+    });
   });
 });
