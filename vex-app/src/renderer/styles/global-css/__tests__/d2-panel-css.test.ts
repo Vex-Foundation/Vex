@@ -5,8 +5,9 @@
  * as tall as what it holds, and everything readable in the chat stands in
  * the room left of it. Pinned here:
  *
- *   1. the reading column is solved in the chat less her panel's room, and
- *      that room is the frame's `--vex-panel-w`, never her shown choice;
+ *   1. the conversation column is centred and wide in the chat less her
+ *      panel's room, and that room is the frame's `--vex-panel-w`, never her
+ *      shown choice;
  *   2. her panel's place: the chat's track, the body row, at its right end
  *      and its top, 280 wide, over the chat and under the chats panel, never
  *      down past the chat's composer group (`--vex-panel-floor`);
@@ -37,18 +38,52 @@ const shell = sheet("shell.css");
 const vexSidebar = sheet("vex-sidebar.css");
 const PANEL = '.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"]';
 
-describe("the reading column clears her panel (section 6.6)", () => {
-  it("solves read-x and read-w in the chat less her panel's room", () => {
-    // The frame's rule that declares the room, read to its end.
+/**
+ * The conversation column's rule (owner decision 2026-11-10: "a central wide
+ * space for the chat"), as the sheet states it, in numbers: centred in the
+ * room (the chat less her panel's room), the room less a gutter each side
+ * (40 x zoom from 1280 up, 24 under it), capped at 1120 x zoom.
+ */
+function column(chat: number, panel: number, zoom: number, wide: boolean): { x: number; w: number } {
+  const room = chat - panel;
+  const gutter = wide ? 40 * zoom : 24;
+  const w = Math.max(0, Math.min(1120 * zoom, room - 2 * gutter));
+  return { x: (room - w) / 2, w };
+}
+
+describe("the conversation column fills the centre of the room (section 6.6)", () => {
+  it("is centred in the chat less her panel's room, the room less two gutters, capped at 1120 x zoom", () => {
     const reading = shell.slice(shell.indexOf("--vex-read-room"));
     expect(reading).toMatch(/^--vex-read-room: calc\(var\(--vex-chat-track\) - var\(--vex-panel-w, 0px\)\);/);
     const block = reading.slice(0, reading.indexOf("}")).replace(/\s+/g, " ");
+    expect(block).toContain("--vex-read-gutter: 24px;");
+    expect(block).toContain("--vex-read-cap: calc(1120px * var(--vex-zoom));");
     expect(block).toContain(
-      "--vex-read-x: clamp( 24px, calc(var(--vex-read-room) - var(--vex-read-span) - 24px), calc(100px * var(--vex-zoom)) );",
+      "--vex-read-w: max(0px, min(var(--vex-read-cap), calc(var(--vex-read-room) - 2 * var(--vex-read-gutter))));",
     );
-    expect(block).toContain(
-      "--vex-read-w: min(var(--vex-read-span), calc(var(--vex-read-room) - var(--vex-read-x) - 24px));",
+    expect(block).toContain("--vex-read-x: calc((var(--vex-read-room) - var(--vex-read-w)) / 2);");
+    // The left-anchored 712 column is gone.
+    expect(shell).not.toContain("--vex-read-span");
+  });
+
+  it("takes the 40 x zoom gutter from 1280 up (the wide tier) and 24 under it, the band included", () => {
+    expect(rule(shell, '.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="wide"]')).toBe(
+      "--vex-read-gutter: calc(40px * var(--vex-zoom));",
     );
+    // No band rule of its own: under 1024 she has no panel (0), so the rule
+    // above gives 24 and the chat less 48, centred.
+    expect(shell).not.toContain('.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] {');
+  });
+
+  it("reads the plates' numbers: 40 and 832 at 1440, 40 and 672 at 1280, 24 and 620 at 1024, the band's 24", () => {
+    expect(column(1192, 280, 1, true)).toEqual({ x: 40, w: 832 });
+    expect(column(1032, 280, 1, true)).toEqual({ x: 40, w: 672 });
+    expect(column(948, 280, 1, false)).toEqual({ x: 24, w: 620 });
+    expect(column(924, 0, 1, false)).toEqual({ x: 24, w: 876 });
+    // The owner's 2000 window: the cap, centred.
+    const owner = column(2000 - 248, 280, 2000 / 1760, true);
+    expect(owner.w).toBeCloseTo(1272.7, 1);
+    expect(owner.x).toBeCloseTo(99.6, 1);
   });
 
   it("never reads her shown or hidden choice: the room is the frame's solve alone", () => {
@@ -56,9 +91,20 @@ describe("the reading column clears her panel (section 6.6)", () => {
     expect(shell).not.toMatch(/data-vex-panel[^{]*\{[^}]*--vex-read/);
   });
 
-  it("keeps the band's own line: 24 in and the chat less 48", () => {
-    expect(rule(shell, '.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"]')).toBe(
-      "--vex-read-x: 24px; --vex-read-w: calc(var(--vex-chat-track) - 48px);",
+  it("stands the card and the approvals stack on the column's width, no wider", () => {
+    expect(
+      rule(
+        sheet("chat-transcript.css"),
+        '.vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre [data-vex-area="approvals-region"]',
+      ),
+    ).toBe("margin-inline: 0;");
+  });
+
+  it("stands the live-step row's words on the column, its rule across the chat", () => {
+    expect(
+      rule(sheet("composer.css"), '.vex-shell-frame[data-vex-frame="h3"] [data-vex-area="composer-mission-strip"] > :last-child'),
+    ).toBe(
+      "padding-inline: var(--vex-read-x) max(8px, calc(var(--vex-chat-track) - var(--vex-read-x) - var(--vex-read-w)));",
     );
   });
 });

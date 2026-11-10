@@ -24,9 +24,9 @@
  * page kit): they stand at the left, at most 1136 wide, so a wide window
  * leaves room at the right instead of stretching a table across it.
  *
- * THE READING LINE (section 1.11): with her section open, from 1024 (the
- * Vex column standing, `data-vex-seat="column"`), the page starts where the
- * chat's title and transcript do, on `--vex-read-x`, and the tabs row's
+ * THE READING LINE (sections 1.11 and 6.6): with her panel's room standing,
+ * from 1024 (`data-vex-seat="column"`), the page starts where the chat's
+ * title and the conversation column do, on `--vex-read-x`, and the tabs row's
  * first cell starts there too. The body zooms (`overlay.css`), so the line,
  * measured in the window, is divided back by the zoom. With her closed the
  * page takes the whole width right of the chats and keeps 24.
