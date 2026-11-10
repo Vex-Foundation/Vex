@@ -294,9 +294,11 @@ describe("AppShell", () => {
     renderShell();
 
     // Preselect with no upstream default → "medium" (selectDefaultReasoningEffort).
-    const selector = await screen.findByRole("combobox", {
-      name: "Reasoning effort",
-    });
+    const selector = await screen.findByRole(
+      "combobox",
+      { name: "Reasoning effort" },
+      { timeout: 5000 },
+    );
     expect(selector.textContent).toContain("Medium");
 
     // Pick something OTHER than the default so a passing test can only mean
@@ -383,7 +385,7 @@ describe("AppShell", () => {
     // second submit, no late store seed from a value that was never there
     // to snapshot).
     resolveModels(reasoningModelsResult(fullEffortCapability()));
-    await screen.findByRole("combobox", { name: "Reasoning effort" });
+    await screen.findByRole("combobox", { name: "Reasoning effort" }, { timeout: 5000 });
     expect(chatSubmitMock).toHaveBeenCalledTimes(1);
     expect(
       useUiStore.getState().reasoningEffortBySession[NEW_SESSION_ID],

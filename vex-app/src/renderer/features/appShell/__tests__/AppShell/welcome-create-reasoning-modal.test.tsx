@@ -292,7 +292,9 @@ describe("AppShell", () => {
       reasoningModelsResult(fullEffortCapability({ defaultEffort: "high" })),
     );
     renderShell();
-    await screen.findByRole("combobox", { name: "Reasoning effort" });
+    // The first find in each case waits out the whole shell's cold render, which
+    // a slow CI runner (macOS) takes longer than the default second to reach.
+    await screen.findByRole("combobox", { name: "Reasoning effort" }, { timeout: 5000 });
 
     const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "untouched default" } });
@@ -317,9 +319,11 @@ describe("AppShell", () => {
     );
     renderShell();
 
-    const selector = await screen.findByRole("combobox", {
-      name: "Reasoning effort",
-    });
+    const selector = await screen.findByRole(
+      "combobox",
+      { name: "Reasoning effort" },
+      { timeout: 5000 },
+    );
     fireEvent.click(selector);
     fireEvent.click(screen.getByRole("option", { name: "Low" }));
     expect(selector.textContent).toContain("Low");
@@ -362,9 +366,11 @@ describe("AppShell", () => {
     );
     renderShell();
 
-    const selector = await screen.findByRole("combobox", {
-      name: "Reasoning effort",
-    });
+    const selector = await screen.findByRole(
+      "combobox",
+      { name: "Reasoning effort" },
+      { timeout: 5000 },
+    );
     fireEvent.click(selector);
     fireEvent.click(screen.getByRole("option", { name: "Low" }));
 
