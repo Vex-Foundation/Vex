@@ -1,8 +1,8 @@
 /**
  * STATE: MISSION READY - the mission chat "Weekly ETH buys" with its contract
  * drafted and waiting for the person, so the next-step bar stands under
- * Vex's answer: MISSION READY, its line, and REVIEW CONTRACT as the view's
- * blue key (docs/design/H3-DESKTOP.md section 5.10;
+ * Vex's answer: MISSION READY, its line, and REVIEW & ACCEPT CONTRACT as the
+ * view's blue key (docs/design/H3-DESKTOP.md section 5.10;
  * `fixtures/mission-chat.ts`).
  *
  * Nothing here accepts or starts anything: the stand-in bridge answers no

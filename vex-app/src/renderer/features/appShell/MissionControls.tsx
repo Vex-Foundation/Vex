@@ -601,13 +601,13 @@ export function MissionControls({
     return (
       <div data-vex-area="mission-controls" className="mb-4 mt-1">
         {/* The pre-accept counterpart of Start: the bar's blue key opens the
-            contract; its name is still the full "Review & accept contract". */}
+            contract. Its words are its name (WCAG 2.5.3, label in name). */}
         <MissionNextStepBar
           step="review"
           riseKey={`${sessionId}:${draft.missionId}`}
           eyebrow="Mission ready"
           line="Review the contract, then accept it to start the run."
-          label="Review contract"
+          label="Review & accept contract"
           ariaLabel="Review & accept contract"
           blue={!approvalWaiting}
           onAction={raiseContract}

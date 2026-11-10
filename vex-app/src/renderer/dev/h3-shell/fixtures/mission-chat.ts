@@ -8,7 +8,7 @@
  *   the draft Vex wrote the contract and said so; the draft is complete
  *             (`ready`, nothing missing, acceptable) and not accepted, and
  *             the turn has settled, so MissionControls draws the bar
- *             (MISSION READY, REVIEW CONTRACT).
+ *             (MISSION READY, REVIEW & ACCEPT CONTRACT).
  *
  * No run exists (the runtime reports no active run), so the list shows the
  * chat with no RUNNING tag in this state, and nothing waits for approval.

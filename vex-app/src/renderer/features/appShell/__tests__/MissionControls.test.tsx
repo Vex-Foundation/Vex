@@ -1159,8 +1159,8 @@ describe("MissionControls - the next-step bar", () => {
     expect(group.getAttribute("data-vex-area")).toBe("mission-next-step");
     expect(group.getAttribute("data-vex-next-step")).toBe("review");
     expect(within(group).getByText("Review the contract, then accept it to start the run.")).toBeTruthy();
-    // The visible word is the short one; the name is unchanged.
-    expect(key.textContent).toBe("Review contract");
+    // Label in name (WCAG 2.5.3): the visible words are the accessible name.
+    expect(key.textContent).toBe("Review & accept contract");
     expect(group.contains(key)).toBe(true);
     expect(key.getAttribute("data-vex-button")).toBe("primary");
     expect(key.querySelector('[data-glyph="arrow-right"]')).not.toBeNull();
@@ -1196,6 +1196,7 @@ describe("MissionControls - the next-step bar", () => {
     expect(
       within(group).getByText("Renew drafts a new contract; it runs only after you accept it."),
     ).toBeTruthy();
+    expect(key.textContent).toBe("Renew mission");
     expect(key.getAttribute("data-vex-button")).toBe("primary");
     const restart = within(group).getByRole("button", { name: "Tell Vex what to do differently" });
     // The secondary action is never a blue key.

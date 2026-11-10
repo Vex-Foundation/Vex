@@ -849,7 +849,7 @@ Owner decision, 2026-11-10 ("Next-step bar"): in a mission chat with no run, the
 
 | State | Eyebrow | Line | Key (its name) |
 |---|---|---|---|
-| a ready draft waiting for acceptance, the turn settled | MISSION READY | Review the contract, then accept it to start the run. | REVIEW CONTRACT ("Review & accept contract"), opens the contract |
+| a ready draft waiting for acceptance, the turn settled | MISSION READY | Review the contract, then accept it to start the run. | REVIEW & ACCEPT CONTRACT, opens the contract |
 | an accepted contract, no run | CONTRACT ACCEPTED | Nothing runs until you start it. | START MISSION, starts the run |
 | a terminal accepted mission, no draft | MISSION ENDED | Renew drafts a new contract; it runs only after you accept it. | RENEW MISSION, clones it into a draft; "Tell Vex what to do differently" stands under the line as its quiet link |
 
