@@ -194,9 +194,9 @@ html[data-still] .vex-welcome__greeting {
   width: 100%;
   padding: 0 24px 34px;
 }
-/* D2 (section 6.6): the welcome stands on the reading column, anchored at
- * the chat's left: the opening's words and the suggestions start on the
- * reading line and keep its width. "Ready when you are." is set large, the
+/* D2 (section 6.6): the welcome stands on the conversation column, centred
+ * in the room left of Vex's panel: the opening's words and the suggestions
+ * start on its line and keep its width. "Ready when you are." is set large, the
  * notes under it in muted sentence case, as the owner's D2 plate draws them;
  * the words are the welcome's own. */
 .vex-shell-frame[data-vex-frame="h3"] .vex-starters {
@@ -390,6 +390,14 @@ html[data-still] .vex-starter-grid {
   max-width: none;
   margin-inline: 0;
   padding: 0;
+}
+
+/* The live-step row over the strip (the run strip, `ComposerMissionStrip`)
+ * keeps its rule across the chat, and its words stand on the conversation
+ * column (owner decision 2026-11-10): the state at the column's left edge,
+ * the timer at its right. */
+.vex-shell-frame[data-vex-frame="h3"] [data-vex-area="composer-mission-strip"] > :last-child {
+  padding-inline: var(--vex-read-x) max(8px, calc(var(--vex-chat-track) - var(--vex-read-x) - var(--vex-read-w)));
 }
 
 /* SETTLING - a session is opening and its transcript is still unknown, so
