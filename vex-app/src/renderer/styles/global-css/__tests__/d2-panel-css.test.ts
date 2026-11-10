@@ -141,6 +141,53 @@ describe("the composer is a framed box on the column (section 6.5; owner decisio
   });
 });
 
+describe("the docked approval band takes the box's seat (section 6.5; owner decision 2026-11-10)", () => {
+  const SHELL = '.vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"]';
+  const approval = sheet("approval.css");
+
+  it("stands its dock on the conversation column, zoomed as the column is, lifted as the box is", () => {
+    expect(rule(approval, `${SHELL} .vex-appr-dock`)).toBe(
+      "align-self: flex-start; width: calc(var(--vex-read-w) / var(--vex-zoom)); " +
+        "margin-inline: calc(var(--vex-read-x) / var(--vex-zoom)) 0; padding-bottom: 16px;",
+    );
+    expect(rule(sheet("chat-transcript.css"), '.vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre .vex-appr-dock')).toBe(
+      "zoom: var(--vex-zoom);",
+    );
+    expect(
+      rule(approval, '.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="wide"] [data-vex-session-surface="shell"] .vex-appr-dock'),
+    ).toBe("padding-bottom: 24px;");
+    expect(
+      rule(approval, '.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] [data-vex-session-surface="shell"] .vex-appr-dock'),
+    ).toBe("align-self: stretch; width: auto; margin-inline: 16px;");
+  });
+
+  it("frames the band as the box: the card ground in the chosen rule, the decision row the box's 56", () => {
+    expect(rule(approval, `${SHELL} .vex-appr__foot[data-docked]`)).toBe(
+      "background: var(--vex-alias-card); border: 1px solid var(--vex-alias-rule-chosen);",
+    );
+    expect(rule(approval, `${SHELL} .vex-appr__foot[data-docked] > .vex-appr__reason-row`)).toBe("background: transparent;");
+    expect(rule(approval, `${SHELL} .vex-appr__foot[data-docked] > button`)).toBe("height: 56px;");
+    // The reason field on top, then the clip cue's place and the decision row:
+    // the grid of the docked row is unchanged.
+    expect(rule(approval, ".vex-appr__foot[data-docked]")).toContain(
+      'grid-template-areas: "reason reason reason" "fail fail fail" "reject gate approve";',
+    );
+  });
+
+  it("lays the clip cue over the box's top rule, its sides continuing the frame", () => {
+    expect(rule(approval, `${SHELL} .vex-appr__foot[data-docked] > .vex-appr__more-cue`)).toBe(
+      "right: -1px; bottom: calc(100% + 1px); left: -1px; border-inline: 1px solid var(--vex-alias-rule-chosen); " +
+        "border-top-color: var(--vex-alias-rule-chosen);",
+    );
+  });
+
+  it("leaves the desk chat's dock alone: the dock's own rule and the docked row's keys are as before", () => {
+    expect(rule(approval, ".vex-appr-dock")).toBe("--vex-appr-inset: 24px; container-type: inline-size;");
+    expect(rule(approval, ".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h);");
+    expect(rule(approval, ".vex-appr__foot[data-docked]")).toContain("background: var(--vex-alias-bg-base);");
+  });
+});
+
 describe("her panel's place (section 6.3)", () => {
   it("has no track: she stands in the chat's, the chat running to the right edge", () => {
     expect(rule(shell, '.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-vex')).toBe("grid-column: 2;");
