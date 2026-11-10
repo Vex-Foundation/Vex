@@ -736,7 +736,7 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
  * each side, capped at 1120 x zoom (288 to 1120 at 1440, 333 to 1555 at
  * 1920, 347.8 to 1620.2 at the owner's 2000, 449.2 to 2078.8 at 2560), the
  * card exactly the column's width and the chat's title on its line; the
- * chat and the bottom row run to the window's right edge; Vex's
+ * docked approval band a box on the column, 24 x zoom off the foot; Vex's
  * panel is 280 at the right edge, flush under the header, as tall as what it
  * holds and never down past the chat's composer group, her portrait card its
  * width and 280 / 0.78 high where the window has the room (a tall 1440 x
@@ -762,10 +762,9 @@ test.describe("D2 card proof: the conversation column, her panel and the foot ro
           const cardEl = document.querySelector<HTMLElement>(card);
           const column = document.querySelector<HTMLElement>("[data-vex-transcript-column]");
           const account = document.querySelector<HTMLElement>('[data-vex-area="account-cell"]');
-          const dock = document.querySelector<HTMLElement>('[data-vex-area="approval-dock"]');
-          const seat = document.querySelector<HTMLElement>("[data-vex-composer-seat]");
-          if (title === null || cardEl === null || column === null || account === null || dock === null || seat === null) {
-            throw new Error("the title, the card, the transcript, the account cell or the composer is missing");
+          const band = document.querySelector<HTMLElement>('[data-vex-area="approval-dock"] [data-vex-area="approval-foot"]');
+          if (title === null || cardEl === null || column === null || account === null || band === null) {
+            throw new Error("the title, the card, the transcript, the account cell or the docked band is missing");
           }
           const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue("--vex-zoom"));
           // The composer group's top: the highest of its parts with a box.
@@ -780,8 +779,9 @@ test.describe("D2 card proof: the conversation column, her panel and the foot ro
             card: cardEl.getBoundingClientRect().x,
             cardRight: cardEl.getBoundingClientRect().right,
             foot: account.getBoundingClientRect().height,
-            dockRight: dock.getBoundingClientRect().right,
-            seatRight: seat.getBoundingClientRect().right,
+            band: band.getBoundingClientRect().x,
+            bandRight: band.getBoundingClientRect().right,
+            bandBottom: band.getBoundingClientRect().bottom,
             composerTop: Math.min(...parts.map((r) => r.top)),
           };
         },
@@ -805,11 +805,12 @@ test.describe("D2 card proof: the conversation column, her panel and the foot ro
       // As tall as what it holds, never down past the composer group, and
       // the chat's own ground under it.
       expect(column.y + column.height).toBeLessThanOrEqual(read.composerTop + 0.5);
-      // The chat and its bottom row run to the window's right edge: the
-      // docked band and the composer seat end there (less a classic
-      // scrollbar's gutter, at most 8).
-      expect(read.dockRight).toBeGreaterThan(wide.size.width - 9);
-      expect(read.seatRight).toBeGreaterThan(wide.size.width - 9);
+      // The docked band is a box on the column (section 6.5; owner decision
+      // 2026-11-10), in the composer box's seat: the column's x and width,
+      // 24 x zoom off the window's foot.
+      expect(Math.abs(read.band - wide.line), `band ${String(read.band)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.bandRight - wide.right), `band right ${String(read.bandRight)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(wide.size.height - 24 * wide.zoom - read.bandBottom), `band foot ${String(read.bandBottom)}`).toBeLessThanOrEqual(0.5);
       // Her card fills the panel inside its 1px rule on the left; it keeps
       // 280 / 0.78 where the window has the room and gives way to 160 at
       // the least where it has not.
@@ -830,6 +831,71 @@ test.describe("D2 card proof: the conversation column, her panel and the foot ro
       const card = await cardBox(page);
       expect(card.x + card.width).toBeLessThanOrEqual(column.x);
       expect(read.transcriptRight).toBeLessThanOrEqual(column.x);
+    });
+  }
+});
+
+/**
+ * THE COMPOSER BOX AND THE BAND'S BOX (docs/design/H3-DESKTOP.md section
+ * 6.5; owner decision 2026-11-10, "Framed box on the column"): the composer
+ * is one framed box on the conversation column, 24 x zoom off the window's
+ * foot from 1280 up and 16 under it, the chat's track less 16 each side
+ * under 1024; a waiting card's docked band takes the same seat; while the
+ * field holds the focus the frame is the white focus rule, and no part of
+ * either box lies under Vex's panel.
+ */
+const BOXES = [
+  { size: { width: 1000, height: 720 }, x: 92, right: 984, lift: 16 },
+  { size: { width: 1280, height: 800 }, x: 288, right: 960, lift: 24 },
+  { size: { width: 1440, height: 900 }, x: 288, right: 1120, lift: 24 },
+  { size: { width: 2000, height: 1250 }, x: 347.84, right: 1620.16, lift: 24 * 1.136 },
+] as const;
+
+test.describe("D2 card proof: the composer is a framed box on the column, and the band takes its seat", () => {
+  for (const box of BOXES) {
+    test(`the composer box and the band's box at ${sizeName(box.size)}`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.setViewportSize(box.size);
+      const read = async (selector: string): Promise<Box & { readonly frame: string }> =>
+        page.evaluate((sel) => {
+          const el = document.querySelector<HTMLElement>(sel);
+          if (el === null) throw new Error(`${sel} is missing`);
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height, frame: getComputedStyle(el).borderTopColor };
+        }, selector);
+      const near = (a: number, b: number): boolean => Math.abs(a - b) <= 0.5;
+
+      await openHarness(page, "/?state=thinking", 30_000);
+      const composer = await read('[data-vex-area="chat-composer"]');
+      expect(near(composer.x, box.x), `composer x ${String(composer.x)}`).toBe(true);
+      expect(near(composer.x + composer.width, box.right), `composer right ${String(composer.x + composer.width)}`).toBe(true);
+      expect(near(composer.y + composer.height, box.size.height - box.lift), `composer foot ${String(composer.y + composer.height)}`).toBe(true);
+      // The live-step row sits on its top rule, on the column.
+      const live = await read('[data-vex-area="composer-mission-strip"]');
+      expect(near(live.x, composer.x) && near(live.width, composer.width)).toBe(true);
+      expect(near(live.y + live.height, composer.y)).toBe(true);
+      // Focus in the field: the frame is the white focus rule.
+      expect(composer.frame).not.toBe("rgb(255, 255, 255)");
+      await page.locator("textarea[data-vex-composer-field]").focus();
+      expect((await read('[data-vex-area="chat-composer"]')).frame).toBe("rgb(255, 255, 255)");
+      // Never under her panel.
+      if (box.size.width >= 1024) {
+        const panel = (await page.locator(COLUMN).boundingBox()) as Box;
+        expect(composer.x + composer.width).toBeLessThanOrEqual(panel.x);
+      }
+
+      await openHarness(page, "/?state=swap-waiting", 30_000);
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      const band = await read('[data-vex-area="approval-dock"] [data-vex-area="approval-foot"]');
+      expect(near(band.x, box.x), `band x ${String(band.x)}`).toBe(true);
+      expect(near(band.x + band.width, box.right), `band right ${String(band.x + band.width)}`).toBe(true);
+      expect(near(band.y + band.height, box.size.height - box.lift), `band foot ${String(band.y + band.height)}`).toBe(true);
+      // The composer gives way to it.
+      await expect(page.locator('[data-vex-area="chat-composer"]')).toBeHidden();
+      expect(errors).toEqual([]);
     });
   }
 });
