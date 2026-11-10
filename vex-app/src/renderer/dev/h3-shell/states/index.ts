@@ -23,6 +23,7 @@ import {
 } from "./lighter-desk.js";
 import { markets } from "./markets.js";
 import { memory } from "./memory.js";
+import { missionReady } from "./mission-ready.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
 import { settings } from "./settings.js";
@@ -48,6 +49,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   swapWaiting,
   approvalKindsState,
   filled,
+  missionReady,
   portfolio,
   activity,
   markets,
