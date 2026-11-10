@@ -534,7 +534,11 @@ jobs:
     # ordering only; this job runs in a fresh runner and rebuilds the
     # bundle + reinstalls node_modules from scratch (per-job filesystem
     # isolation in GitHub Actions).
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: `ubuntu-latest` moved to 26.04, where Playwright
+    # 1.59.1 refuses to install chromium ("does not support chromium on
+    # ubuntu26.04-x64"). Move back to ubuntu-latest with a Playwright that
+    # supports it.
+    runs-on: ubuntu-24.04
     # ORDERING ONLY, NOT GATING. `needs:` alone also SKIPS this job when the
     # unit lane goes red, and the unit lane is currently red on an unrelated
     # pre-existing real-pty timing failure that also fails on `main`. A required
