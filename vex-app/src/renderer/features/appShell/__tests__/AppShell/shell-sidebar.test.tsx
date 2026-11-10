@@ -646,8 +646,8 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("stands Kimm's portrait card at the top of the Vex column, and none on the left page", () => {
-    // docs/design/H3-DESKTOP.md section 6.3: D2's column opens on her
+  it("stands Kimm's portrait card at the top of Vex's panel, and none on the left page", () => {
+    // docs/design/H3-DESKTOP.md section 6.3: D2's panel opens on her
     // portrait card (her field and her still); no section, no wipe, no
     // strip, no corner key, no print window and no other figure.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
@@ -957,23 +957,27 @@ describe("AppShell", () => {
       view.unmount();
       return result;
     };
-    // The band: the rail, and no Vex track (she is the band, in the chat).
-    expect(at(1023)).toEqual({ columns: "76px minmax(0, 1fr) 0px", open: "false", inline: "" });
-    // The medium tier: the rail, Vex at D2's fixed 280 on the right.
-    expect(at(1024)).toEqual({ columns: "76px minmax(0, 1fr) 280px", open: "false", inline: "" });
-    expect(at(1279)).toEqual({ columns: "76px minmax(0, 1fr) 280px", open: "false", inline: "" });
+    // Two tracks at every tier (D2, owner decision 2026-11-10): Vex has no
+    // track, her panel lies over the chat. The band: the rail.
+    expect(at(1023)).toEqual({ columns: "76px minmax(0, 1fr)", open: "false", inline: "" });
+    // The medium tier: the rail.
+    expect(at(1024)).toEqual({ columns: "76px minmax(0, 1fr)", open: "false", inline: "" });
+    expect(at(1279)).toEqual({ columns: "76px minmax(0, 1fr)", open: "false", inline: "" });
     // From 1280 the stored choice, open by default.
-    expect(at(1280)).toEqual({ columns: "248px minmax(0, 1fr) 280px", open: "true", inline: "" });
-    expect(at(1440)).toEqual({ columns: "248px minmax(0, 1fr) 280px", open: "true", inline: "" });
+    expect(at(1280)).toEqual({ columns: "248px minmax(0, 1fr)", open: "true", inline: "" });
+    expect(at(1440)).toEqual({ columns: "248px minmax(0, 1fr)", open: "true", inline: "" });
   });
 
-  it("solves the three tracks from the D2 solver (chats 248, chat 912, Vex 280 at 1440)", () => {
+  it("solves the tracks from the D2 solver (chats 248, the chat 1192 to the edge, her panel 280 at 1440)", () => {
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame).not.toBeNull();
     // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome
-    // keeps Vex's column (docs/design/H3-DESKTOP.md section 6): 248 | 280.
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 280px");
+    // keeps Vex's panel (docs/design/H3-DESKTOP.md section 6): two tracks,
+    // her panel's room 280 at the chat's right.
+    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr)");
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("280px");
+    expect(frame?.getAttribute("data-vex-panel")).toBe("shown");
     // H3's head | body | foot rows: the header row holds the header's cells,
     // the bottom row its cells (section 1.8).
     expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)");
@@ -987,27 +991,28 @@ describe("AppShell", () => {
     expect(view.container.querySelector("[data-vex-welcome-stage]")).toBeNull();
     expect(view.container.querySelector("[data-vex-area='welcome-portfolio']")).toBeNull();
 
-    // A session: Vex's column is a fixed 280 at the right edge, and the
-    // chat between the chats and her takes the rest (912).
+    // A session: the chat runs from the chats to the window's edge (1192),
+    // her panel a fixed 280 over its right, the room left of it 912.
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 280px");
+    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr)");
     expect(
       view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open"),
     ).toBe("true");
     expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("280px");
-    expect(frame?.style.getPropertyValue("--vex-chat-track")).toBe("912px");
+    expect(frame?.style.getPropertyValue("--vex-chat-track")).toBe("1192px");
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("280px");
     // A page starts where the chat does: right after the chats.
     expect(frame?.style.getPropertyValue("--vex-overlay-left")).toBe("248px");
-    // The header's VEX cell is over the column, sharing it with the caption
-    // reserve at the right end.
+    // The header's VEX cell is over her panel, sharing its 280 with the
+    // caption reserve at the right end.
     const head = view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']");
     expect(head?.style.gridTemplateColumns).toContain(
       "[funds-end vex-start] calc(280px - var(--overlay-w)) [vex-end reserve-start]",
     );
   });
 
-  it("stands Vex's column at the right edge, after the chat, in the DOM and in focus order", () => {
-    // docs/design/H3-DESKTOP.md section 6: chats | chat | Vex. The DOM follows
+  it("stands Vex's panel at the right edge, after the chat, in the DOM and in focus order", () => {
+    // docs/design/H3-DESKTOP.md section 6: chats | chat | her panel. The DOM follows
     // the screen, so the sequential focus order does too: nothing in the
     // frame reorders focus with a positive tabindex.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
@@ -1060,12 +1065,12 @@ describe("AppShell", () => {
       view.unmount();
       return columns;
     };
-    // The stored default window: 248 | 752 | 280.
-    expect(solved(1280)).toBe("248px minmax(0, 1fr) 280px");
-    // Under 1280: the rail and Vex's 280, 76 | 668 | 280.
-    expect(solved(1024)).toBe("76px minmax(0, 1fr) 280px");
-    // The band: the rail and the chat, 76 | 924 | 0.
-    expect(solved(1000)).toBe("76px minmax(0, 1fr) 0px");
+    // The stored default window: 248 | 1032, her panel over its right.
+    expect(solved(1280)).toBe("248px minmax(0, 1fr)");
+    // Under 1280: the rail, 76 | 948.
+    expect(solved(1024)).toBe("76px minmax(0, 1fr)");
+    // The band: the rail and the chat, 76 | 924.
+    expect(solved(1000)).toBe("76px minmax(0, 1fr)");
   });
 
   it("from 1024 to 1279 keeps the chats the rail, the header's logo cell over it", () => {
@@ -1099,15 +1104,16 @@ describe("AppShell", () => {
     const scrim = (): HTMLElement | null =>
       view.container.querySelector<HTMLElement>("[data-vex-area='chats-scrim']");
     const columns = frame?.style.gridTemplateColumns;
-    expect(columns).toBe("76px minmax(0, 1fr) 280px");
+    expect(columns).toBe("76px minmax(0, 1fr)");
     expect(panel()?.hasAttribute("data-open")).toBe(false);
     expect(panel()?.hasAttribute("inert")).toBe(true);
-    // What the panel and its scrim lie over: the chat, Vex's column and the
-    // bars cell at its foot. Live while the panel is closed.
+    // What the panel and its scrim lie over: the chat and Vex's panel, her
+    // bars at its foot. Live while the panel is closed.
     const vexColumn = (): Element | null => view.container.querySelector(".vex-shell-vex");
-    const tagline = (): Element | null => view.container.querySelector("[data-vex-area='tagline-cell']");
+    const bars = (): Element | null => view.container.querySelector("[data-vex-area='vex-column-bars']");
     expect(vexColumn()?.hasAttribute("inert")).toBe(false);
-    expect(tagline()?.hasAttribute("inert")).toBe(false);
+    expect(vexColumn()?.contains(bars() as Node)).toBe(true);
+    expect(view.container.querySelector("[data-vex-area='tagline-cell']")).toBeNull();
 
     const expand = screen.getByRole("button", { name: "Expand sidebar" });
     expect(expand.getAttribute("aria-controls")).toBe("chats-panel");
@@ -1119,10 +1125,9 @@ describe("AppShell", () => {
     // behind it until it closes.
     expect(scrim()?.hasAttribute("data-covers")).toBe(true);
     expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(true);
-    // Under the scrim Vex's column rests too (C3-F-08, VEX Cloud's inert
+    // Under the scrim Vex's panel rests too (C3-F-08, VEX Cloud's inert
     // scope): Tab and a screen reader never reach her console through it.
     expect(vexColumn()?.hasAttribute("inert")).toBe(true);
-    expect(tagline()?.hasAttribute("inert")).toBe(true);
     // Nothing in the grid changed, and nothing was written.
     expect(frame?.style.gridTemplateColumns).toBe(columns);
     expect(useUiStore.getState().leftOpen).toBe(true);
@@ -1135,10 +1140,9 @@ describe("AppShell", () => {
     // The same key closes it; so does the scrim, and Escape from inside.
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(panel()?.hasAttribute("inert")).toBe(true);
-    // Closed, the chat and her column are live again.
+    // Closed, the chat and her panel are live again.
     expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(false);
     expect(vexColumn()?.hasAttribute("inert")).toBe(false);
-    expect(tagline()?.hasAttribute("inert")).toBe(false);
     expect(frame?.style.gridTemplateColumns).toBe(columns);
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     fireEvent.pointerDown(scrim() as HTMLElement);
@@ -1160,16 +1164,16 @@ describe("AppShell", () => {
     expect(wide.container.querySelector("[data-vex-area='chats-panel']")).toBeNull();
     expect(
       wide.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']")?.style.gridTemplateColumns,
-    ).toBe("248px minmax(0, 1fr) 280px");
+    ).toBe("248px minmax(0, 1fr)");
     wide.unmount();
   });
 
   // C3-B-01, F-08 (VEX Cloud's W3 review, `nav-parts.tsx`): while the chats
   // panel is open, what it lies over rests, so Tab never leaves the panel for
-  // it: Vex's column (her console, her section and, under 1024, the band, all
+  // it: Vex's panel (her console and bars and, under 1024, the band, all
   // inside `.vex-shell-vex`), and the chat where the panel covers. AppShell
-  // sets `inert` on the Vex column while the panel is open.
-  it("rests Vex's column while the chats panel's scrim lies over it, at 1024 and in the band", () => {
+  // sets `inert` on Vex's element while the panel is open.
+  it("rests Vex's panel while the chats panel's scrim lies over it, at 1024 and in the band", () => {
     for (const width of [1024, 1000]) {
       setWindowWidth(width);
       useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
@@ -1196,8 +1200,10 @@ describe("AppShell", () => {
     );
   });
 
-  it("holds the account cell, the tagline cell and the chat's foot in a 72 bottom row", () => {
-    // docs/design/H3-DESKTOP.md section 1.8.
+  it("holds the account cell and the chat's foot in a 72 bottom row, her bars at her panel's foot", () => {
+    // docs/design/H3-DESKTOP.md sections 1.8 and 6.5 (owner decision
+    // 2026-11-10): the bottom row runs from the account cell to the window's
+    // right edge, with no cell of hers; her bars are her panel's foot strip.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
@@ -1209,28 +1215,33 @@ describe("AppShell", () => {
       view.container.querySelector("[data-vex-area='sessions-sidebar'] [data-vex-area='sidebar-profile']"),
     ).toBeNull();
     expect(view.container.querySelectorAll("[data-vex-area='sidebar-profile']")).toHaveLength(1);
-    // The cell under Vex's column holds her bars and no words (D2,
-    // H3-DESKTOP.md section 6.5); hidden, it is ground alone.
-    const tagline = view.container.querySelector<HTMLElement>("[data-vex-area='tagline-cell']");
-    expect(tagline?.querySelector("[data-vex-area='vex-foot']")?.getAttribute("data-vex-foot-words")).toBe("none");
-    expect(tagline?.querySelector(".vex-tagline")).toBeNull();
-    expect(tagline?.textContent).toBe("");
-    expect(tagline?.classList.contains("vex-drag")).toBe(true);
+    // No bars cell in the row any more.
+    expect(view.container.querySelector("[data-vex-area='tagline-cell']")).toBeNull();
+    expect(view.container.querySelector(".vex-shell-tagline")).toBeNull();
+    // Her bars, no words, as the last part of her panel, after Open activity.
+    const panel = view.container.querySelector<HTMLElement>("[data-vex-area='vex-column-body']");
+    const bars = panel?.querySelector<HTMLElement>("[data-vex-area='vex-column-bars']");
+    expect(bars?.querySelector("[data-vex-area='vex-foot']")?.getAttribute("data-vex-foot-words")).toBe("none");
+    expect(bars?.querySelector("[data-vex-area='vex-bars']")).not.toBeNull();
+    expect(bars?.querySelector(".vex-tagline")).toBeNull();
+    expect(bars?.textContent).toBe("");
+    expect(panel?.lastElementChild).toBe(bars);
+    // Hidden, they go with her panel.
     act(() => useUiStore.getState().setVexOpen(false));
-    expect(tagline?.childElementCount).toBe(0);
+    expect(view.container.querySelector("[data-vex-area='vex-column-bars']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-bars']")).toBeNull();
     act(() => useUiStore.getState().setVexOpen(true));
-    // Each cell follows its column in the DOM: chats, account, chat, Vex, tagline.
+    // Each part follows its column in the DOM: chats, account, chat, Vex.
     const order = Array.from(frame?.children ?? [])
       .map((el) =>
         el.classList.contains("vex-left-page") ? "chats"
           : el.classList.contains("vex-shell-account") ? "account"
             : el.classList.contains("vex-shell-vex") ? "vex"
-              : el.classList.contains("vex-shell-tagline") ? "tagline"
-                : el.classList.contains("vex-shell-centre") ? "chat"
-                  : null,
+              : el.classList.contains("vex-shell-centre") ? "chat"
+                : null,
       )
       .filter((name) => name !== null);
-    expect(order).toEqual(["chats", "account", "chat", "vex", "tagline"]);
+    expect(order).toEqual(["chats", "account", "chat", "vex"]);
     // Folded to the rail, the account cell is the rail's box.
     fireEvent.click(screen.getByRole("button", { name: /^Collapse sidebar$/i }));
     expect(account?.hasAttribute("data-rail")).toBe(true);
@@ -1246,7 +1257,10 @@ describe("AppShell", () => {
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-seat")).toBe("band");
     expect(frame?.getAttribute("data-vex-band")).toBe("closed");
-    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr)");
+    // No panel and no room for one: the band is drawn in the chat.
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("0px");
+    expect(frame?.hasAttribute("data-vex-panel")).toBe(false);
     expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 48px minmax(0, 1fr) var(--vex-h3-foot)");
     const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
     expect(aside?.getAttribute("data-vex-seat")).toBe("band");
@@ -1279,7 +1293,7 @@ describe("AppShell", () => {
     expect(aside?.querySelector("[data-vex-area='vex-console-strip']")).not.toBeNull();
   });
 
-  it("folds the console to the page strip on a table page with her closed, and back to her column", () => {
+  it("folds the console to the page strip on a table page with her closed, and back to her panel", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenPages: false });
     const view = renderShell();
     const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
@@ -1289,12 +1303,14 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().navigate("portfolio"));
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("0px");
     expect(aside()?.getAttribute("data-vex-seat")).toBe("strip");
     expect(strip()?.textContent).toContain("Needs you");
     expect(strip()?.textContent).toContain("Open activity");
-    // Shown on the page, her column stands and the strip goes.
+    // Shown on the page, her panel stands, keeping its room, and the strip goes.
     act(() => useUiStore.getState().setVexOpen(true));
     expect(frame?.getAttribute("data-vex-seat")).toBe("column");
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("280px");
     expect(strip()).toBeNull();
     expect(aside()?.querySelector("[data-vex-area='vex-console-top']")).not.toBeNull();
   });
@@ -1305,9 +1321,9 @@ describe("AppShell", () => {
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-tier")).toBe("band");
-    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr)");
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
-    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr)");
     expect(
       view.container.querySelector("[data-vex-area='chats-scrim']")?.hasAttribute("data-covers"),
     ).toBe(true);
@@ -1363,39 +1379,38 @@ describe("AppShell", () => {
     expect(view.container.querySelector("[data-vex-area='sessions-sidebar'] header")).toBeNull();
   });
 
-  it("keeps the right track NUMERIC on both sides of the welcome<->session edge", () => {
-    // `auto` <-> length is not interpolable, so under the frame's 300ms
-    // grid-template-columns transition an `auto` track was re-solved against
-    // the newly mounted right column and swept it through the centre (owner
-    // QA item 8). Every state must emit a length.
+  it("keeps her panel's room a LENGTH on both sides of the welcome<->session edge", () => {
+    // `auto` <-> length is not interpolable (owner QA item 8, when the frame
+    // still animated its tracks): every state must emit lengths. D2 has two
+    // tracks and her panel's room beside them (`--vex-panel-w`).
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    // Vex's track, the last: chats | chat | Vex (H3-DESKTOP.md section 6).
-    const lastTrack = (): string =>
-      (frame?.style.gridTemplateColumns ?? "").split(" ").at(-1) ?? "";
+    const room = (): string => frame?.style.getPropertyValue("--vex-panel-w") ?? "";
 
-    // Welcome: her column stands there too, the same length as in a chat.
-    expect(lastTrack()).toBe("280px");
-    // Session stage: shown, then hidden (her room kept), the same track.
+    // Welcome: her panel stands there too, the same room as in a chat.
+    expect(room()).toBe("280px");
+    // Session stage: shown, then hidden (her room kept), the same room.
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
-    expect(lastTrack()).toBe("280px");
+    expect(room()).toBe("280px");
     act(() => useUiStore.getState().setVexOpen(false));
-    expect(lastTrack()).toBe("280px");
-    // A table page with her hidden folds the column to its strip: zero, a length.
+    expect(room()).toBe("280px");
+    expect(frame?.getAttribute("data-vex-panel")).toBe("hidden");
+    // A table page with her hidden folds her to its strip: zero, a length.
     act(() => useUiStore.getState().navigate("portfolio"));
-    expect(lastTrack()).toBe("0px");
+    expect(room()).toBe("0px");
     act(() => useUiStore.getState().setVexOpen(true));
-    expect(lastTrack()).toBe("280px");
-    // Every track of the frame is a length around the centre.
-    expect(frame?.style.gridTemplateColumns).toMatch(/^\d+px minmax\(0, 1fr\) \d+px$/);
+    expect(room()).toBe("280px");
+    expect(frame?.getAttribute("data-vex-panel")).toBe("shown");
+    // Every track of the frame is a length beside the chat's 1fr.
+    expect(frame?.style.gridTemplateColumns).toMatch(/^\d+px minmax\(0, 1fr\)$/);
   });
 
-  it("in a chat never moves a track for her: hiding Vex keeps her column's room, at every size", () => {
+  it("in a chat never moves a track for her: hiding Vex keeps her panel's room, at every size", () => {
     // docs/design/H3-DESKTOP.md sections 3.6 and 6.4, the money rule's first
-    // leg: the chat's track is a function of the window alone. The stored
-    // choice reaches what her column shows, never the grid, in the columns
-    // and in the band; under 1024 her band follows the session's own choice
-    // (section 1.10).
+    // leg: the chat's track and her panel's room are a function of the window
+    // alone. The stored choice reaches whether her panel shows, never the
+    // grid or the room, in the columns and in the band; under 1024 her band
+    // follows the session's own choice (section 1.10).
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenNarrow: true });
     for (const width of [1000, 1023, 1024, 1280, 1366, 1440, 1920, 2560]) {
       const narrow = width < 1024;
@@ -1409,11 +1424,13 @@ describe("AppShell", () => {
       const shown = {
         columns: frame?.style.gridTemplateColumns,
         rows: frame?.style.gridTemplateRows,
+        room: frame?.style.getPropertyValue("--vex-panel-w"),
+        chat: frame?.style.getPropertyValue("--vex-chat-track"),
         head: view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']")?.style
           .gridTemplateColumns,
       };
       const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
-      // Shown: her band under 1024, her column's body from 1024 up.
+      // Shown: her band under 1024, her panel from 1024 up.
       const shownNow = (): string | null | undefined =>
         narrow
           ? aside()?.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")
@@ -1424,12 +1441,14 @@ describe("AppShell", () => {
         {
           columns: frame?.style.gridTemplateColumns,
           rows: frame?.style.gridTemplateRows,
+          room: frame?.style.getPropertyValue("--vex-panel-w"),
+          chat: frame?.style.getPropertyValue("--vex-chat-track"),
           head: view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']")?.style
             .gridTemplateColumns,
         },
         String(width),
       ).toEqual(shown);
-      // The column stands, its room kept; what it showed went.
+      // Her room is kept; her panel went, the aside empty.
       expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
       expect(shownNow(), String(width)).toBe("false");
       if (!narrow) expect(aside()?.childElementCount, String(width)).toBe(0);
@@ -1543,8 +1562,9 @@ describe("AppShell", () => {
       screen.getByRole("button", { name: /^Collapse sidebar$/i }),
     );
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    // The folded chats column is the fixed 76px rail; Vex keeps her 280.
-    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 280px");
+    // The folded chats column is the fixed 76px rail; her panel keeps its 280.
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr)");
+    expect(frame?.style.getPropertyValue("--vex-panel-w")).toBe("280px");
     expect(view.container.querySelector(".vex-shell-handle")).toBeNull();
   });
 
@@ -1552,17 +1572,20 @@ describe("AppShell", () => {
     const view = renderShell();
     act(() => useUiStore.getState().setSidebarWidth(342));
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 280px");
+    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr)");
   });
 
   it("hides Vex by default on the table pages and opens the page inside the centre", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenPages: false });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 280px");
+    const room = (): string | undefined => frame?.style.getPropertyValue("--vex-panel-w");
+    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr)");
+    expect(room()).toBe("280px");
 
     act(() => useUiStore.getState().navigate("portfolio"));
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr)");
+    expect(room()).toBe("0px");
     const page = view.container.querySelector("[data-vex-area='shell-screen']");
     expect(page?.getAttribute("aria-label")).toBe("Portfolio");
     // Inside the centre column: both sidebars stay standing beside it.
@@ -1571,20 +1594,21 @@ describe("AppShell", () => {
 
     // Back in the chat, Vex is open again: hiding her on a page never closed her there.
     act(() => useUiStore.getState().navigate("chat"));
-    expect(frame?.style.gridTemplateColumns).toBe("248px minmax(0, 1fr) 280px");
+    expect(room()).toBe("280px");
+    expect(frame?.getAttribute("data-vex-panel")).toBe("shown");
   });
 
-  it("keeps Vex's column across the welcome<->session edge: the same node, the same track", () => {
-    // docs/design/H3-DESKTOP.md section 1.7: the welcome has her column, so
+  it("keeps Vex's panel across the welcome<->session edge: the same node, the same room", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the welcome has her panel, so
     // the first message moves nothing beside the chat and remounts nothing.
     useUiStore.setState({ vexOpenChat: true });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
-    const before = frame?.style.gridTemplateColumns;
+    const before = [frame?.style.gridTemplateColumns, frame?.style.getPropertyValue("--vex-panel-w")];
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBe(aside);
-    expect(frame?.style.gridTemplateColumns).toBe(before);
+    expect([frame?.style.gridTemplateColumns, frame?.style.getPropertyValue("--vex-panel-w")]).toEqual(before);
     act(() => useUiStore.getState().setActiveSessionId(null));
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBe(aside);
   });

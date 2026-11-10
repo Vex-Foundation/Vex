@@ -54,14 +54,6 @@ import { StudioVexColumnPlate } from "./StudioVexColumnPlate.js";
 import { SAMPLE_HOST, SAMPLE_PROJECT } from "./studio-sample.js";
 import "./studio-plate.css";
 
-/**
- * The tagline cell's Studio line (proposed; Appendix A.6 has none for
- * Studio), after desktop's own "An AI trading agent, on your computer.": the
- * coding agents run in this computer's terminals. Short enough for one line
- * in the 384 cell of the 1280 window.
- */
-const STUDIO_TAGLINE = { lead: "Coding agents,", rest: "on your computer." } as const;
-
 function noop(): void {
   // A plate's keys press nothing.
 }
@@ -130,17 +122,20 @@ export function StudioPlate({ scene }: { readonly scene: StudioPlateScene }): JS
   // The drawer is the rail's: with the column open the sections are in it.
   const drawer = rail && scene.drawer === true;
   // The solver is D2's now (docs/design/H3-DESKTOP.md section 6): the plate
-  // lays its parts on D2's tracks, Vex's column at the right, as Studio
-  // itself does; what each part draws is the plate approved under H3.
+  // lays its parts on D2's tracks, Vex's panel over the chat's top right, as
+  // Studio itself does; what each part draws is the plate approved under H3.
   const headColumns = shellHeadTemplateColumns({
     chats: cols.chats,
     vex: cols.vex > 0 ? cols.vex : null,
   });
-  const frameStyle: CSSProperties & Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
+  const frameStyle: CSSProperties &
+    Record<"--vex-vex-track" | "--vex-overlay-left" | "--vex-chat-track" | "--vex-panel-w", string> = {
     gridTemplateColumns: h3GridTemplateColumns(cols),
     gridTemplateRows: shellGridTemplateRows({ head: true, foot: true, band }),
     "--vex-vex-track": `${String(cols.vex)}px`,
     "--vex-overlay-left": `${String(cols.chatLeft)}px`,
+    "--vex-chat-track": `${String(cols.chat)}px`,
+    "--vex-panel-w": `${String(cols.vex)}px`,
   };
 
   return (
@@ -184,24 +179,18 @@ export function StudioPlate({ scene }: { readonly scene: StudioPlateScene }): JS
           </footer>
         </div>
 
-        <div className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
-          <StudioVexColumnPlate open={scene.open} band={band} />
-        </div>
-        <div className="vex-shell-tagline vex-drag" data-vex-area="tagline-cell">
-          <p className="vex-tagline" data-vex-tagline="studio">
-            <span className="vex-tagline__text">
-              <span className="vex-tagline__lead">{STUDIO_TAGLINE.lead}</span>{" "}
-              <span className="vex-tagline__rest">{STUDIO_TAGLINE.rest}</span>
-            </span>
-          </p>
-        </div>
-
         <section className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1" data-vex-area="studio-center">
             <StudioCentrePlate {...scene.centre} />
           </div>
           {drawer ? <StudioFilesDrawerPlate /> : null}
         </section>
+
+        {/* Her panel over the chat's top right (section 6.3), after the
+          * chat as the shell has it; her bars are its foot strip now. */}
+        <div className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
+          <StudioVexColumnPlate open={scene.open} band={band} />
+        </div>
       </div>
     </main>
   );

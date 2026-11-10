@@ -1,23 +1,25 @@
 /**
- * THE VEX SIDEBAR: Vex's own column, at the right edge (docs/design/H3-DESKTOP.md
- * section 6, D2, the owner's decision of 2026-11-09; the right-hand column on
- * the Lighter desk too). In the agent shell and Studio it is D2's column, a
- * fixed 280 under the header's VEX cell (`VexColumnBody`):
+ * THE VEX SIDEBAR: Vex's own panel, docked at the chat's top right
+ * (docs/design/H3-DESKTOP.md section 6, D2, the owner's decisions of
+ * 2026-11-09 and 2026-11-10; the right-hand column on the Lighter desk). In
+ * the agent shell and Studio it is D2's panel, a fixed 280 under the
+ * header's VEX cell, as tall as what it holds (`VexColumnBody`):
  *
  *   aside#vex-section[data-vex-area="vex-sidebar"][data-vex-vex-open][data-vex-seat]
  *     body          Kimm's portrait card, the state row and its timer, THIS
  *                   CHAT, Needs you and its list, the missions row, a page's
- *                   own block (the Board's Ask Vex), Open activity; then
- *                   the column's empty ground
+ *                   own block (the Board's Ask Vex), Open activity, her bars;
+ *                   under the panel, the chat's own ground
  *
- * HIDING VEX HIDES THE WHOLE COLUMN'S BODY (section 6.4). In a chat the
- * column keeps its track and shows its ground and rule only (`plate` false),
- * so the chat keeps its width and a waiting money card never moves (section
- * 3.6); the header's VEX cell keeps the key that brings her back. The column
- * is `#vex-section`, which every toggle names in `aria-controls`. Focus
- * inside the body when it hides goes to that key (section 3.4). On a table
- * page hiding folds the column to the page's strip (`VexConsoleStrip`,
- * section 1.9), the page taking the room.
+ * HIDING VEX REMOVES THE PANEL (section 6.4). In a chat its room stays (the
+ * frame's solve, never her choice) while the aside is empty and draws
+ * nothing (`plate` false), so the chat's ground shows, its reading column
+ * keeps its width and a waiting money card never moves (section 3.6); the
+ * header's VEX cell keeps the key that brings her back. The aside is
+ * `#vex-section`, which every toggle names in `aria-controls`. Focus inside
+ * the body when it hides goes to that key (section 3.4). On a table page
+ * hiding folds her to the page's strip (`VexConsoleStrip`, section 1.9),
+ * the page taking the room.
  *
  * ON THE LIGHTER DESK (the owner-approved desk plate, H3-DESKTOP.md section
  * 4.9; plan row S8-11), unchanged by D2, the column is the desk chat, at the
@@ -198,8 +200,8 @@ export function VexSidebar({
 
 /**
  * Her band under 1024 (section 1.10): her section in its band seat, her mood
- * from Vex's state, and on its foot row the moment's words, the tagline the
- * bottom row says beside her column from 1024 up.
+ * from Vex's state, and on its foot row the moment's words (the tagline the
+ * stages before the shell say).
  */
 function VexBand({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
@@ -229,7 +231,7 @@ function VexSidebarContent({
   plate,
   onHide,
 }: {
-  /** Her section shows (the desk's stored choice); D2's body renders only shown. */
+  /** Her section shows (the desk's stored choice); D2's panel renders only shown. */
   readonly plate: boolean;
   /** Hide her: her corner key's press on the desk (the frame's write). */
   readonly onHide: () => void;

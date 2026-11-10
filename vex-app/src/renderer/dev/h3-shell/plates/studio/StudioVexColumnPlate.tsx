@@ -1,8 +1,8 @@
 /**
  * VEX'S COLUMN IN STUDIO, approved as our H3 plate (S8-01, for S8-06), now
- * laid out as D2 lays her column (docs/design/H3-DESKTOP.md section 6.3):
- * her portrait card, the state row, THIS PROJECT, the console's top block and
- * Open activity, at the right edge.
+ * laid out as D2 lays her panel (docs/design/H3-DESKTOP.md section 6.3):
+ * her portrait card, the state row, THIS PROJECT, the console's top block,
+ * Open activity and her bars, over the chat's top right.
  *
  * REAL WHERE IT EXISTS. The state row, the console's top block (Needs you,
  * its decision row and the missions row) and Open activity are the product's
@@ -22,6 +22,7 @@
 import type { JSX } from "react";
 import { OpenActivityKey, VexConsoleTop } from "../../../../features/vex/VexConsole.js";
 import { VexStateRow } from "../../../../features/vex/VexColumn.js";
+import { TaglineCell } from "../../../../features/vex/TaglineCell.js";
 import { useAllMissions, useVexPresence } from "../../../../features/vex/useVexPresence.js";
 import { KIMM_STANDINS } from "../../standins/manifest.js";
 import { SAMPLE_PROJECT } from "./studio-sample.js";
@@ -94,7 +95,7 @@ export function StudioVexColumnPlate({
   open,
   band,
 }: {
-  /** She shows: hidden, the column keeps its ground and rule only. */
+  /** She shows: hidden, the panel is empty and the chat's ground shows. */
   readonly open: boolean;
   /** Under 1024: the band under the header. */
   readonly band: boolean;
@@ -133,6 +134,9 @@ export function StudioVexColumnPlate({
             <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
             <div className="vex-col__foot">
               <OpenActivityKey />
+            </div>
+            <div className="vex-col__bars">
+              <TaglineCell words={false} />
             </div>
           </div>
         </div>

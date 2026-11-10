@@ -87,8 +87,9 @@
 [data-vex-shell="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
-/* THE FRAME (docs/design/R3-MINIMAL.md section 2): three grid tracks, left
- * sidebar | centre | Vex sidebar, solved by lib/shell-columns.ts. On the
+/* THE FRAME (docs/design/R3-MINIMAL.md section 2): grid tracks solved by
+ * lib/shell-columns.ts, the Lighter desk's three (rail | desk | Vex) and the
+ * shell's two (chats | chat, Vex's panel a box over the chat; D2, below). On the
  * Lighter desk opening and closing animates the tracks on the standard
  * curve; its chat share drag writes widths at pointer cadence, so easing them
  * would detach the column edge from the handle. H3's frame never animates a
@@ -125,27 +126,36 @@
  * the transcript and the card's text start) and `--vex-read-w` its width:
  * the zoomed 712 (760 less its 24 sides; 711 measured on the plates) at
  * 100 x zoom in (76 to 100 measured), the gutter giving way first, down to
- * 24, where the chat is too narrow for both, then the width: 100 and 712 at
+ * 24, where the room is too narrow for both, then the width: 100 and 712 at
  * 1440, 24 and 704 at 1280, 109.1 and 776.8 at 1920. Under 1024 it is 24
- * and the chat less 48. `--vex-chat-track` is the frame's solve. */
+ * and the chat less 48.
+ *
+ * THE ROOM (owner decision 2026-11-10): the chat runs to the window's right
+ * edge and Vex's panel lies over its top right, so the column is solved in
+ * the chat less her panel's room, `--vex-read-room`: read-w is min(712 x
+ * zoom, chat - panel - read-x - 24), and with it nothing on the column ever
+ * lies under her panel. The panel's room is the frame's solve
+ * (`--vex-panel-w`, 280 wherever she has a panel) and never her shown or
+ * hidden choice, so the column does not move when she hides or shows (the
+ * money rule, section 3.6). `--vex-chat-track` is the frame's solve too. */
 .vex-shell-frame[data-vex-frame="h3"] {
+  --vex-read-room: calc(var(--vex-chat-track) - var(--vex-panel-w, 0px));
   --vex-read-span: calc((var(--vex-transcript-max) - 48px) * var(--vex-zoom));
   --vex-read-x: clamp(
     24px,
-    calc(var(--vex-chat-track) - var(--vex-read-span) - 24px),
+    calc(var(--vex-read-room) - var(--vex-read-span) - 24px),
     calc(100px * var(--vex-zoom))
   );
-  --vex-read-w: min(var(--vex-read-span), calc(var(--vex-chat-track) - var(--vex-read-x) - 24px));
+  --vex-read-w: min(var(--vex-read-span), calc(var(--vex-read-room) - var(--vex-read-x) - 24px));
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] {
   --vex-read-x: 24px;
   --vex-read-w: calc(var(--vex-chat-track) - 48px);
 }
-/* Each column's place: its own track, every row, in D2's order (left |
- * centre | Vex; docs/design/H3-DESKTOP.md section 6), which the Lighter desk
- * shares. In the shell's frame (the agent shell and Studio) the header
- * (ShellHeader, title-bar.css) takes the first row across every track and the
- * columns stand under it. */
+/* Each column's place: its own track, every row, in the Lighter desk's order
+ * (rail | desk | Vex). In the shell's frame (the agent shell and Studio) the
+ * header (ShellHeader, title-bar.css) takes the first row across every track
+ * and the columns stand under it, and Vex has no track (her panel, below). */
 .vex-shell-frame > .vex-left-page {
   grid-column: 1;
   grid-row: 1 / -1;
@@ -172,10 +182,46 @@
    * head row (window-chrome.css). */
   --head-h: 44px;
 }
-/* THE BOTTOM ROW (docs/design/H3-DESKTOP.md section 1.8): the frame's last
- * row, 72 high. The chats and Vex columns stop over it; their cells take it:
- * the account cell under the chats (the column's own foot rule and paper,
- * `.vex-ls`), the tagline cell under Vex. The chat runs on into it: its
+/* HER PANEL (docs/design/H3-DESKTOP.md section 6.3; owner decision
+ * 2026-11-10, "the chat takes that space"): Vex has no track in the shell's
+ * frame. From 1024 up she is a box laid over the chat's top right, under the
+ * header, her panel's 280 wide and as tall as what it holds, over the chat
+ * (10) and under the chats panel (19), its scrim (18) and the chats column
+ * (20), so she never covers the chats panel; the chat's own ground shows
+ * under her. She never comes down past the top of the chat's composer group
+ * (`--vex-panel-floor`, measured by the frame, `vex-panel-geometry.ts`):
+ * the status strip, the bottom row and anything the composer raises over
+ * them stay clear of her, her card giving way first. Hidden, the box is
+ * empty and 0 high, so the chat's ground shows there. Offline she starts
+ * under the centre's connection row, as a page does. */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-vex {
+  grid-column: 2;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] > .vex-shell-vex {
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  grid-row: 2;
+  justify-self: end;
+  align-self: start;
+  width: var(--vex-panel-w);
+  height: auto;
+  max-height: calc(100% - max(0px, var(--vex-panel-floor, 0px) - var(--vex-h3-foot)));
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"]:has(.vex-shell-centre > .vex-connection-banner) > .vex-shell-vex {
+  margin-top: 40px;
+  max-height: calc(100% - 40px - max(0px, var(--vex-panel-floor, 0px) - var(--vex-h3-foot)));
+}
+/* Studio's centre stands in the chat's room, as the reading column does: its
+ * terminals and tabs end where her panel's room starts, shown or hidden. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] [data-vex-area="studio-center"] {
+  padding-right: var(--vex-panel-w);
+}
+
+/* THE BOTTOM ROW (docs/design/H3-DESKTOP.md sections 1.8 and 6.5): the
+ * frame's last row, 72 high. The chats column stops over it and its cell
+ * takes it: the account cell (the column's own foot rule and paper,
+ * `.vex-ls`). The chat runs on into it, to the window's right edge: its
  * composer seat ends at the window's foot, and a page sheet covers the
  * whole column, so a page has no bottom row (section 1.9). The account cell
  * stacks over the chats column, so the account menu it opens rises over it. */
@@ -199,25 +245,12 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-.vex-shell-frame > .vex-shell-tagline {
-  grid-column: 3;
-  grid-row: -2;
-  min-width: 0;
-  overflow: hidden;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  border-left: 1px solid var(--vex-alias-rule-quiet);
-}
-/* No rule may stand in a 0px track (the band, a page's strip). */
-.vex-shell-frame[data-vex-seat]:not([data-vex-seat="column"]) > .vex-shell-tagline {
-  border-left: 0;
-}
-
 /* THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved desk
  * plate): H3's header and bottom rows over the desk's own order, rail | desk
  * | Vex, each column on its own track as the rules at the top place them.
  * The rail stops over the bottom row, whose cell under it is the account
- * cell; the desk and the desk chat run on to the window's foot (a desk, like
- * a page, has no tagline cell). Zen has neither row. */
+ * cell; the desk and the desk chat run on to the window's foot. Zen has
+ * neither row. */
 .vex-shell-frame[data-vex-frame="desk"] > .vex-left-page {
   grid-row: 2 / -2;
 }
@@ -232,9 +265,8 @@
 
 /* Under 1024, Vex's band (docs/design/H3-DESKTOP.md section 1.10): the frame
  * has a fourth row under the header (`shellGridTemplateRows`), her element
- * stands in it over the chat's track (the second; her own, the third, is 0
- * here), and the chat starts under it; the chats rail still runs from the
- * header to the foot. */
+ * stands in it over the chat's track, and the chat starts under it; the
+ * chats rail still runs from the header to the foot. */
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="band"] > .vex-shell-vex {
   grid-column: 2;
   grid-row: 2;

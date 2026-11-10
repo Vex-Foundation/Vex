@@ -126,6 +126,13 @@ html[data-still] .vex-latest {
 .vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre .vex-appr-dock {
   zoom: var(--vex-zoom);
 }
+/* The chat's scroller spans the chat to the window's right edge, under Vex's
+ * panel (docs/design/H3-DESKTOP.md section 6.3), so its scrollbar's track
+ * starts under her panel (`--vex-panel-h`, measured by the frame, 0 while
+ * she is hidden): the thumb is never under her. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] [data-vex-conversation-scroll]::-webkit-scrollbar-track {
+  margin-top: var(--vex-panel-h, 0px);
+}
 
 /* THE FLOW RHYTHM (VEX Cloud's spec 10.10, `FLOW_GAP`; `flowRhythm.ts`):
  * the column has no gap of its own; each row's gap comes from what it shows
