@@ -1,9 +1,10 @@
 /**
- * THE TAGLINE CELL (docs/design/H3-DESKTOP.md sections 1.8 and Appendix A.6):
- * the bottom row's cell under the Vex column, Vex's line on the foot of her
- * column (VEX Cloud's `.moment` over its bars, the H3 mockup's app.css and
- * js/data.js). It says the moment in one of two registers, on a dark strip
- * laid over the cell:
+ * THE TAGLINE CELL (docs/design/H3-DESKTOP.md sections 1.8, 6.5 and Appendix
+ * A.6): Vex's line on the foot of her column (VEX Cloud's `.moment` over its
+ * bars, the H3 mockup's app.css and js/data.js). In D2's shell it is her
+ * panel's foot strip, the bars alone (`words` false); the stages before the
+ * shell keep the line. It says the moment in one of two registers, on a dark
+ * strip laid over the cell:
  *
  *   CAPS, two tones (her first clause in ink, the second muted), 600:
  *     at rest (the welcome, an idle chat, every other moment)
@@ -219,8 +220,8 @@ export function TaglineView({
 
 /**
  * The shell's cell. D2 (docs/design/H3-DESKTOP.md section 6.5) draws the
- * bars alone under Vex's column, no words (`words` false); the stages before
- * the shell keep the line over them (`TaglineView`).
+ * bars alone as her panel's foot strip, no words (`words` false); the stages
+ * before the shell keep the line over them (`TaglineView`).
  */
 export function TaglineCell({ words = true }: { readonly words?: boolean } = {}): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);

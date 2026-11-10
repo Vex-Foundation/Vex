@@ -134,6 +134,20 @@ function rectOf(element: Element | null): ToastRect | null {
   return { x: r.x, y: r.y, width: r.width, height: r.height };
 }
 
+/**
+ * The content column the toast centres on: the chat, less the room Vex's
+ * panel keeps over its right (`--vex-panel-w`, docs/design/H3-DESKTOP.md
+ * section 6.3; 0 where she has none), so the toast stands over what is read
+ * and the same whether she shows or not.
+ */
+function contentColumnRect(): ToastRect | null {
+  const centre = document.querySelector(CONTENT_COLUMN);
+  const rect = rectOf(centre);
+  if (centre === null || rect === null) return rect;
+  const panel = Number.parseFloat(getComputedStyle(centre).getPropertyValue("--vex-panel-w"));
+  return Number.isFinite(panel) && panel > 0 ? { ...rect, width: Math.max(0, rect.width - panel) } : rect;
+}
+
 /** Every approval card the window shows now: rendered, with a box inside the viewport. */
 function visibleCards(): ToastRect[] {
   const cards: ToastRect[] = [];
@@ -188,7 +202,7 @@ function useToastSeat(active: boolean, key: string): {
         viewport: { width: window.innerWidth, height: window.innerHeight },
         head: rectOf(document.querySelector(AREA_HEAD)),
         titleCell: rectOf(document.querySelector(HEAD_TITLE_CELL)),
-        column: rectOf(document.querySelector(CONTENT_COLUMN)),
+        column: contentColumnRect(),
         toast: floatingSize(region),
         cards: visibleCards(),
       });

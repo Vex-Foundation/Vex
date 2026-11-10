@@ -46,6 +46,13 @@
 .vex-shell-frame:is([data-vex-frame="h3"], [data-vex-frame="desk"]) .vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
   top: 40px;
 }
+/* Vex's panel lies over the chat's top right (docs/design/H3-DESKTOP.md
+ * section 6.3): the sheet still covers the whole chat, the composer under it
+ * included, but what it holds stands in the chat's room, clear of her
+ * panel's 280 whether she shows or not, as it stood beside her column. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-shell-centre .vex-ov {
+  padding-right: var(--vex-panel-w);
+}
 /* The money ledgers (Agent Scan, All assets, token history): 1100 with the
  * page padding, so the rows read as the design's 112 | 1fr | 120 | 250 grid. */
 .vex-ov[data-width="wide"] {

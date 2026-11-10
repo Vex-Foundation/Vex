@@ -3,19 +3,22 @@
  * S4-16): a waiting money card never moves, and is never covered, when Vex
  * hides or shows, on any frame. Desktop's port of the H3 mockup's own proof
  * (`h3-merged__plate-proof`), rewritten for D2 (owner decision 2026-11-09:
- * Vex's column at the right edge, hidden and shown whole), run as a CI gate:
- * a card that moves fails the build.
+ * Vex at the right edge, hidden and shown whole; and 2026-11-10: her column
+ * is a panel docked at the chat's top right, the chat running to the
+ * window's edge under it), run as a CI gate: a card that moves, or that her
+ * panel covers, fails the build.
  *
  * WHAT IS READ, in the H3 shell harness's `swap-waiting` state (the real
  * shell and the real approval card, with only the preload bridge stood in
  * for), at the five widths the mockup proved, 1280, 1366, 1440, 1920 and 2560:
  *
  *   1. HIDE AND SHOW, LIVE. The header's VEX key pressed as a person
- *      presses it, Hide Vex then Show Vex, the card, Vex's column and the
- *      grid's tracks read on every frame the browser paints for longer than
- *      her old wipe took (720ms). D2 has no wipe: her column's body goes and
- *      comes at the press, so the frames must also show it hidden and shown,
- *      and a press that did nothing cannot pass.
+ *      presses it, Hide Vex then Show Vex, the card, Vex's panel, the grid's
+ *      tracks and the reading column's line and width read on every frame
+ *      the browser paints for longer than her old wipe took (720ms). D2 has
+ *      no wipe: her panel goes and comes at the press, so the frames must
+ *      also show it hidden and shown, and a press that did nothing cannot
+ *      pass.
  *   2. TURNED AROUND. Hide Vex, then Show Vex 80ms later: read on every
  *      painted frame; the card never moves and she ends shown.
  *   3. THE CHORD. Ctrl+Shift+B (Cmd+Shift+B on a Mac) hides and shows her
@@ -24,9 +27,10 @@
  *      against the hidden render (`?vex=closed`): not one may differ.
  *
  * On every frame of every path the card's box must equal the shown render's,
- * and Vex's column's box and the grid's column template must not change
- * either: hidden, her column keeps its room and shows its ground and rule
- * only (section 6.4).
+ * and the grid's column template and the reading column must not change
+ * either; her panel, shown, is the shown render's box at the window's right
+ * edge, and hidden it is gone (0 high, no ground), its room kept (section
+ * 6.4). On no frame does the card meet her panel.
  *
  * The Lighter desk keeps its approved plate (section 4.9) and Kimm's section
  * with its wipe there, so its leg still seeks her motion frame by frame.
@@ -63,7 +67,7 @@ const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]
 const SECTION = '[data-vex-area="kimm-section"]';
 /** Her section's own key: the desk's corner key, the band's foot row. */
 const KEY = '[data-vex-area="kimm-key"]';
-/** D2's column at the right edge, and the header's VEX key that hides and shows it. */
+/** D2's panel at the chat's top right, and the header's VEX key that hides and shows it. */
 const COLUMN = '[data-vex-area="vex-sidebar"]';
 const HEAD_KEY = '[data-vex-area="vex-key"]';
 
@@ -268,12 +272,14 @@ function onScreen(box: Box, size: Size): Box {
   };
 }
 
-/** One painted frame of a D2 press: the card, her column, the tracks, and whether she shows. */
+/** One painted frame of a D2 press: the card, her panel, the tracks, the reading column, whether she shows. */
 interface D2Frame {
   readonly at: number;
   readonly card: Box;
   readonly column: Box;
   readonly columns: string;
+  /** The transcript's column: its x and width, the reading line and width. */
+  readonly reading: string;
   readonly shown: string | null;
 }
 
@@ -298,13 +304,18 @@ async function d2Frames(page: Page, presses: readonly number[], ms: number): Pro
         return { x: r.x, y: r.y, width: r.width, height: r.height };
       };
       const frames: D2Frame[] = [];
-      const read = (at: number): D2Frame => ({
-        at,
-        card: box(cardEl),
-        column: box(columnEl),
-        columns: getComputedStyle(frameEl).gridTemplateColumns,
-        shown: columnEl.getAttribute("data-vex-shown"),
-      });
+      const transcript = document.querySelector("[data-vex-transcript-column]");
+      const read = (at: number): D2Frame => {
+        const line = transcript?.getBoundingClientRect();
+        return {
+          at,
+          card: box(cardEl),
+          column: box(columnEl),
+          columns: getComputedStyle(frameEl).gridTemplateColumns,
+          reading: line === undefined ? "none" : `${String(line.x)} ${String(line.width)}`,
+          shown: columnEl.getAttribute("data-vex-shown"),
+        };
+      };
       const start = performance.now();
       for (const at of presses) {
         if (at === 0) {
@@ -549,6 +560,18 @@ test.describe("H3 card proof: the chats panel never moves a waiting card", () =>
       // The panel moved: out of the rail to its place at x 76, and back.
       expect(seekOpen[0]?.panelX).toBeLessThan(0);
       expect(seekOpen.at(-1)?.panelX).toBe(76);
+      // Open, the chats panel lies beside Vex's panel, never under it: hers
+      // stands at the right edge, past the chats panel's 248.
+      const chatsPanelBox = await page.evaluate(
+        (panel) => {
+          const r = (document.querySelector(panel) as HTMLElement).getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        },
+        PANEL,
+      );
+      const vexPanelBox = (await page.locator(COLUMN).boundingBox()) as Box;
+      expect(vexPanelBox.x).toBe(size.width - 280);
+      expect(chatsPanelBox.x + chatsPanelBox.width).toBeLessThanOrEqual(vexPanelBox.x);
       expect(seekClose[0]?.panelX).toBe(76);
       expect(seekClose.at(-2)?.panelX).toBeLessThan(0);
       expect(liveOpen.length).toBeGreaterThanOrEqual(2);
@@ -707,22 +730,26 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
 
 /**
  * THE READING COLUMN AND THE WIDE WINDOWS (docs/design/H3-DESKTOP.md
- * sections 1.11 and 6.6): the chat's title, the transcript's text and the
- * card's text start on D2's reading line, anchored at the chat's left (the
- * chats' 248, then 100 x zoom: 348 at 1440, 357.1 at 1920, 393.5 at 2560);
- * Vex's column is 280 at the right edge, her portrait card its width and
- * 280 / 0.78 high flush under the header (her column does not zoom); the
- * foot row is 72 x zoom and its rule.
+ * sections 1.11, 6.3 and 6.6): the chat's title, the transcript's text and
+ * the card's text start on D2's reading line, anchored at the chat's left
+ * (the chats' 248, then 100 x zoom: 348 at 1440, 357.1 at 1920, 393.5 at
+ * 2560); the chat and the bottom row run to the window's right edge; Vex's
+ * panel is 280 at the right edge, flush under the header, as tall as what it
+ * holds and never down past the chat's composer group, her portrait card its
+ * width and 280 / 0.78 high where the window has the room (a tall 1440 x
+ * 1250), giving way first, to 160 at the least, where it has not; her bars
+ * are its foot strip; the foot row is 72 x zoom and its rule.
  */
 const WIDE = [
   { size: { width: 1440, height: 900 }, zoom: 1, line: 348, foot: 73 },
+  { size: { width: 1440, height: 1250 }, zoom: 1, line: 348, foot: 73 },
   { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 357.1, foot: 79.55 },
   { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 393.5, foot: 105.76 },
 ] as const;
 
-test.describe("D2 card proof: the reading column, her column and the foot row", () => {
+test.describe("D2 card proof: the reading column, her panel and the foot row", () => {
   for (const wide of WIDE) {
-    test(`the reading line, her portrait card and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
+    test(`the reading line, her panel and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
       await open(page, wide.size, "open");
       expect(zoomAt(wide.size.width)).toBe(wide.zoom);
       const read = await page.evaluate(
@@ -731,18 +758,28 @@ test.describe("D2 card proof: the reading column, her column and the foot row", 
           const cardEl = document.querySelector<HTMLElement>(card);
           const column = document.querySelector<HTMLElement>("[data-vex-transcript-column]");
           const account = document.querySelector<HTMLElement>('[data-vex-area="account-cell"]');
-          if (title === null || cardEl === null || column === null || account === null) {
-            throw new Error("the title, the card, the transcript or the account cell is missing");
+          const dock = document.querySelector<HTMLElement>('[data-vex-area="approval-dock"]');
+          const seat = document.querySelector<HTMLElement>("[data-vex-composer-seat]");
+          if (title === null || cardEl === null || column === null || account === null || dock === null || seat === null) {
+            throw new Error("the title, the card, the transcript, the account cell or the composer is missing");
           }
           const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue("--vex-zoom"));
           // The card's own inset, in its zoomed pixels: its first row's padding.
           const inset = Number.parseFloat(getComputedStyle(cardEl).getPropertyValue("--vex-appr-inset")) || 24;
+          // The composer group's top: the highest of its parts with a box.
+          const parts = [...document.querySelectorAll<HTMLElement>('[data-vex-composer-dock], [data-vex-area="approval-dock"]')]
+            .map((el) => el.getBoundingClientRect())
+            .filter((r) => r.height > 0);
           return {
             zoom,
             title: title.getBoundingClientRect().x + Number.parseFloat(getComputedStyle(title).paddingLeft),
             transcript: column.getBoundingClientRect().x,
+            transcriptRight: column.getBoundingClientRect().right,
             cardText: cardEl.getBoundingClientRect().x + inset * zoom,
             foot: account.getBoundingClientRect().height,
+            dockRight: dock.getBoundingClientRect().right,
+            seatRight: seat.getBoundingClientRect().right,
+            composerTop: Math.min(...parts.map((r) => r.top)),
           };
         },
         { card: CARD },
@@ -752,18 +789,39 @@ test.describe("D2 card proof: the reading column, her column and the foot row", 
       expect(Math.abs(read.transcript - wide.line), `transcript ${String(read.transcript)}`).toBeLessThanOrEqual(0.5);
       expect(Math.abs(read.cardText - wide.line), `card ${String(read.cardText)}`).toBeLessThanOrEqual(0.5);
       expect(read.foot).toBeCloseTo(wide.foot, 1);
+      // Her panel at the right edge, flush under the header, 280 wide.
       const column = (await page.locator(COLUMN).boundingBox()) as Box;
       expect(column.x).toBe(wide.size.width - 280);
+      expect(column.y).toBe(76);
       expect(column.width).toBe(280);
-      // Her card fills the column inside its 1px rule on the left.
+      // As tall as what it holds, never down past the composer group, and
+      // the chat's own ground under it.
+      expect(column.y + column.height).toBeLessThanOrEqual(read.composerTop + 0.5);
+      // The chat and its bottom row run to the window's right edge: the
+      // docked band and the composer seat end there (less a classic
+      // scrollbar's gutter, at most 8).
+      expect(read.dockRight).toBeGreaterThan(wide.size.width - 9);
+      expect(read.seatRight).toBeGreaterThan(wide.size.width - 9);
+      // Her card fills the panel inside its 1px rule on the left; it keeps
+      // 280 / 0.78 where the window has the room and gives way to 160 at
+      // the least where it has not.
       const portrait = (await page.locator('[data-vex-area="vex-portrait-card"]').boundingBox()) as Box;
       expect(portrait.x).toBe(wide.size.width - 279);
       expect(portrait.y).toBe(76);
       expect(portrait.width).toBe(279);
-      expect(portrait.height).toBeCloseTo(280 / 0.78, 0);
-      // The card never runs under her column.
+      expect(portrait.height).toBeGreaterThanOrEqual(160);
+      expect(portrait.height).toBeLessThanOrEqual(280 / 0.78 + 0.5);
+      if (wide.size.height >= 1080) expect(portrait.height).toBeCloseTo(280 / 0.78, 0);
+      // Her bars are her panel's foot strip, 48 high; no bars cell in the row.
+      const bars = (await page.locator('[data-vex-area="vex-column-bars"]').boundingBox()) as Box;
+      expect(bars.height).toBe(48);
+      expect(bars.y + bars.height).toBeLessThanOrEqual(column.y + column.height);
+      await expect(page.locator('[data-vex-area="tagline-cell"]')).toHaveCount(0);
+      // Nothing readable lies under her panel: the card and the transcript's
+      // column end at or before its left edge.
       const card = await cardBox(page);
       expect(card.x + card.width).toBeLessThanOrEqual(column.x);
+      expect(read.transcriptRight).toBeLessThanOrEqual(column.x);
     });
   }
 });
@@ -777,17 +835,31 @@ test.describe("D2 card proof: a waiting money card never moves when Vex hides or
       const card = await cardBox(page);
       const column = (await page.locator(COLUMN).boundingBox()) as Box;
       expect(column).not.toBeNull();
-      // Her column stands at the right edge, a fixed 280 (section 6.1).
+      // Her panel stands at the right edge, a fixed 280 (section 6.3), and
+      // the card never runs under it.
       expect(column.x + column.width).toBe(size.width);
       expect(column.width).toBe(280);
+      expect(card.x + card.width).toBeLessThanOrEqual(column.x);
       const columns = await page.evaluate(
         () => getComputedStyle(document.querySelector(".vex-shell-frame") as Element).gridTemplateColumns,
       );
+      // Two tracks: the chats and the chat to the window's edge, no track for her.
+      expect(columns.split(" ")).toHaveLength(2);
+      const reading = await page.evaluate(() => {
+        const r = document.querySelector("[data-vex-transcript-column]")?.getBoundingClientRect();
+        return r === undefined ? "none" : `${String(r.x)} ${String(r.width)}`;
+      });
       const same = (frames: readonly D2Frame[], name: string): void => {
         for (const frame of frames) {
-          expect(frame.card, `${name} ${frame.at.toFixed(1)}ms`).toEqual(card);
-          expect(frame.column, `${name} ${frame.at.toFixed(1)}ms`).toEqual(column);
-          expect(frame.columns, `${name} ${frame.at.toFixed(1)}ms`).toBe(columns);
+          const at = `${name} ${frame.at.toFixed(1)}ms`;
+          expect(frame.card, at).toEqual(card);
+          expect(frame.columns, at).toBe(columns);
+          expect(frame.reading, at).toBe(reading);
+          // Shown, her panel is the shown render's box; hidden it is gone,
+          // 0 high at the same x, its room kept.
+          if (frame.shown === "true") expect(frame.column, at).toEqual(column);
+          else expect(frame.column, at).toEqual({ ...column, height: 0 });
+          expect(frame.card.x + frame.card.width, at).toBeLessThanOrEqual(frame.column.x);
         }
       };
 
@@ -819,7 +891,9 @@ test.describe("D2 card proof: a waiting money card never moves when Vex hides or
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await expect(page.locator(COLUMN)).toHaveAttribute("data-vex-shown", shown);
         expect(await cardBox(page)).toEqual(card);
-        expect((await page.locator(COLUMN).boundingBox()) as Box).toEqual(column);
+        const now = (await page.locator(COLUMN).boundingBox()) as Box | null;
+        // Hidden, the empty aside has no box Playwright can measure.
+        expect(now ?? { ...column, height: 0 }).toEqual(shown === "true" ? column : { ...column, height: 0 });
       }
     });
 
@@ -875,6 +949,7 @@ test.describe("H3 card proof: a toast never lies over a waiting card", () => {
     readonly toast: Box | null;
     readonly cards: readonly Box[];
     readonly modalCard: boolean;
+    readonly panel: Box | null;
   }> {
     await page.evaluate(
       ({ text, action }) => {
@@ -904,11 +979,14 @@ test.describe("H3 card proof: a toast never lies over a waiting card", () => {
         const r = card.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
       });
+      // D2's panel, where the shell has one (the desk keeps its column).
+      const panel = document.querySelector('.vex-shell-frame[data-vex-panel="shown"] [data-vex-area="vex-sidebar"]');
       return {
         seat: stack?.getAttribute("data-vex-toast-seat") ?? null,
         toast: stack === null ? null : box(stack),
         cards: cards.map(box),
         modalCard: cards.some((card) => card.closest("dialog[open]") !== null),
+        panel: panel === null ? null : box(panel),
       };
     });
   }
@@ -945,6 +1023,12 @@ test.describe("H3 card proof: a toast never lies over a waiting card", () => {
           for (const card of read.cards) {
             const toast = read.toast as Box;
             expect(meet(toast, card), `toast ${JSON.stringify(toast)} over card ${JSON.stringify(card)}`).toBe(false);
+          }
+          // Floating, it stands over the chat's room, clear of Vex's panel
+          // (section 6.3): centred on the chat less her panel's 280.
+          if (read.panel !== null && read.seat === "float") {
+            const toast = read.toast as Box;
+            expect(meet(toast, read.panel), `toast ${JSON.stringify(toast)} over her panel`).toBe(false);
           }
           // The card's top strip (network, REAL FUNDS) starts under the
           // header's rule at a short window: there the toast must have

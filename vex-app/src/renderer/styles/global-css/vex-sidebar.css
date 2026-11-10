@@ -1,10 +1,11 @@
-/* THE VEX SIDEBAR (docs/design/H3-DESKTOP.md sections 1.9 and 6): Vex's
- * own column at the right edge (D2; the Lighter desk's right-hand column
- * too), with a 1px quiet rule on its left, against the chat, on the same
- * ground. Width is the frame's (a fixed 280 in the shell; 0 for a page's
- * strip and the band); the column only fills its track. Hidden in a chat, it
- * keeps its ground and rule and nothing else. Radius 0, no shadow, no blur,
- * tokens only.
+/* THE VEX SIDEBAR (docs/design/H3-DESKTOP.md sections 1.9 and 6): in the
+ * shell, Vex's PANEL docked at the chat's top right (D2, owner decision
+ * 2026-11-10), as tall as what it holds, with a 1px quiet rule on its left
+ * and its foot, on the column's opaque ground; on the Lighter desk her
+ * right-hand column, filling its track. Width is the frame's (a fixed 280 in
+ * the shell; 0 for a page's strip and the band). Hidden in a chat, the panel
+ * is empty and draws nothing, so the chat's ground shows. Radius 0, no
+ * shadow, no blur, tokens only.
  *
  *   aside.vex-vs[data-vex-vex-open][data-vex-seat][data-vex-shown]
  *     .vex-vs__body
@@ -30,6 +31,18 @@
 .vex-vs[data-vex-vex-open="false"] {
   border-left: 0;
 }
+/* D2's panel (shell.css places it): as tall as its body, which may shrink
+ * to the room the frame leaves it, its foot ruled. Hidden it is empty, 0
+ * high, with no ground and no rule. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="column"] {
+  flex: 0 1 auto;
+  height: auto;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="column"][data-vex-shown="false"] {
+  border: 0;
+  background: none;
+}
 
 .vex-vs__back:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -50,19 +63,20 @@
  * column, so its cells keep their measures at every width; the page strip
  * that stands for it on a page still zooms (below). */
 
-/* ---- D2'S COLUMN (docs/design/H3-DESKTOP.md section 6.3; VexColumn.tsx) ----
+/* ---- D2'S PANEL (docs/design/H3-DESKTOP.md section 6.3; VexColumn.tsx) ----
  * Top to bottom, each part a cell over the next one's rule, text 24 in:
  *
- *   portrait card   the column's width, 280 / 0.78 high (about 360), flush
- *                   under the header; it gives way first, to 160, when a
- *                   short window cannot hold the rest under it
+ *   portrait card   the panel's width, 280 / 0.78 high (about 360), flush
+ *                   under the header; it gives way first, to 160, when the
+ *                   room over the chat's composer cannot hold the rest
  *   state row       44: the square and the word in caps 13, the timer at
  *                   the right end in mono, muted
  *   THIS CHAT       at least 68: the label in caps 11, muted, over Vex's line
  *   Needs you, the missions row: the console's top block (148)
- *   Open activity   the foot row, 44
+ *   Open activity   44
+ *   her bars        the foot strip, 48, no words (TaglineCell)
  *
- * and the column's ground under it. Should even that not fit, the body
+ * and the panel's foot rule under them. Should even that not fit, the body
  * scrolls; the card never covers anything. */
 .vex-col {
   display: flex;
@@ -149,6 +163,13 @@
 }
 .vex-col__foot > .vex-console__open {
   height: 44px;
+}
+/* Her bars, the panel's foot strip (section 6.5): a display only, no words;
+ * they stop off screen and hold one frame under reduced motion (VexBars). */
+.vex-col__bars {
+  flex: none;
+  height: 48px;
+  overflow: hidden;
 }
 /* What scrolls when the information outgrows the column: never the plate. */
 .vex-vs__info {
@@ -704,7 +725,7 @@
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="strip"] > .vex-shell-vex {
   z-index: 31;
-  grid-column: 2 / 4;
+  grid-column: 2 / -1;
   grid-row: 2;
   align-self: start;
   height: var(--vex-console-strip-h);

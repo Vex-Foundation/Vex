@@ -1,7 +1,7 @@
 /**
- * D2'S VEX COLUMN BODY (docs/design/H3-DESKTOP.md section 6.3; the owner's D2
- * plates, 2026-11-09): Vex's column at the right edge, 280 wide, top to
- * bottom,
+ * D2'S VEX PANEL BODY (docs/design/H3-DESKTOP.md section 6.3; the owner's D2
+ * plates, 2026-11-09, and the panel, 2026-11-10): Vex's panel docked at the
+ * chat's top right, 280 wide and as tall as what it holds, top to bottom,
  *
  *   [data-vex-area="vex-portrait-card"]   Kimm's portrait card: her live
  *                                         glyph field behind her figure,
@@ -17,9 +17,12 @@
  *                                         missions row (`VexConsoleTop`)
  *   the page slot                         a page's own block (the Board's
  *                                         Ask Vex), nothing elsewhere
- *   OPEN ACTIVITY                         the column's foot row
+ *   OPEN ACTIVITY                         its row
+ *   [data-vex-area="vex-column-bars"]     her bars, the panel's foot strip,
+ *                                         no words (`TaglineCell`), a
+ *                                         display only
  *
- * and under that the column's empty ground. In Studio, with a project open,
+ * and under that the chat's own ground. In Studio, with a project open,
  * This project's facts take THIS CHAT's place (our approved Studio plate).
  *
  * Every word comes from `useVexPresence` (the state machine's word, its
@@ -39,6 +42,7 @@ import { OpenActivityKey, VexConsoleThisProject, VexConsoleTop } from "./VexCons
 import { VexElapsed } from "./VexElapsed.js";
 import { VEX_STATE_SQUARE, type VexScope, type VexState } from "./vex-state.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
+import { TaglineCell } from "./TaglineCell.js";
 
 /** THIS CHAT's line when Vex has nothing to say and nothing waits anywhere. */
 export const THIS_CHAT_REST_LINE = "Nothing waiting in your chats.";
@@ -108,7 +112,7 @@ export function VexThisChat({ presence }: { readonly presence: VexPresence }): J
   );
 }
 
-/** The column's body, top to bottom, under the header's VEX cell. */
+/** The panel's body, top to bottom, under the header's VEX cell. */
 export function VexColumnBody({ presence }: { readonly presence: VexPresence }): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
@@ -123,6 +127,11 @@ export function VexColumnBody({ presence }: { readonly presence: VexPresence }):
       <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
       <div className="vex-col__foot" data-vex-area="vex-column-foot">
         <OpenActivityKey projectId={project} />
+      </div>
+      {/* Her bars as the panel's foot strip (section 6.5): no words, a
+        * display only; they go with the panel when she hides. */}
+      <div className="vex-col__bars" data-vex-area="vex-column-bars">
+        <TaglineCell words={false} />
       </div>
     </div>
   );

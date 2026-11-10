@@ -1,16 +1,16 @@
 /**
  * The Vex sidebar (docs/design/H3-DESKTOP.md sections 1.9 and 6): D2's
- * column at the right edge, the page strip, the desk's column. Pinned:
+ * panel over the chat's top right, the page strip, the desk's column. Pinned:
  *
  *  - A CLOSED COLUMN is zero content: nothing in a 0px track takes focus or
  *    paints; on a table page it is the page strip;
  *  - D2's ORDER, top to bottom: Kimm's portrait card, the state row with its
  *    timer, THIS CHAT and Vex's line, the console's top block (Needs you, the
- *    missions row), a page's block, Open activity; no AI permission and no
- *    recent activity in the column any more;
- *  - HIDING HIDES THE WHOLE BODY in a chat (D2, section 6.4): the column is
- *    `#vex-section` and keeps its ground and rule only; focus inside it goes
- *    to the header's key; no wipe, no strip, no corner key, no hint;
+ *    missions row), a page's block, Open activity, her bars (no words); no AI
+ *    permission and no recent activity in the panel any more;
+ *  - HIDING REMOVES THE PANEL in a chat (D2, section 6.4): the aside is
+ *    `#vex-section` and stays, empty; focus inside it goes to the header's
+ *    key; no wipe, no strip, no corner key, no hint;
  *  - Needs you never decides: its key opens the card, and only closes a
  *    page over the chat;
  *  - STUDIO: the "This project" block takes THIS CHAT's place and opens the
@@ -252,7 +252,7 @@ describe("VexSidebar, the page strip (H3-DESKTOP.md section 1.9)", () => {
 });
 
 describe("VexSidebar, open (D2's column)", () => {
-  it("is D2's column: the portrait card, the state row, THIS CHAT, Needs you, missions, Open activity", () => {
+  it("is D2's panel: the portrait card, the state row, THIS CHAT, Needs you, missions, Open activity, her bars", () => {
     render(<VexSidebar open onHide={() => {}} />);
     expect(sidebar().getAttribute("data-vex-vex-open")).toBe("true");
     expect(sidebar().getAttribute("data-vex-shown")).toBe("true");
@@ -273,10 +273,18 @@ describe("VexSidebar, open (D2's column)", () => {
     const foot = area("vex-column-foot");
     expect(within(foot ?? sidebar()).getByRole("button", { name: "Open activity" })).not.toBeNull();
 
+    // Her bars are the panel's foot strip, a display with no words.
+    const bars = area("vex-column-bars");
+    expect(bars?.querySelector("[data-vex-area='vex-foot']")?.getAttribute("data-vex-foot-words")).toBe("none");
+    expect(bars?.querySelector("canvas[data-vex-area='vex-bars']")?.getAttribute("aria-hidden")).toBe("true");
+    expect(bars?.textContent).toBe("");
+    expect(area("vex-column-body")?.lastElementChild).toBe(bars);
+
     expect(before(card, state)).toBe(true);
     expect(before(state, thisChat)).toBe(true);
     expect(before(thisChat, top)).toBe(true);
     expect(before(top, foot)).toBe(true);
+    expect(before(foot, bars)).toBe(true);
     // No AI permission, no recent activity, and none of H3's section.
     expect(area("vex-permission")).toBeNull();
     expect(area("vex-recent-activity")).toBeNull();
@@ -350,14 +358,15 @@ describe("VexSidebar, open (D2's column)", () => {
 });
 
 describe("VexSidebar, hidden in a chat (D2, section 6.4)", () => {
-  it("keeps the column and shows its ground and rule only", () => {
+  it("keeps the aside, empty, so the panel goes and the chat's ground shows (vex-sidebar.css)", () => {
     const view = render(<VexSidebar open plate={false} onHide={() => {}} />);
     expect(sidebar().getAttribute("data-vex-vex-open")).toBe("true");
     expect(sidebar().getAttribute("data-vex-shown")).toBe("false");
     expect(sidebar().id).toBe("vex-section");
     expect(sidebar().childElementCount).toBe(0);
     expect(screen.queryByRole("button")).toBeNull();
-    // Shown again, the whole body comes back.
+    expect(document.querySelector("[data-vex-area='vex-bars']")).toBeNull();
+    // Shown again, the whole panel comes back.
     view.rerender(<VexSidebar open onHide={() => {}} />);
     expect(area("vex-portrait-card")).not.toBeNull();
     expect(area("vex-console-top")).not.toBeNull();
