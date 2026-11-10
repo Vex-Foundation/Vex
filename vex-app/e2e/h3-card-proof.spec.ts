@@ -729,11 +729,14 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
 });
 
 /**
- * THE READING COLUMN AND THE WIDE WINDOWS (docs/design/H3-DESKTOP.md
- * sections 1.11, 6.3 and 6.6): the chat's title, the transcript's text and
- * the card's text start on D2's reading line, anchored at the chat's left
- * (the chats' 248, then 100 x zoom: 348 at 1440, 357.1 at 1920, 393.5 at
- * 2560); the chat and the bottom row run to the window's right edge; Vex's
+ * THE CONVERSATION COLUMN AND THE WIDE WINDOWS (docs/design/H3-DESKTOP.md
+ * sections 1.11, 6.3 and 6.6; owner decision 2026-11-10, "a central wide
+ * space for the chat"): the transcript and the card stand on one column
+ * centred in the room left of Vex's panel, the room less a 40 x zoom gutter
+ * each side, capped at 1120 x zoom (288 to 1120 at 1440, 333 to 1555 at
+ * 1920, 347.8 to 1620.2 at the owner's 2000, 449.2 to 2078.8 at 2560), the
+ * card exactly the column's width and the chat's title on its line; the
+ * chat and the bottom row run to the window's right edge; Vex's
  * panel is 280 at the right edge, flush under the header, as tall as what it
  * holds and never down past the chat's composer group, her portrait card its
  * width and 280 / 0.78 high where the window has the room (a tall 1440 x
@@ -741,15 +744,16 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
  * are its foot strip; the foot row is 72 x zoom and its rule.
  */
 const WIDE = [
-  { size: { width: 1440, height: 900 }, zoom: 1, line: 348, foot: 73 },
-  { size: { width: 1440, height: 1250 }, zoom: 1, line: 348, foot: 73 },
-  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 357.1, foot: 79.55 },
-  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 393.5, foot: 105.76 },
+  { size: { width: 1440, height: 900 }, zoom: 1, line: 288, right: 1120, foot: 73 },
+  { size: { width: 1440, height: 1250 }, zoom: 1, line: 288, right: 1120, foot: 73 },
+  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 333.04, right: 1554.96, foot: 79.55 },
+  { size: { width: 2000, height: 1250 }, zoom: 1.136, line: 347.84, right: 1620.16, foot: 82.79 },
+  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 449.2, right: 2078.8, foot: 105.76 },
 ] as const;
 
-test.describe("D2 card proof: the reading column, her panel and the foot row", () => {
+test.describe("D2 card proof: the conversation column, her panel and the foot row", () => {
   for (const wide of WIDE) {
-    test(`the reading line, her panel and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
+    test(`the conversation column, her panel and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
       await open(page, wide.size, "open");
       expect(zoomAt(wide.size.width)).toBe(wide.zoom);
       const read = await page.evaluate(
@@ -764,8 +768,6 @@ test.describe("D2 card proof: the reading column, her panel and the foot row", (
             throw new Error("the title, the card, the transcript, the account cell or the composer is missing");
           }
           const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue("--vex-zoom"));
-          // The card's own inset, in its zoomed pixels: its first row's padding.
-          const inset = Number.parseFloat(getComputedStyle(cardEl).getPropertyValue("--vex-appr-inset")) || 24;
           // The composer group's top: the highest of its parts with a box.
           const parts = [...document.querySelectorAll<HTMLElement>('[data-vex-composer-dock], [data-vex-area="approval-dock"]')]
             .map((el) => el.getBoundingClientRect())
@@ -775,7 +777,8 @@ test.describe("D2 card proof: the reading column, her panel and the foot row", (
             title: title.getBoundingClientRect().x + Number.parseFloat(getComputedStyle(title).paddingLeft),
             transcript: column.getBoundingClientRect().x,
             transcriptRight: column.getBoundingClientRect().right,
-            cardText: cardEl.getBoundingClientRect().x + inset * zoom,
+            card: cardEl.getBoundingClientRect().x,
+            cardRight: cardEl.getBoundingClientRect().right,
             foot: account.getBoundingClientRect().height,
             dockRight: dock.getBoundingClientRect().right,
             seatRight: seat.getBoundingClientRect().right,
@@ -787,7 +790,12 @@ test.describe("D2 card proof: the reading column, her panel and the foot row", (
       expect(read.zoom).toBe(wide.zoom);
       expect(Math.abs(read.title - wide.line), `title ${String(read.title)}`).toBeLessThanOrEqual(0.5);
       expect(Math.abs(read.transcript - wide.line), `transcript ${String(read.transcript)}`).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(read.cardText - wide.line), `card ${String(read.cardText)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.transcriptRight - wide.right), `transcript right ${String(read.transcriptRight)}`).toBeLessThanOrEqual(0.5);
+      // The card is the column's width, no wider.
+      expect(Math.abs(read.card - wide.line), `card ${String(read.card)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.cardRight - wide.right), `card right ${String(read.cardRight)}`).toBeLessThanOrEqual(0.5);
+      // Centred in the room: as far from the chats' 248 as from her panel.
+      expect(Math.abs(read.transcript - 248 - (wide.size.width - 280 - read.transcriptRight))).toBeLessThanOrEqual(0.5);
       expect(read.foot).toBeCloseTo(wide.foot, 1);
       // Her panel at the right edge, flush under the header, 280 wide.
       const column = (await page.locator(COLUMN).boundingBox()) as Box;
