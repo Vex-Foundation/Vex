@@ -125,7 +125,7 @@ describe("the composer is a framed box on the column (section 6.5; owner decisio
       "padding-bottom: 24px;",
     );
     expect(rule(flat("composer.css"), `.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] ${SHELL_DOCK}`)).toBe(
-      "align-self: stretch; width: auto; margin-inline: 16px;",
+      "width: calc(var(--vex-chat-track) - 32px); margin-inline: 16px 0;",
     );
   });
 
@@ -158,7 +158,7 @@ describe("the docked approval band takes the box's seat (section 6.5; owner deci
     ).toBe("padding-bottom: 24px;");
     expect(
       rule(approval, '.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] [data-vex-session-surface="shell"] .vex-appr-dock'),
-    ).toBe("align-self: stretch; width: auto; margin-inline: 16px;");
+    ).toBe("width: calc(var(--vex-chat-track) - 32px); margin-inline: 16px 0;");
   });
 
   it("frames the band as the box: the card ground in the chosen rule, the decision row the box's 56", () => {

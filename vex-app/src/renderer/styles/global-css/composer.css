@@ -403,9 +403,8 @@ html[data-still] .vex-starter-grid {
 .vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"]
   [data-vex-area="session-panel"][data-vex-session-surface="shell"]
   [data-vex-composer-dock] {
-  align-self: stretch;
-  width: auto;
-  margin-inline: 16px;
+  width: calc(var(--vex-chat-track) - 32px);
+  margin-inline: 16px 0;
 }
 /* The live-step row and the queue sit on the box's top rule, their own
  * sides in the box's chosen rule, so they read as its head (a mission paused

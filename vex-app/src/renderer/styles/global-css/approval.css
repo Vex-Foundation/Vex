@@ -872,9 +872,8 @@
   padding-bottom: 24px;
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] [data-vex-session-surface="shell"] .vex-appr-dock {
-  align-self: stretch;
-  width: auto;
-  margin-inline: 16px;
+  width: calc(var(--vex-chat-track) - 32px);
+  margin-inline: 16px 0;
 }
 .vex-shell-frame[data-vex-frame="h3"] [data-vex-session-surface="shell"] .vex-appr__foot[data-docked] {
   background: var(--vex-alias-card);
