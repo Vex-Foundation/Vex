@@ -1770,3 +1770,109 @@ html[data-still] .vex-trace-head__chev {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* THE NEXT-STEP BAR (docs/design/H3-DESKTOP.md section 5.10;
+ * `MissionControls/MissionNextStepBar.tsx`). The mission's one next step under
+ * Vex's answer, on the reading column: a ruled cell on the card ground, square,
+ * no shadow, no glow, no blur. On the left the blinking state square, the caps
+ * eyebrow and one line in ink 2; on the right the action as a full height key
+ * cell, at least 200 wide, its own edge laid over the bar's rule. Its blue is
+ * the primary key's alone (the Button's variant), and while a money card waits
+ * in the chat the key is the ink key instead. */
+.vex-next-step {
+  container-type: inline-size;
+  background: var(--vex-alias-card);
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-next-step__row {
+  display: flex;
+  align-items: stretch;
+}
+.vex-next-step__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 24px;
+}
+.vex-next-step__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-next-step__line {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-next-step__more {
+  margin-top: 4px;
+}
+.vex-next-step__key {
+  flex: none;
+  align-self: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 200px;
+  height: auto;
+  min-height: 44px;
+  margin: -1px -1px -1px 0;
+}
+.vex-next-step__key:focus-visible {
+  outline-offset: -2px;
+}
+.vex-next-step__arrow {
+  flex: none;
+}
+/* A narrow reading column: the key takes the bar's foot, full width. */
+@container (max-width: 480px) {
+  .vex-next-step__row {
+    flex-direction: column;
+  }
+  .vex-next-step__key {
+    margin: 0 -1px -1px;
+  }
+}
+
+/* THE RISE: on the bar's first appearance the key's blue rises once from its
+ * foot over the push step (MOTION-POLICY.md, "The next-step bar's rise"), a
+ * layer under the word that covers the key's edge too, then the layer goes
+ * (its animationend) and the key rests on its own blue. While it rises the key
+ * stands on the card ground in the chosen rule, so the fill is what arrives.
+ * A transform only. Reduced motion and Save-Data never start it (JS reads the
+ * still frame); should one land mid-rise, the layer stands full at once. */
+.vex-next-step__key[data-vex-rise] {
+  border-color: var(--vex-alias-rule-chosen);
+  background-color: var(--vex-alias-card);
+}
+.vex-next-step__rise {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  background: var(--vex-alias-button-accent-fill);
+  transform-origin: bottom;
+  animation: vex-next-step-rise var(--vex-duration-vex-open) var(--vex-ease-push) both;
+  pointer-events: none;
+}
+@keyframes vex-next-step-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-next-step__rise {
+    animation: none;
+  }
+}
+html[data-still] .vex-next-step__rise {
+  animation: none;
+}

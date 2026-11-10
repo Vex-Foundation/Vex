@@ -74,7 +74,8 @@ export const DURATION_REVEAL_MS = 300;
 /**
  * Kimm's section opening: the clip-path wipe from the 56px strip down to her
  * foot, with her 32px drop, on `EASE_PUSH`. A named exception to the scale
- * (MOTION-POLICY.md), printed on the mockup's open strip.
+ * (MOTION-POLICY.md), printed on the mockup's open strip. The next-step
+ * bar's rise reads its CSS twin too (H3-DESKTOP.md section 5.10).
  * CSS: `--vex-duration-vex-open`.
  */
 export const DURATION_VEX_OPEN_MS = 720;
@@ -202,8 +203,9 @@ export const EASE_OUT = [0.25, 1, 0.5, 1] as const;
 export const EASE_INOUT = [0.76, 0, 0.24, 1] as const;
 
 /**
- * The push curve, Kimm's section and the chats panel only
- * (docs/design/H3-DESKTOP.md sections 3.1 and 4.12): derived from the clip insets the mockup prints on its open and close
+ * The push curve, Kimm's section, the chats panel, the toast's arrival and
+ * the next-step bar's rise only (docs/design/H3-DESKTOP.md sections 3.1,
+ * 4.12, 5.1 and 5.10): derived from the clip insets the mockup prints on its open and close
  * strips, which it reproduces to the printed digits. CSS mirror:
  * `--vex-ease-push`.
  */

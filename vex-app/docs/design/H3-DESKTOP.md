@@ -842,6 +842,21 @@ VEX Cloud's tabs (`components/ui/underline-tabs.tsx`, `styles/rows.css`, DG-2 se
 - **The loader gate** (`LoaderGate`, `components/brand/`, `ui-primitives/gate.css`) is VEX Cloud's (its CTR/brand contract section 3, DG-3 shell.css section 9), ported as a primitive (owner approval 2026-11-08): the VEX mark 200 wide at 1440 (clamp(120px, 14vw, 200px)) drawn twice, the base at 8% white and the fill in white clipped from the right as real progress arrives; the word 11 caps in muted, 22 under the mark; a row of max(18, round(width / 22)) upright cells on the frame's foot line, off 3%, lit 20%, the head 42%; the slow line or a failure hung under the mark, out of flow. The count walks toward what has arrived at one speed (the whole bar in 2.4 s) and never past it; a full bar rests 320ms, the gate fades in 600ms while the mark lifts out to 96% (MOTION-POLICY.md); after 12 s it completes whatever has arrived. The gate's ground is the black primitive (Cloud's oklch(5% 0.006 264) is #000001, one step away). The gate's art is code (the mark's path and CSS): no file joins the brand asset registry.
 - **Not mounted.** Desktop's boot is the approved wake plate (`ChronosGate`, section 4.9), which the gate does not replace. Open: whether the gate stands anywhere on desktop (the wake, a window's first paint) is the owner's call.
 
+### 5.10 The next-step bar
+Owner decision, 2026-11-10 ("Next-step bar"): in a mission chat with no run, the mission's one next step stands under Vex's answer as a bar, so it no longer reads as a stray outline key (`MissionControls/MissionNextStepBar.tsx`, chat-transcript.css).
+- **The bar.** One ruled cell on the reading column (section 6.6): the card ground in the 7% rule, square, no shadow, no glow, no blur. On the left, 16 24 in: the state square and the eyebrow in caps 11. While the mission moves toward a run (MISSION READY, CONTRACT ACCEPTED) the square is the running square, which blinks (section 2.2; still as half a square under reduced motion and Save-Data); MISSION ENDED runs nothing, so its square is the still target (your move); under it one line in sentence case at 14 in ink 2. On the right, the action as a key cell the bar's full height, at least 44 high and 200 wide, its own edge laid over the bar's rule: the primary key (the blue, caps 13, the arrow glyph at its end, the rising blue hover of section 2.4). Under a 480 wide column the key takes the bar's foot.
+- **The states,** with the keys' names, gates and presses unchanged:
+
+| State | Eyebrow | Line | Key (its name) |
+|---|---|---|---|
+| a ready draft waiting for acceptance, the turn settled | MISSION READY | Review the contract, then accept it to start the run. | REVIEW & ACCEPT CONTRACT, opens the contract |
+| an accepted contract, no run | CONTRACT ACCEPTED | Nothing runs until you start it. | START MISSION, starts the run |
+| a terminal accepted mission, no draft | MISSION ENDED | Renew drafts a new contract; it runs only after you accept it. | RENEW MISSION, clones it into a draft; "Tell Vex what to do differently" stands under the line as its quiet link |
+
+- **The one blue.** A money card waiting in the chat owns the view's blue: while one waits (the chat's pending approvals, a desk row aside, as the composer's frame reads them), the key is the ink key and does not rise.
+- **The rise.** On the bar's first appearance for a state of a mission, the key's blue rises once from its foot in 720ms on the push curve, a layer under the word, then rests (MOTION-POLICY.md). Remembered for the app's run: a re-render, a remount or a return to the chat never plays it again. Reduced motion and Save-Data: no rise, the key simply stands blue; a held key never rises.
+- A refusal's notice stands under the bar; a contract waiting on Vex keeps its standing notice (it is a notice, not a next step of the person's). The run's own keys (Continue, Edit contract, Stop mission) stay in the composer's mission strip and Recover in the paused callout.
+
 ---
 
 ## 6. D2: Vex's column at the right edge

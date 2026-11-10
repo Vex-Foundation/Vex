@@ -67,6 +67,9 @@ const STATES = [
   "swap-waiting",
   "approval-kinds",
   "filled",
+  // A mission chat with its contract drafted: the next-step bar
+  // (H3-DESKTOP.md section 5.10).
+  "mission-ready",
   "portfolio",
   // The pages H3 draws no plate for, in the page frame (H3-DESKTOP.md
   // section 4.9): captured so the owner's plates can be judged against them.
