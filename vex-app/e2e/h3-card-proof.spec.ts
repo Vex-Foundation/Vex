@@ -254,6 +254,18 @@ function bottomInset(clip: string, height: number, zoom = 1): number {
   return Number.parseFloat(bottom) * zoom;
 }
 
+/**
+ * The Vex toggle's chord as the app announces it (`aria-keyshortcuts` on its
+ * key). The app reads its platform from the window's user agent, which the
+ * harness sets per `?os=` (a Mac by default), so the chord is the page's, never
+ * the machine's that runs the browser: a Linux CI runner still presses Cmd.
+ */
+async function appChord(page: Page): Promise<string> {
+  const chord = await page.locator('[aria-keyshortcuts$="Shift+B"]').first().getAttribute("aria-keyshortcuts");
+  expect(chord, "the Vex key announces its chord").toMatch(/^(Meta|Control)\+Shift\+B$/);
+  return chord ?? "";
+}
+
 async function cardBox(page: Page): Promise<Box> {
   const box = await page.locator(CARD).boundingBox();
   expect(box).not.toBeNull();
@@ -676,7 +688,7 @@ test.describe("H3 card proof under 1024: the band never moves a waiting card", (
       }
     }
     // The chord, from anywhere: the same rest.
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B");
+    await page.keyboard.press(await appChord(page));
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
     expect(await cardBox(page)).toEqual(card);
@@ -959,7 +971,7 @@ test.describe("D2 card proof: a waiting money card never moves when Vex hides or
       expect(turned.at(-1)?.shown).toBe("true");
 
       // 3. The chord, from anywhere: the same, the card standing.
-      const chord = process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B";
+      const chord = await appChord(page);
       for (const shown of ["false", "true"]) {
         await page.keyboard.press(chord);
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
