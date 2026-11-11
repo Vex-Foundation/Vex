@@ -55,7 +55,10 @@ function seamFiles(): string[] {
 }
 
 /** Every piece of the shipped set with the file it is drawn from. */
-function shippedPieces(): ReadonlyArray<{ readonly file: string; readonly art: KimmArt<object> }> {
+function shippedPieces(): ReadonlyArray<{
+  readonly file: string;
+  readonly art: KimmArt<KimmImage> | KimmArt<KimmPortraitCell>;
+}> {
   return [
     ...KIMM_MOODS.map((mood) => ({ file: KIMM_FILES.chips[KIMM_ART_MOOD[mood]], art: KIMM_SHIPPED_ART.portraits[mood] })),
     ...KIMM_MOODS.map((mood) => ({ file: KIMM_FILES.stills[KIMM_ART_MOOD[mood]], art: KIMM_SHIPPED_ART.sections[mood] })),
@@ -139,8 +142,7 @@ describe("the brand asset registry", () => {
       const entry = KIMM_BRAND_ASSETS.find((candidate) => candidate.file === file);
       expect(entry?.format).toBe("webp");
       expect(entry?.awaited).toBeUndefined();
-      const piece = art as unknown as Partial<KimmPortraitCell & KimmImage>;
-      const size = !isKimmArtReady(art) ? null : (piece.sheet ?? piece);
+      const size = art.state !== "ready" ? null : "sheet" in art ? art.sheet : art;
       expect({ file, width: size?.width, height: size?.height }).toEqual({
         file,
         width: entry?.width,

@@ -256,10 +256,11 @@ describe("readHistory - the preload method", () => {
   });
 
   it("refuses a malformed request in preload without invoking main", async () => {
-    const result = await portfolio.readHistory({
-      range: "90d",
-      wallets: { scope: "global" },
-    } as unknown as Parameters<typeof portfolio.readHistory>[0]);
+    // A stray key the strict input schema refuses; held in a variable, so the
+    // compiler's excess-property check lets it reach the method, as a caller
+    // outside the type system could.
+    const input = { range: "7d" as const, wallets: { scope: "global" as const }, unrecognized: true };
+    const result = await portfolio.readHistory(input);
 
     expect(result).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
     expect(mocks.invoke).not.toHaveBeenCalled();

@@ -17,13 +17,14 @@ interface Call {
 function fakeElement(): { readonly el: HTMLElement; readonly calls: Call[] } {
   const calls: Call[] = [];
   const el = document.createElement("div");
-  (el as unknown as { animate: unknown }).animate = (
-    keyframes: readonly Record<string, string | number>[],
-    options: KeyframeAnimationOptions,
-  ) => {
-    calls.push({ keyframes, options });
-    return {} as Animation;
-  };
+  // jsdom has no Web Animations; the fake stands on the element itself.
+  Object.defineProperty(el, "animate", {
+    configurable: true,
+    value: (keyframes: readonly Record<string, string | number>[], options: KeyframeAnimationOptions) => {
+      calls.push({ keyframes, options });
+      return {};
+    },
+  });
   return { el, calls };
 }
 

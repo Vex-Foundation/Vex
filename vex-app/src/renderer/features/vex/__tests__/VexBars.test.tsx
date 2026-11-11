@@ -140,6 +140,8 @@ function frame(ms: number): void {
   });
 }
 
+const ORIGINAL_GET_CONTEXT = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+
 beforeEach(() => {
   still.current = false;
   hidden = false;
@@ -168,23 +170,28 @@ beforeEach(() => {
   });
   Object.defineProperty(HTMLCanvasElement.prototype, "clientWidth", { configurable: true, get: () => 432 });
   Object.defineProperty(HTMLCanvasElement.prototype, "clientHeight", { configurable: true, get: () => 72 });
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
-    () =>
-      ({
-        setTransform: () => undefined,
-        clearRect: () => {
-          paints += 1;
-        },
-        fillRect: () => {
-          rects += 1;
-        },
-        fillStyle: "",
-        globalAlpha: 1,
-      }) as unknown as CanvasRenderingContext2D,
-  );
+  // jsdom draws no 2D canvas; a fake context counts the paints. Installed on
+  // the prototype by its descriptor and restored after each case.
+  Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+    configurable: true,
+    value: () => ({
+      setTransform: () => undefined,
+      clearRect: () => {
+        paints += 1;
+      },
+      fillRect: () => {
+        rects += 1;
+      },
+      fillStyle: "",
+      globalAlpha: 1,
+    }),
+  });
 });
 
 afterEach(() => {
+  if (ORIGINAL_GET_CONTEXT !== undefined) {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", ORIGINAL_GET_CONTEXT);
+  }
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
