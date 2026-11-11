@@ -90,8 +90,10 @@ interface RenderOptions {
   readonly onCreateProject?: () => void;
   readonly registry?: ExplorerRegistry;
   readonly strict?: boolean;
-  /** Render the 56px icon spine instead of the wide column. */
+  /** Render the 76px icon rail instead of the wide column. */
   readonly collapsed?: boolean;
+  /** The rail can open (false: under 1024, the drawer's rail). */
+  readonly expandable?: boolean;
   readonly onToggleSidebar?: () => void;
 }
 
@@ -104,6 +106,7 @@ function renderSidebar(options: RenderOptions = {}): QueryClient {
     <QueryClientProvider client={client}>
       <StudioSidebar
         collapsed={options.collapsed ?? false}
+        expandable={options.expandable ?? true}
         onToggleSidebar={options.onToggleSidebar ?? (() => undefined)}
         activeProjectId={options.activeProjectId ?? null}
         onSelectProject={options.onSelectProject ?? (() => undefined)}
@@ -192,7 +195,7 @@ describe("the project rows", () => {
     expect(otherRow?.querySelector(".vex-swatch")).toBeNull();
   });
 
-  it("shows full access and keeps restricted as an accessible description", async () => {
+  it("says each project's access in its description, with no tag on the row", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
       data: [
@@ -204,9 +207,30 @@ describe("the project rows", () => {
     await screen.findByText("restricted-one");
     expect(screen.queryByText("restricted")).toBeNull();
     expect(screen.getByText("restricted-one").closest("button")?.getAttribute("aria-description")).toBe("Restricted");
-    // The outlined tag (caps are painted by the tag; the source is sentence case).
-    const tag = screen.getByText("Full access");
-    expect(tag.classList.contains("vex-tag")).toBe(true);
+    // Our approved Studio plate draws no access tag on a row: full access is
+    // said in the row's description (and its tooltip), the header's line and
+    // the console's This project.
+    expect(screen.queryByText("Full access")).toBeNull();
+    expect(screen.getByText("full-one").closest("button")?.getAttribute("aria-description")).toContain(
+      "Full access permits supported wallet actions without per-call approval.",
+    );
+  });
+
+  it("puts the 36 rows under the 44 PROJECTS head and bounds the list at three", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: ["vex-core", "trading-agent", "wallet-tools", "notes"].map((name) => makeProject({ name })),
+    });
+    renderSidebar();
+    await screen.findByText("vex-core");
+    const head = screen.getByRole("heading", { name: "Projects" });
+    expect(head.className).toBe("vex-st-head");
+    expect(screen.queryByText("notes")).toBeNull();
+    const more = screen.getByRole("button", { name: "Show all 4" });
+    expect(more.className).toBe("vex-st-more");
+    fireEvent.click(more);
+    expect(screen.getByText("notes")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Show fewer" })).not.toBeNull();
   });
 
   it.each([
@@ -328,13 +352,71 @@ describe("the row action menu", () => {
 });
 
 describe("the other sections", () => {
-  it("the WELCOME row selects null and is current when nothing is active", async () => {
+  it("the Studio row, pressed where it is current, returns to the welcome", async () => {
+    const { useUiStore } = await import("../../../../../stores/uiStore.js");
+    useUiStore.setState({ runtimeMode: "studio", shellRoute: { kind: "none" } });
     const onSelectWelcome = vi.fn();
-    renderSidebar({ activeProjectId: null, onSelectWelcome });
-    const welcome = await screen.findByRole("button", { name: /Welcome/ });
-    expect(welcome.getAttribute("aria-current")).toBe("true");
-    fireEvent.click(welcome);
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: project.id, onSelectWelcome });
+    await screen.findByTestId("explorer-tree");
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const studio = within(nav).getByRole("button", { name: "Studio" });
+    expect(studio.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(studio);
     expect(onSelectWelcome).toHaveBeenCalledTimes(1);
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+  });
+
+  it("the Studio row over a page closes the page and keeps the project", async () => {
+    const { useUiStore } = await import("../../../../../stores/uiStore.js");
+    useUiStore.setState({
+      runtimeMode: "studio",
+      shellRoute: { kind: "agentScan", origin: null, sessionId: null },
+    });
+    const onSelectWelcome = vi.fn();
+    renderSidebar({ onSelectWelcome });
+    await screen.findByText("No projects yet.");
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    fireEvent.click(within(nav).getByRole("button", { name: "Studio" }));
+    expect(useUiStore.getState().shellRoute.kind).toBe("none");
+    expect(onSelectWelcome).not.toHaveBeenCalled();
+  });
+
+  it("folds the nav to its Studio row, and the chevron unfolds the nine rows in place", async () => {
+    const { useUiStore } = await import("../../../../../stores/uiStore.js");
+    useUiStore.setState({ runtimeMode: "studio", shellRoute: { kind: "none" } });
+    renderSidebar();
+    await screen.findByText("No projects yet.");
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(nav).getByRole("button", { name: "Studio" })).not.toBeNull();
+    const unfold = within(nav).getByRole("button", { name: "Show every page" });
+    expect(unfold.getAttribute("aria-expanded")).toBe("false");
+    // The key is the row's sibling, never inside its button.
+    expect(unfold.closest(".vex-ls-nrow")).toBeNull();
+    fireEvent.click(unfold);
+    expect(within(nav).getAllByRole("listitem")).toHaveLength(9);
+    const fold = within(nav).getByRole("button", { name: "Show Studio alone" });
+    expect(fold.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(fold);
+    expect(within(nav).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("New project takes the New chat cell and Search files the search cell", async () => {
+    const onCreateProject = vi.fn();
+    renderSidebar({ onCreateProject });
+    await screen.findByText("No projects yet.");
+    const create = screen.getByRole("button", { name: "New project" });
+    expect(create.className).toContain("vex-ls-nrow--new");
+    fireEvent.click(create);
+    expect(onCreateProject).toHaveBeenCalledTimes(1);
+    const search = screen.getByRole("button", { name: "Search projects and files" });
+    expect(search.className).toContain("vex-ls-nrow--search");
+    expect(search.textContent).toBe("Search files");
+    // The agent column's New chat is not Studio's: the nav's Chat row is the way back.
+    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Welcome/ })).toBeNull();
   });
 
   it("the EXPLORER section names the active project and mounts its tree", async () => {
@@ -346,15 +428,14 @@ describe("the other sections", () => {
     expect(screen.getByTestId("explorer-tree").getAttribute("data-project")).toBe(
       project.id,
     );
-    // One head line says the section and the folder: "Explorer · vex-core"
-    // (docs/design/R3-MINIMAL.md section 4), VS Code's own view-pane title
-    // (`explorerView.ts:250`) in the left sidebar's group head register.
+    // EXPLORER, the pane's 44 head (our approved Studio plate): the section
+    // alone, since the open project's name is the header's title cell.
     const pane = screen
       .getByTestId("explorer-tree")
       .closest('[data-vex-rail-pane="explorer"]');
     expect(pane).not.toBeNull();
     const head = pane?.querySelector("h2");
-    expect(head?.textContent).toBe("Explorer · vex-core");
+    expect(head?.textContent).toBe("Explorer");
     expect(head?.className).toContain("vex-st-xhead__t");
   });
 
@@ -466,21 +547,10 @@ describe("the other sections", () => {
 
     const nav = screen.getByRole("navigation", { name: "Main" });
     expect(within(nav).getByRole("button", { name: "Studio" }).getAttribute("aria-current")).toBe("page");
+    // The nav stands folded to its Studio row; one press unfolds the way out.
+    fireEvent.click(within(nav).getByRole("button", { name: "Show every page" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Chat" }));
     expect(useUiStore.getState().runtimeMode).toBe("agent");
-  });
-
-  it("New chat goes back to the agent shell and opens the new session form", async () => {
-    const { useUiStore } = await import("../../../../../stores/uiStore.js");
-    useUiStore.setState({
-      runtimeMode: "studio",
-      shellRoute: { kind: "none" },
-      createSessionOpen: false,
-    });
-    renderSidebar();
-    fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
-    expect(useUiStore.getState().runtimeMode).toBe("agent");
-    expect(useUiStore.getState().createSessionOpen).toBe(true);
   });
 
   it("keeps the WIDE projects section wide with NO project open: the title, the row, the words", async () => {
@@ -502,10 +572,11 @@ describe("the other sections", () => {
     expect(row?.getAttribute("aria-description")).toBe("Restricted");
     const header = screen.getByText("Projects");
     expect(header.tagName.toLowerCase()).toBe("h2");
-    expect(header.classList.contains("vex-ls-group")).toBe(true);
+    expect(header.classList.contains("vex-st-head")).toBe(true);
     // The rest of the wide chrome rides the same fact: the nav, and Settings
-    // in it, stay reachable beside the welcome screen.
+    // in it once unfolded, stay reachable beside the welcome screen.
     const nav = screen.getByRole("navigation", { name: "Main" });
+    fireEvent.click(within(nav).getByRole("button", { name: "Show every page" }));
     expect(within(nav).getByRole("button", { name: "Settings" })).not.toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
   });
@@ -890,52 +961,83 @@ describe("the collapsed rail", () => {
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     renderSidebar({ collapsed: true, activeProjectId: project.id });
 
-    // Wait for the ROW first: the spine with nothing loaded in it is trivially
-    // wordless, and that is not the state B4 was about.
-    expect(await screen.findByRole("button", { name: /vex-core/ })).not.toBeNull();
-
-    // The one structural assertion that covers the whole spine: a rail whose
-    // text is a truncated section title fails here whatever the title is.
+    // The rail's cells, in the open column's order: Expand, New project,
+    // Search, the nine nav keys. It lists no project: the column (or under
+    // 1024 the drawer) does.
+    expect(await screen.findByRole("button", { name: "New project" })).not.toBeNull();
     const rail = screen.getByLabelText("Studio projects sidebar");
     expect(rail.textContent?.trim()).toBe("");
     for (const word of WIDE_WORDS) expect(screen.queryByText(word)).toBeNull();
+    expect(screen.queryByRole("button", { name: /vex-core/ })).toBeNull();
 
-    // ...and every control the user reaches for is still reachable by name.
-    expect(screen.getByRole("button", { name: "New project" })).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "Search projects and files" }),
     ).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "Expand Studio sidebar" }),
     ).not.toBeNull();
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getAllByRole("button")).toHaveLength(9);
+    // The drawer's key is the band's: this rail can open into the column.
+    expect(screen.queryByRole("button", { name: "Projects and files" })).toBeNull();
   });
 
-  it("renders no disclosure chevron and no explorer pane on the spine", async () => {
+  it("renders no disclosure chevron and no explorer pane on the rail", async () => {
     const project = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     renderSidebar({ collapsed: true, activeProjectId: project.id });
-    await screen.findByRole("button", { name: /vex-core/ });
+    await screen.findByRole("button", { name: "New project" });
 
-    // The disclosure itself, not just its title: the chevron is the other half
-    // of what bled into the spine.
     expect(document.querySelector(".vex-disclosure-root")).toBeNull();
-    // The tree needs width the spine does not have; the pane is wide-only.
+    // The tree needs width the rail does not have; the pane is wide-only.
     expect(screen.queryByTestId("explorer-tree")).toBeNull();
     expect(screen.queryByRole("separator")).toBeNull();
   });
 
-  it("states a failed read as a NAMED glyph rather than an unreadable sentence", async () => {
-    // Failure is not emptiness, and it is not silence either. At 56px the
-    // sentence cannot fit, so the spine carries the warning glyph under the
-    // sentence as its accessible name and the words arrive with the expansion.
-    projectsListMock.mockResolvedValue({ ok: false, error: makeError("db down") });
-    renderSidebar({ collapsed: true });
+  it("under 1024 ends in a Projects and files key whose drawer holds the projects and the explorer", async () => {
+    const project = makeProject({ name: "vex-core" });
+    const other = makeProject({ name: "trading-agent" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project, other] });
+    const onSelectProject = vi.fn();
+    renderSidebar({ collapsed: true, expandable: false, activeProjectId: project.id, onSelectProject });
 
-    const status = await screen.findByRole("status", {
-      name: "Vex could not read your projects.",
-    });
-    expect(status).not.toBeNull();
-    expect(status.textContent?.trim()).toBe("");
+    const key = await screen.findByRole("button", { name: "Projects and files" });
+    // The band keeps the rail: no Expand key there.
+    expect(screen.queryByRole("button", { name: "Expand Studio sidebar" })).toBeNull();
+    expect(key.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("region", { name: "Projects and files" })).toBeNull();
+
+    fireEvent.click(key);
+    const drawer = screen.getByRole("region", { name: "Projects and files" });
+    expect(key.getAttribute("aria-expanded")).toBe("true");
+    expect(key.getAttribute("aria-controls")).toBe(drawer.id);
+    expect(drawer.className).toContain("vex-st-drawer");
+    expect(within(drawer).getByRole("heading", { name: "Projects" })).not.toBeNull();
+    expect(await within(drawer).findByTestId("explorer-tree")).not.toBeNull();
+
+    // Escape closes it ...
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Projects and files" })).toBeNull();
+    // ... the key does ...
+    fireEvent.click(key);
+    fireEvent.click(key);
+    expect(screen.queryByRole("region", { name: "Projects and files" })).toBeNull();
+    // ... and so does a pick.
+    fireEvent.click(key);
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Projects and files" })).getByText("trading-agent"),
+    );
+    expect(onSelectProject).toHaveBeenCalledWith(other.id);
+    expect(screen.queryByRole("region", { name: "Projects and files" })).toBeNull();
+  });
+
+  it("states a failed read in the drawer, in words, with Retry", async () => {
+    projectsListMock.mockResolvedValue({ ok: false, error: makeError("db down") });
+    renderSidebar({ collapsed: true, expandable: false });
+    fireEvent.click(await screen.findByRole("button", { name: "Projects and files" }));
+    const drawer = screen.getByRole("region", { name: "Projects and files" });
+    expect(await within(drawer).findByText("Vex could not read your projects.")).not.toBeNull();
+    expect(within(drawer).getByRole("button", { name: "Retry" })).not.toBeNull();
   });
 
   it("the magnifier EXPANDS the rail first - a field has no room on the spine", async () => {
@@ -1529,7 +1631,7 @@ describe("the paper rail", () => {
     const heads = screen.getAllByRole("heading", { level: 2 });
     expect(heads.map((head) => head.textContent)).toEqual([
       "Projects",
-      "Explorer · vex-core",
+      "Explorer",
     ]);
   });
 });

@@ -7,6 +7,7 @@
 
 import type { AgentScanFilters } from "@shared/schemas/agent-scan-feed.js";
 import type { PortfolioReadInput } from "@shared/schemas/portfolio.js";
+import type { PortfolioHistoryInput } from "@shared/schemas/portfolio-history.js";
 
 export const systemKeys = {
   all: ["system"] as const,
@@ -248,6 +249,21 @@ export const portfolioKeys = {
   readWallet: (walletAddress: string) =>
     ["portfolio", "wallet", walletAddress] as const,
   /**
+   * The wallet total over time (`vex.portfolio.readHistory`): a `history`
+   * segment no other portfolio key uses, the range, then the WHOLE scope
+   * input (TanStack hashes the object by value). Two consequences, both
+   * deliberate:
+   *
+   *  - two scopes or two ranges never share a cache row, for the reason
+   *    `read` documents above (a shared row hands one scope another's money),
+   *    and a new scope arm is keyed by its own fields without a change here;
+   *  - the key starts with `portfolio`, so the activity-push invalidations and
+   *    the refresh button, which all target `portfolioKeys.all` as a prefix,
+   *    re-read the history in the same breath as the total it must agree with.
+   */
+  history: (input: PortfolioHistoryInput) =>
+    ["portfolio", "history", input.range, input.wallets] as const,
+  /**
    * Token history (chronos-shell) — the global-scope per-token TX history
    * screen. Keyed by the exact `(chainId, tokenAddress)` identity so
    * switching tokens (or re-opening the same one) hits a distinct/reused
@@ -330,17 +346,6 @@ export const imageKeys = {
   all: ["images"] as const,
   list: () => ["images", "list"] as const,
   thumb: (imageId: string) => ["images", "thumb", imageId] as const,
-};
-
-/**
- * The user's own backdrop under the glass shell. ONE key: there is exactly
- * one backdrop per installation, so `current` is the whole surface. The shell
- * wall and the Settings row read the same entry, and a pick or clear writes
- * the new record straight into it - one source of truth in the cache.
- */
-export const shellBackdropKeys = {
-  all: ["shell-backdrop"] as const,
-  current: () => ["shell-backdrop", "current"] as const,
 };
 
 /**

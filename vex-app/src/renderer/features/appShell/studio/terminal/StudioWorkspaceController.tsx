@@ -81,9 +81,11 @@ import {
   nextTerminalTitle,
   renumberTerminalTabs,
   shellLabelsOf,
+  terminalGroupIsLive,
   type TerminalExit,
   type TerminalRunFacts,
 } from "./terminal-tab-model.js";
+import { clearProjectLive, publishProjectLive } from "../workspace/project-live.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import {
   focusActiveTerminal,
@@ -1733,6 +1735,19 @@ export function StudioWorkspaceController({
     () => ({ lostTerminalIds, exits, restoring }),
     [lostTerminalIds, exits, restoring],
   );
+
+  // The sidebar's RUNNING tag (`workspace/project-live.ts`): whether any of
+  // this workspace's shells is still live, by the same rule its tab squares
+  // read. Cleared on unmount, when the workspace and its shells are gone.
+  useEffect(() => {
+    publishProjectLive(
+      projectId,
+      state.tabs.some((tab) => tab.kind === "terminalGroup" && terminalGroupIsLive(tab, runFacts)),
+    );
+  }, [projectId, state.tabs, runFacts]);
+  useEffect(() => () => {
+    clearProjectLive(projectId);
+  }, [projectId]);
 
   const handleClosePane = useCallback(
     (tabId: string, paneId: string): void => {

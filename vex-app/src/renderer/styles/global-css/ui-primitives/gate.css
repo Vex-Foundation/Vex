@@ -1,0 +1,201 @@
+/* ── The loader gate ─────────────────────────────────────────────────────────
+ * VEX Cloud's `.vx-gate` (`styles/brand.css`, its CTR/brand contract section
+ * 3, DG-3 shell.css section 9; docs/design/H3-DESKTOP.md section 5.9): the
+ * ground, the mark twice, the word, a row of upright cells on the frame's
+ * foot line. `LoaderGate` (components/brand/) writes the fill's clip a frame
+ * at a time; only opacity and transform move here.
+ *
+ * Cloud's colours are the gate's own: the ground oklch(5% 0.006 264), which
+ * is #000001, one sRGB step from the black primitive desktop paints instead;
+ * the cells white at 3% off, 20% lit and 42% the head; the base mark white
+ * at 8%. The exit rides desktop's curves (Cloud's --vx-ease-ease fade on
+ * the standard curve, its --vx-ease-gate lift, cubic-bezier(0.77, 0, 0.18,
+ * 1), on the in-out curve, (0.76, 0, 0.24, 1), the nearest of the family:
+ * MOTION-POLICY admits no sixth). */
+.vex-gate {
+  --vex-gate-off: var(--vex-alias-loader-off);
+  --vex-gate-on: var(--vex-alias-loader-on);
+  --vex-gate-head: var(--vex-alias-loader-head);
+  --vex-gate-base: var(--vex-alias-loader-base);
+  /* The frame's foot line: the bottom row (72) times the wide zoom, and its
+   * rule, so the gate hands over to the foot. */
+  --vex-gate-foot: var(--vex-h3-foot, calc(72px * var(--vex-zoom, 1) + 1px));
+
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--vex-gate-foot);
+  background-color: var(--vex-alias-loader-plate);
+  color: var(--vex-alias-label-primary);
+  transition: opacity var(--vex-duration-gate-fade) var(--vex-ease-standard);
+}
+
+.vex-gate__main {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 0 24px;
+}
+
+.vex-gate__col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  align-items: center;
+}
+
+/* 200 wide at 1440 (14vw), 120 at the least; the box is the mark's own
+ * 176 x 140. The base and the fill are the same mark, one over the other. */
+.vex-gate__mark {
+  position: relative;
+  display: block;
+  width: clamp(120px, 14vw, 200px);
+  aspect-ratio: 176 / 140;
+  transition:
+    transform var(--vex-duration-gate-mark) var(--vex-ease-inout),
+    opacity var(--vex-duration-gate-mark-fade) var(--vex-ease-standard);
+}
+
+.vex-gate__base,
+.vex-gate__fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.vex-gate__base {
+  color: var(--vex-gate-base);
+}
+
+.vex-gate__fill {
+  color: var(--vex-alias-loader-ink);
+}
+
+.vex-gate__svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.vex-gate__word {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The slow line and a failure hang under the mark, out of flow, so the mark
+ * does not move when they land. */
+.vex-gate__note {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 48px));
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: pretty;
+  color: var(--vex-alias-label-secondary);
+  transform: translateX(-50%);
+}
+
+.vex-gate[data-failed] .vex-gate__note {
+  margin-top: 22px;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The cells: n = max(18, round(width / 22)), 3 apart. Before they are drawn
+ * a gradient of the same pitch stands in; no transition (the head moves a
+ * cell at a time). */
+.vex-gate__cells {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  background: repeating-linear-gradient(90deg, var(--vex-gate-off) 0 19px, transparent 19px 22px);
+}
+
+.vex-gate__cells[data-drawn] {
+  background: none;
+}
+
+.vex-gate__cell {
+  background-color: var(--vex-gate-off);
+}
+
+.vex-gate__cell[data-state="on"] {
+  background-color: var(--vex-gate-on);
+}
+
+.vex-gate__cell[data-state="head"] {
+  background-color: var(--vex-gate-head);
+}
+
+/* A failure stops the count where it stood: the head rests like the others. */
+.vex-gate[data-failed] .vex-gate__cell[data-state="head"] {
+  background-color: var(--vex-gate-on);
+}
+
+/* The hand-over: the gate fades, the mark lifts out to 96% and fades faster. */
+.vex-gate[data-vex-gate-phase="out"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vex-gate[data-vex-gate-phase="out"] .vex-gate__mark {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* Reduced motion and Save-Data: the component leaves at once; nothing here
+ * transitions either. */
+@media (prefers-reduced-motion: reduce) {
+  .vex-gate,
+  .vex-gate__mark {
+    transition: none;
+  }
+}
+
+html[data-still] .vex-gate,
+html[data-still] .vex-gate__mark {
+  transition: none;
+}
+
+/* Forced colours drop the fills: the mark keeps its two tones and the cells
+ * a frame, in the system colours. */
+@media (forced-colors: active) {
+  .vex-gate__cell {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .vex-gate__base {
+    forced-color-adjust: none;
+    color: GrayText;
+  }
+
+  .vex-gate__fill {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+
+  .vex-gate__cell[data-state="on"],
+  .vex-gate__cell[data-state="head"] {
+    background-color: CanvasText;
+  }
+}

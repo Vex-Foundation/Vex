@@ -1,7 +1,10 @@
 /**
- * SETTLED THOUGHTS - the turn's finished reasoning segments, stacked above the
- * live row as quiet closed rows (30 high, 13 muted), each opening to the same
- * italic trace as a Reasoned row (docs/design/R3-MINIMAL.md section 6).
+ * SETTLED THOUGHTS - the turn's finished reasoning segments, as the step rows
+ * of the live thinking frame (docs/design/H3-DESKTOP.md section 1.7: the
+ * frame's MODEL rows under its THINKING head). Each is a ruled row, 36 high:
+ * the ink 2 node, "Thought 1" in 14 ink, the chevron at the right; it
+ * opens to the same trace as a Reasoned row. They sit under the frame's head
+ * and above the live trace, in the order they were thought.
  *
  * A turn thinks, calls a tool, reads the result, and thinks again. Owner
  * decree 2026-07-30: each of those bursts is its own thought - "po zakończeniu
@@ -22,10 +25,11 @@
 import { useId, useRef, useState, type JSX } from "react";
 import {
   LineChevronDown,
-  LineChevronRight,
+  LineChevronUp,
 } from "../../../components/icons/line/index.js";
 import { MarkdownContent } from "../../../lib/markdown/MarkdownContent.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
+import { StepNode } from "../ToolLedger/StepNode.js";
 
 function SettledThought({
   text,
@@ -40,6 +44,10 @@ function SettledThought({
   return (
     <div data-vex-reasoning-segment="" className="vex-reasoned--quiet">
       <div className="vex-reasoned__row">
+        {/* H3's step node: the ink 2 square of a finished MODEL row. */}
+        <span aria-hidden className="vex-step__fill">
+          <StepNode state="done" />
+        </span>
         <button
           ref={triggerRef}
           type="button"
@@ -48,13 +56,12 @@ function SettledThought({
           onClick={() => setOpen((v) => !v)}
           className="vex-reasoned__key"
         >
-          {open ? (
-            <LineChevronDown size={14} className="shrink-0" />
-          ) : (
-            <LineChevronRight size={14} className="shrink-0" />
-          )}
           {label}
         </button>
+        <span aria-hidden className="vex-step__spacer" />
+        <span aria-hidden className="vex-reasoned__chev">
+          {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+        </span>
       </div>
       <ExpandRegion
         id={bodyId}

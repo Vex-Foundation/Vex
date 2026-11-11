@@ -26,6 +26,7 @@ function resetStoreToDefaults(): void {
     showAvatar: true,
     welcomeVexShown: true,
     vexInferenceNoticeDismissed: false,
+    kimmHintShown: false,
     bookOpen: true,
     currentView: "splash",
     setupGateActive: true,
@@ -93,15 +94,13 @@ describe("uiStore", () => {
     expect(parsed.state.reviewModal).toBeUndefined();
   });
 
-  it("theme preference defaults to 'system'; the persisted slot is themePreference", () => {
-    // Ratified 2026-08-21: no explicit choice = follow the OS. jsdom has no
-    // matchMedia, so systemPrefersDark() takes its safe-fail DARK branch and
-    // `system` RESOLVES to chronos - the persisted PREFERENCE is what
-    // changed, not the resolved theme here.
+  it("the theme slot holds the one dark room; the persisted slot is themePreference", () => {
+    // H3 is dark only (2026-11-03): the slot outlives the choice so an old
+    // payload coerces, and it can hold nothing but `chronos`.
     expect(useUiStore.getState().theme).toBe("chronos");
     useUiStore.getState().setSidebarOpen(false);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
-    expect(parsed.state.themePreference).toBe("system");
+    expect(parsed.state.themePreference).toBe("chronos");
     expect("theme" in parsed.state).toBe(false);
   });
 
@@ -302,7 +301,7 @@ describe("uiStore", () => {
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed.state).toEqual({
-      themePreference: "system",
+      themePreference: "chronos",
       sidebarOpen: true,
       sidebarWidth: 240,
       bookWidth: 340,
@@ -316,7 +315,7 @@ describe("uiStore", () => {
       // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
       // to come back the size they chose. Its default rides here so a fresh
       // install hydrates into a defined share rather than `undefined`.
-      studioRailExplorerShare: 0.6,
+      studioRailExplorerShare: 0.7,
       // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
       // the project the user left, which is what the Studio welcome's copy
       // promises; both values are coerced on the way back in and the id is
@@ -337,6 +336,8 @@ describe("uiStore", () => {
       welcomeVexShown: true,
       // The welcome's Vex Inference notice, not dismissed.
       vexInferenceNoticeDismissed: false,
+      // Her first close's hint (S4-15), not yet shown.
+      kimmHintShown: false,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -661,7 +662,7 @@ describe("uiStore", () => {
     const parsed = JSON.parse(raw!);
 
     expect(parsed.state).toEqual({
-      themePreference: "system",
+      themePreference: "chronos",
       sidebarOpen: false,
       sidebarWidth: 240,
       bookWidth: 340,
@@ -675,7 +676,7 @@ describe("uiStore", () => {
       // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
       // to come back the size they chose. Its default rides here so a fresh
       // install hydrates into a defined share rather than `undefined`.
-      studioRailExplorerShare: 0.6,
+      studioRailExplorerShare: 0.7,
       // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
       // the project the user left, which is what the Studio welcome's copy
       // promises; both values are coerced on the way back in and the id is
@@ -696,6 +697,8 @@ describe("uiStore", () => {
       welcomeVexShown: true,
       // The welcome's Vex Inference notice, not dismissed.
       vexInferenceNoticeDismissed: false,
+      // Her first close's hint (S4-15), not yet shown.
+      kimmHintShown: false,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

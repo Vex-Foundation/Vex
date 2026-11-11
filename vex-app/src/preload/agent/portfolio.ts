@@ -1,6 +1,8 @@
 import { CH, EV } from "../../shared/ipc/channels.js";
 import { portfolioReadInputSchema } from "../../shared/schemas/portfolio.js";
 import type { PortfolioReadInput } from "../../shared/schemas/portfolio.js";
+import { portfolioHistoryInputSchema } from "../../shared/schemas/portfolio-history.js";
+import type { PortfolioHistoryInput } from "../../shared/schemas/portfolio-history.js";
 import { tokenHistoryReadInputSchema } from "../../shared/schemas/token-history.js";
 import type { TokenHistoryReadInput } from "../../shared/schemas/token-history.js";
 import {
@@ -16,6 +18,13 @@ import { invokeWithSchema, subscribe } from "../_dispatch.js";
 export const portfolio = {
   read(input: PortfolioReadInput) {
     return invokeWithSchema(CH.portfolio.read, input, portfolioReadInputSchema);
+  },
+  readHistory(input: PortfolioHistoryInput) {
+    return invokeWithSchema(
+      CH.portfolio.readHistory,
+      input,
+      portfolioHistoryInputSchema,
+    );
   },
   listTokenHistory(input: TokenHistoryReadInput) {
     return invokeWithSchema(

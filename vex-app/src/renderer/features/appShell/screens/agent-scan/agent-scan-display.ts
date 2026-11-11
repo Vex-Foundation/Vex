@@ -19,7 +19,9 @@
  *    to prevent. `null` means show nothing — never a fabricated figure.
  *  - `usdEst` is ALWAYS a quote-time estimate. There is no settlement-time USD
  *    repricing anywhere in this feed, so even a CONFIRMED row's USD is an
- *    estimate and must carry the explicit `~ … est.` marker.
+ *    estimate and must say so: "about $200.00", Cloud's word for a dollar
+ *    estimate (DG5-40, docs/design/H3-DESKTOP.md Appendix A.8), on the
+ *    receipt, the Portfolio activity table and Agent Scan alike.
  *  - `amountBasis === "estimated"` marks the leg amounts themselves as quoted,
  *    so they get the same `~` treatment the token-history feed uses (R14).
  *  - `displaySymbol` is MAIN-RESOLVED (it is what annotates an EVM native leg
@@ -64,24 +66,23 @@ export function isEstimatedBasis(entry: AgentScanActivityEntry): boolean {
   return entry.amountBasis === "estimated";
 }
 
+/** How a dollar estimate is said: "about $200.00" (DG5-40). */
+export const USD_ESTIMATE_WORD = "about";
+
 /**
  * The row's primary USD figure. Output leads, input is the fallback; ALWAYS
- * rendered with the `~ … est.` marker because this feed carries no
+ * said as an estimate ("about $200.00") because this feed carries no
  * settlement-time USD at all. `null` when unpriced — never a fabricated $0.00.
  */
 export function primaryUsdEstText(entry: AgentScanActivityEntry): string | null {
-  const raw = entry.output.usdEst ?? entry.input.usdEst;
-  if (raw === null) return null;
-  const parsed = Number.parseFloat(raw);
-  if (!Number.isFinite(parsed)) return null;
-  return `~${formatUsd(parsed)} est.`;
+  return usdEstText(entry.output.usdEst ?? entry.input.usdEst);
 }
 
-/** A USD decimal string → `~$X est.`; null when absent/unparseable. */
+/** A USD decimal string → "about $X"; null when absent/unparseable. */
 export function usdEstText(value: string | null): string | null {
   if (value === null) return null;
   const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? `~${formatUsd(parsed)} est.` : null;
+  return Number.isFinite(parsed) ? `${USD_ESTIMATE_WORD} ${formatUsd(parsed)}` : null;
 }
 
 /**

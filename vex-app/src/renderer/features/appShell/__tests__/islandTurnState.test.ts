@@ -99,14 +99,14 @@ describe("resolveTurnIslandView - the four working states", () => {
     );
   });
 
-  it("writing → always 'Writing', carrying the Reasoned stamp as its detail when reasoning happened", () => {
+  it("writing → always 'Writing', carrying the Thought stamp as its detail when reasoning happened", () => {
     const withTrace = resolveTurnIslandView(
       preview({ status: "writing", reasoningText: "t", reasoningTokens: 1234 }),
       false,
     );
     expect(withTrace).toMatchObject({ state: "writing", size: "panel" });
     expect(withTrace.label).toBe("Writing");
-    expect(withTrace.detail).toBe("Reasoned · 1.2K tokens");
+    expect(withTrace.detail).toBe("Thought · 1.2K tokens");
 
     const noTrace = resolveTurnIslandView(preview({ status: "writing" }), false);
     expect(noTrace).toMatchObject({ state: "writing", size: "panel" });
@@ -122,7 +122,7 @@ describe("resolveTurnIslandView - the four working states", () => {
       false,
     );
     expect(view.label).toBe("Writing");
-    expect(view.detail).toBe("Reasoned · 900 tokens");
+    expect(view.detail).toBe("Thought · 900 tokens");
   });
 });
 
@@ -160,7 +160,7 @@ describe("resolveTurnIslandView - precedence", () => {
       false,
     );
     expect(withTrace).toMatchObject({ state: "settled", size: "panel" });
-    expect(withTrace.label).toBe("Reasoned · 900 tokens");
+    expect(withTrace.label).toBe("Thought · 900 tokens");
 
     const bare = resolveTurnIslandView(preview({ phase: "done" }), false);
     expect(bare).toMatchObject({ state: "settled", size: "hidden", label: "" });

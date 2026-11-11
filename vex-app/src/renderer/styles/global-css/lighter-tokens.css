@@ -1,36 +1,39 @@
-/* Lighter desk tokens (docs/design/R3-MINIMAL.md sections 1.2 and 9.3). The
- * desk components consume stable semantic roles (`--lit-*`); every role points
- * at the app's alias tier, so the desk is the room's own paper, ink, rules and
- * the one blue in both themes.
+/* Lighter desk tokens (docs/design/H3-DESKTOP.md section 2; the desk's own
+ * layout is still R3-MINIMAL.md section 9.3 until its H3 plate). The desk
+ * components consume stable semantic roles (`--lit-*`); every role points at
+ * the app's alias tier, so the desk takes the H3 look with the rest of the
+ * app: the near-black ground, cells divided by the white rule, ink type and
+ * the one saturated blue as a FILL only (H3 never sets the blue as type or a
+ * line on the ground).
  *
  * The deployment never repaints the desk: Core and Robinhood Chain are named
- * by the environment switch's words, and `--lit-environment-mark` is the blue
- * in both. `--lit-positive` and `--lit-negative` stay the blue and the ink for
- * whatever is not a trading value (price lines, studies, drawings, the order
- * handle, the splitters).
+ * by the environment switch's words, and `--lit-environment-mark` is the
+ * accent in both. `--lit-positive` and `--lit-negative` are the ink and the
+ * second ink for whatever is not a trading value (price lines, studies,
+ * drawings, the order handle, the splitters): direction by tone, not hue.
  *
- * THE TRADING PAIR. Trading values (bids and asks, the B and S ratio, a
- * position's side, the day change beside the last price) take
- * `--lit-trade-up` and `--lit-trade-down`, the app's trading aliases; a solid
- * Long or Short key carries `--lit-trade-ink` type. Never a status, never a
- * state word.
+ * GAINS AND LOSSES. Trading values (bids and asks, the B and S ratio, a
+ * position's side, the day change beside the last price, the P&L) take
+ * `--lit-trade-up` and `--lit-trade-down`, the app's gain and loss type
+ * colours; a solid Long or Short key carries `--lit-trade-ink` type. Never a
+ * status, never a state word.
  *
  * THE CANDLE PAIR. The candlesticks and their volume bars keep their own
  * green and red, through `--lit-candle-*`, declared on the chart canvas host
  * alone (below).
  *
- * TYPE. Words are Instrument Sans in sentence case (labels 11.5 to 13.5,
- * tabs 13.5); figures are JetBrains Mono, tabular, at -0.01em. The desk's
- * base stays the mono so a figure never falls back to the sans; each word
- * sets the sans on its own rule. Caps live only on tags. */
+ * TYPE. Words are Be Vietnam Pro, labels in caps at the one 0.08em tracking
+ * (--tracking-label); figures are Roboto Mono, tabular, at -0.01em. The
+ * desk's base stays the mono so a figure never falls back to the sans; each
+ * word sets the sans on its own rule. */
 .lit-desk,
 .lit-chat-frame {
   /* Ground and rules: one paper; regions are told apart by a 1px rule. */
   --lit-bg: var(--vex-alias-bg-base);
   --lit-panel: var(--vex-alias-bg-layer-1);
-  /* The pressed segment and the paper-2 step (night-2 at night). */
+  /* The pressed segment: the raised step. */
   --lit-panel-raised: var(--vex-alias-interactive-solid);
-  /* Inputs: the white field by day, night-1 at night. */
+  /* Inputs: the field, on the ground behind its rule. */
   --lit-field: var(--vex-alias-field);
   --lit-line: var(--vex-alias-border-l2);
   --lit-line-quiet: var(--vex-alias-rule-quiet);
@@ -41,10 +44,10 @@
   --lit-ink-secondary: var(--vex-alias-label-secondary);
   --lit-ink-muted: var(--vex-alias-label-tertiary);
 
-  /* Direction off the trading values: the blue and the ink. */
-  --lit-positive: var(--vex-alias-accent-primary);
-  --lit-negative: var(--vex-alias-label-primary);
-  /* The blue of type: a selected tab, an on toggle, a link. */
+  /* Direction off the trading values: the ink and the second ink. */
+  --lit-positive: var(--vex-alias-label-primary);
+  --lit-negative: var(--vex-alias-label-secondary);
+  /* The accent as type, the ink: a selected tab, an on toggle, a link. */
   --lit-accent: var(--vex-alias-accent-primary);
   /* The selection fill: a pressed segment, a selected row. */
   --lit-pressed: var(--vex-alias-interactive-active);
@@ -54,15 +57,15 @@
   --lit-trade-up: var(--vex-alias-trade-up);
   --lit-trade-down: var(--vex-alias-trade-down);
   --lit-trade-ink: var(--vex-alias-trade-ink);
-  /* Attention (an approval waiting, a delayed feed) is the blue as well:
-   * its fill pattern, not a hue, tells it from a live state. */
+  /* Attention (an approval waiting, a delayed feed) is the ink, as every
+   * status word is: its square and its word tell it from a live state. */
   --lit-warning: var(--vex-alias-state-warn);
   --lit-notice: var(--vex-alias-accent-primary);
   --lit-environment-mark: var(--vex-alias-accent-primary);
 
-  /* Fills. The true blue behind white type is the one blue fill per view
-   * (Long, the setup action); the ink fill is its refusing twin (Short), ink
-   * by day and paper at night. */
+  /* Fills. The H3 blue behind white type is the one blue fill per view
+   * (Long, the setup action), its hover the blue hover; the ink fill is its
+   * refusing twin (Short), ground type on the ink. */
   --lit-action: var(--vex-alias-button-accent-fill);
   --lit-action-ink: var(--vex-alias-button-accent-ink);
   --lit-action-hover: var(--vex-alias-button-accent-hover);
@@ -70,20 +73,23 @@
   --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
   --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
 
-  /* Book depth: each side a wash of its trading colour, 14% and 12%. */
-  --lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);
-  --lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 12%, transparent);
+  /* Book depth: a side is ink, never the trading pair (VEX Cloud's DG5-07,
+   * docs/design/H3-DESKTOP.md section 5.3): the bids a wash of the ink, the
+   * asks a fainter one, so the two still read apart where they meet. */
+  --lit-depth-bid: color-mix(in srgb, var(--lit-positive) 12%, transparent);
+  --lit-depth-ask: color-mix(in srgb, var(--lit-positive) 7%, transparent);
 
   --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);
   --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 24%, transparent);
   --lit-scrollbar: var(--vex-alias-scrollbar-l1);
 
-  /* Tracking: caps on tags only, and the figures' -0.01em. */
-  --lit-tr-label: var(--tracking-chip, 0.12em);
-  --lit-tr-status: var(--tracking-status, 0.14em);
-  --lit-tr-eyebrow: var(--tracking-eyebrow, 0.18em);
-  --lit-tr-caps-data: 0.1em;
+  /* Tracking: every caps label at the one H3 tracking, and the figures'
+   * -0.01em. */
+  --lit-tr-label: var(--tracking-label);
+  --lit-tr-status: var(--tracking-label);
+  --lit-tr-eyebrow: var(--tracking-label);
+  --lit-tr-caps-data: var(--tracking-label);
   --lit-tr-data: -0.01em;
   /* The chart library sizes its own axis text in px: the desk's 11. */
   --lit-chart-font-size: 11;
@@ -112,17 +118,14 @@
   letter-spacing: normal;
 }
 
-.lit-desk[data-lighter-theme="celeris"],
-.lit-chat-frame[data-lighter-theme="celeris"] {
-  color-scheme: light;
-}
-
-/* The candlesticks: the one sanctioned hue pair, scoped to the chart canvas
- * host (the element MarketChart reads its colours from), so no label, legend,
- * price line or order handle around the chart can reach it. */
+/* The candlesticks and their volume: trading values, so the gain and loss
+ * pair (the approved desk plate, H3-DESKTOP.md sections 2.2 and 4.9), read
+ * on the chart canvas host alone (the element MarketChart reads its colours
+ * from), so no label, legend, price line or order handle around the chart
+ * can reach it. */
 .lit-desk .lit-chart-canvas {
-  --lit-candle-up: var(--color-candle-up);
-  --lit-candle-down: var(--color-candle-down);
+  --lit-candle-up: var(--vex-alias-trade-up);
+  --lit-candle-down: var(--vex-alias-trade-down);
 }
 
 .lit-desk ::selection,
@@ -165,8 +168,8 @@
 
 /* The desk's square check box (docs/design/R3-MINIMAL.md section 1.5, at
  * the desk's density): 14 x 14 with a 1px ink frame on the field; checked is
- * the fill blue with a white tick, the ink frame kept so the silhouette holds
- * on night paper. Native, so keyboard and forms behave as before. */
+ * the blue fill with a white tick, the ink frame kept so the silhouette holds
+ * on the ground. Native, so keyboard and forms behave as before. */
 .lit-desk input[type="checkbox"],
 .lit-environment-dialog input[type="checkbox"] {
   appearance: none;
@@ -197,11 +200,13 @@
 .lit-desk input[type="checkbox"]:disabled,
 .lit-environment-dialog input[type="checkbox"]:disabled { border-style: dotted; opacity: 0.6; }
 
-/* Status by fill on the desk's live marks (the market bar's Live word, the
- * book and tape marks, the chart's lag word), 10px state swatches
+/* The desk's live marks (the market bar's Live word, the book and tape
+ * marks, the chart's lag word), 10px state swatches
  * (docs/design/R3-MINIMAL.md section 1.6): solid = live, dot screen =
  * connecting, target = delayed, ink cross = unavailable, outline = waiting.
- * The patterns are the swatch's (ui-primitives/marks.css). */
+ * The patterns are the swatch's (ui-primitives/marks.css); they draw in the
+ * current colour, which the desk's H3 restyle points at the status squares
+ * (docs/design/H3-DESKTOP.md section 2.2). */
 .lit-live-status i,
 .lit-live-dot,
 .lit-chart-connection i {
@@ -230,7 +235,7 @@
 .lit-live-status[data-status="unavailable"] i,
 .lit-live-dot[data-status="unavailable"],
 .lit-chart-connection[data-status="unavailable"] i {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background:
     linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
     linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
@@ -239,6 +244,6 @@
 .lit-live-status[data-status="stopped"] i,
 .lit-live-dot[data-status="stopped"],
 .lit-chart-connection[data-status="stopped"] i {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background: transparent;
 }

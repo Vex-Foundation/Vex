@@ -150,7 +150,7 @@ describe("Chart timeline continuity", () => {
   it("moves the account's price lines onto whichever series is showing", () => {
     const levels = [{ key: "entry:1", kind: "entry" as const, price: 64_000, title: "Entry", side: "buy" as const }];
     const view = render(<MarketChart candles={candles(40)} symbol="BTC" theme="chronos" marketId={1} resolution="1m" levels={levels} />);
-    expect(harness.candles.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 64_000, title: "Entry", lineStyle: 0 }));
+    expect(harness.candles.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 64_000, title: "ENTRY", lineStyle: 2 }));
     fireEvent.click(screen.getByRole("button", { name: "Use line" }));
     expect(harness.candles.removePriceLine).toHaveBeenCalledTimes(1);
     expect(harness.line.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 64_000 }));

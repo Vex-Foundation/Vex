@@ -158,7 +158,7 @@ describe("AgentScanScreen - rows and audit detail", () => {
     expect(screen.getByText(/50 USDC/)).not.toBeNull();
     expect(screen.getByText(/0\.02 WETH/)).not.toBeNull();
     // Every USD figure in this feed is a quote-time estimate - it must say so.
-    expect(screen.getByText("~$49.80 est.")).not.toBeNull();
+    expect(screen.getByText("about $49.80")).not.toBeNull();
     const link = screen.getByRole("link", {
       name: "Open transaction on block explorer",
     });
@@ -617,6 +617,27 @@ describe("AgentScanScreen - the word each row ends in", () => {
     mockQuery([availablePage([entry({ id: "1" })])]);
     mountScreen();
     expect(screen.getByText("Confirmed")).not.toBeNull();
+  });
+
+  /** The H3 status family of the mark whose word is `word` (H3-DESKTOP.md section 2.2). */
+  function markFamily(word: string): string | null {
+    const mark = screen.getByText(word).closest(".vex-status-mark");
+    return mark === null ? null : mark.getAttribute("data-status");
+  }
+
+  it("ends each row in H3's status mark: a word beside a square with its own drawing", () => {
+    mockQuery([
+      availablePage([
+        entry({ id: "1" }),
+        entry({ id: "2", status: "pending", pendingReason: "in_mempool" }),
+        entry({ id: "3", status: "superseded_unproven" }),
+      ]),
+    ]);
+    mountScreen();
+    expect(markFamily("Confirmed")).toBe("filled");
+    expect(markFamily("Submitted, awaiting confirmation")).toBe("running");
+    // Nobody knows the outcome: the concerned hatch, never the failed cross.
+    expect(markFamily("Status unknown")).toBe("concerned");
   });
 
   it("a pending row with a hash is Submitted, awaiting confirmation; without one it keeps Pending", () => {

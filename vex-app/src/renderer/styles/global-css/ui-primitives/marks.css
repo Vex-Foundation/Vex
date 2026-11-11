@@ -1,9 +1,227 @@
 /* Status marks, R3 (docs/design/R3-MINIMAL.md sections 1 and 5): the swatch,
  * the state word, the flat vx token, the chip, the stamp and the tag, the cell
- * meter and the quiet loading line. Status is shown by fill, never by colour:
- * every mark draws in the current text colour, so it sits in an ink or a blue
- * row unchanged. Instrument Sans for words, the mono face for figures, caps
- * only on stamps and tags. */
+ * meter and the quiet loading line. Every mark draws in the current text
+ * colour, so its colour is the caller's. H3 (docs/design/H3-DESKTOP.md
+ * section 2.2) draws each status with its own pattern, the state square
+ * below (`StateSquare`), beside an ink word; each component moves its R3
+ * swatch onto it as it restyles. */
+
+/* ── The state square (H3) ──────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md section 2.2; VEX Cloud's StateDot (`.vx-sq`,
+ * apps/web/src/styles/status.css, PD-03 and PD-06). Every status has its own
+ * drawing, so a colour never stands alone: the state survives forced colours,
+ * reduced motion and a colour-blind eye.
+ *
+ *   done       solid             status green   Confirmed, Filled
+ *   ongoing    blink             the hud        Running, Submitted, Pending
+ *   warning    target            ink            Waiting, your move
+ *   error      cross             refusal ink    Failed, Did not execute
+ *   idle       empty frame       muted          Ready, Exited, a word this
+ *                                                build does not map
+ *   paused     dotted frame      ink 2          Paused, Sleeping
+ *   draft      hatch             ink 2          a draft
+ *   concerned  framed hatch      ink            Status unknown, Concerned
+ *
+ * 8px by default, 6px in rows (the size comes inline from `StateSquare`);
+ * every frame is 1px. Every drawing is in currentColor, so forced colours
+ * reach it. A running square is never solid-still and never green: green
+ * is Filled. With no blink left (reduced motion, Save-Data) it would match
+ * Filled but for its colour, so it holds still as half a square. */
+.vex-sq {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  color: var(--vex-alias-state-running-mark);
+  vertical-align: middle;
+}
+
+.vex-sq[data-state="done"] {
+  background-color: currentColor;
+  color: var(--vex-alias-state-success-mark);
+}
+
+.vex-sq[data-state="ongoing"] {
+  background-color: currentColor;
+  animation: vex-sq-blink var(--vex-duration-blink) steps(2, end) infinite;
+}
+
+.vex-sq[data-state="warning"] {
+  border: 1px solid currentColor;
+  background-image: radial-gradient(currentColor 0 1.5px, transparent 1.6px);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-sq[data-state="error"] {
+  background-image:
+    linear-gradient(45deg, transparent 40%, currentColor 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, currentColor 40% 60%, transparent 60%);
+  color: var(--vex-alias-state-refusal);
+}
+
+.vex-sq[data-state="idle"] {
+  border: 1px solid currentColor;
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-sq[data-state="paused"] {
+  border: 1px dotted currentColor;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* Both hatches: a frame tells Concerned from a draft, with no colour to lean
+ * on. */
+.vex-sq[data-state="draft"],
+.vex-sq[data-state="concerned"] {
+  background-image: repeating-linear-gradient(135deg, currentColor 0 1px, transparent 1px 3px);
+}
+
+.vex-sq[data-state="draft"] {
+  color: var(--vex-alias-label-secondary);
+}
+
+.vex-sq[data-state="concerned"] {
+  border: 1px solid currentColor;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The blink: the running square at full ink, then at a quarter, on two
+ * steps (VEX Cloud's `vx-blink`). */
+@keyframes vex-sq-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-sq[data-state="ongoing"] {
+    animation: none;
+    background-color: transparent;
+    background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+  }
+}
+
+html[data-still] .vex-sq[data-state="ongoing"] {
+  animation: none;
+  background-color: transparent;
+  background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+}
+
+/* Forced colours flatten a fill to Canvas, so every square paints its own
+ * drawing in the system ink. */
+@media (forced-colors: active) {
+  .vex-sq,
+  .vex-sq[data-state] {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+}
+
+/* ── The parked cover (H3) ──────────────────────────────────────────────────
+ * VEX Cloud's `.cover` (its status contract: "a loading value is the parked
+ * cover, never a figure"): a value still loading is a 12 high bar on the
+ * raised fill with the scan's 1px head parked at its left edge. Never a
+ * pulse and never a sweep, so it does not move; it holds the box the value
+ * will take, so nothing jumps when the read lands. Its width comes inline
+ * from `Cover`. */
+.vex-cover {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 64px;
+  max-width: 100%;
+  height: 12px;
+  border-left: 1px solid var(--vex-alias-scan-head);
+  background: var(--vex-alias-interactive-solid);
+  vertical-align: middle;
+}
+
+/* A cover in a line of text (VEX Cloud's `SkeletonText`): the line box of
+ * the text it stands for (`height: 1lh`, so it takes that role's line
+ * height) with a 12 high cover centred in it, so the row keeps its height
+ * when the words land. Its width comes inline from `CoverText`. */
+.vex-cover-line {
+  display: flex;
+  align-items: center;
+  height: 1lh;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vex-cover-line > .vex-cover {
+  width: 100%;
+}
+
+@media (forced-colors: active) {
+  .vex-cover {
+    forced-color-adjust: none;
+    border-left-color: CanvasText;
+    background: GrayText;
+  }
+}
+
+/* ── The loading hatch (H3) ─────────────────────────────────────────────────
+ * VEX Cloud's `.vx-stripes` (rows.css, "the stepping hatch beside a loading
+ * word", the loader gate's cell): a 14 square of 135 degree ink-2 strokes,
+ * 1px every 4px, blinking on two steps once every 1200ms
+ * (`--vex-duration-blink-hatch`, Cloud's --vx-blink-hatch; the running
+ * square's keyframe at half its pace). It is mounted only while a load
+ * lasts, so its loop ends with the wait. Reduced motion and Save-Data hold
+ * it still at full ink: a hatch reads as loading without its blink, and no
+ * other state draws one at 14. */
+.vex-stripes {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-stripes-ink, var(--vex-alias-label-secondary)) 0 1px,
+    transparent 1px 4px
+  );
+  vertical-align: middle;
+  animation: vex-sq-blink var(--vex-duration-blink-hatch) steps(2, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-stripes {
+    animation: none;
+  }
+}
+
+html[data-still] .vex-stripes {
+  animation: none;
+}
+
+@media (forced-colors: active) {
+  .vex-stripes {
+    forced-color-adjust: none;
+    background: repeating-linear-gradient(135deg, CanvasText 0 1px, transparent 1px 4px);
+  }
+}
+
+/* The loader (`VexLoader`): the hatch alone, its label for assistive tech
+ * only. `paper` is the hatch in ink on the dark pre-shell plate. */
+.vex-loader-hatch {
+  display: inline-flex;
+  flex: none;
+}
+
+.vex-loader-hatch--paper {
+  --vex-stripes-ink: var(--vex-alias-label-primary);
+}
+
+/* The loading word (Cloud's `.vx-loading-word`): the hatch, 10, then the
+ * word in ink at 14. */
+.vex-loading-word {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
 
 /* ── Swatch ────────────────────────────────────────────────────────────────
  * data-s: done | ongoing | warning | draft | idle | error (V10 names, kept)
@@ -42,13 +260,13 @@
 
 /* Empty outline. */
 .vex-swatch[data-s="idle"] {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
 }
 
 /* Ink cross: two diagonals 12% wide, ink on both paper and night, never a
  * hue. */
 .vex-swatch[data-s="error"] {
-  border: 1.5px solid var(--vex-alias-label-primary);
+  border: 1px solid var(--vex-alias-label-primary);
   color: var(--vex-alias-label-primary);
   background:
     linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
@@ -82,7 +300,7 @@
 
 /* Sleeping and paused: the dotted outline. */
 .vex-swatch[data-s="sleeping"] {
-  border: 1.5px dotted currentColor;
+  border: 1px dotted currentColor;
 }
 
 @keyframes vex-swatch-step {
@@ -209,13 +427,13 @@ html[data-still] .vex-swatch {
 }
 
 .vex-stamp {
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-label);
   background: var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-on-primary);
 }
 
 .vex-tag {
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   border: 1px solid var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-primary);
 }
@@ -225,9 +443,41 @@ html[data-still] .vex-swatch {
   color: var(--vex-alias-label-tertiary);
 }
 
+/* ── The quiet REAL FUNDS mark ─────────────────────────────────────────────
+ * Cloud's quiet form (`.vx-rf`, status contract section 2; PD-05, EC-10):
+ * where real money is SHOWN rather than decided, the hatch and the word in
+ * ink with no fill. 11 caps at 400, gap 6; the hatch a 10 x 14 block of
+ * 135 degree strokes, 1.5px every 4px, in the word's own ink. It stands
+ * beside "Mainnet" (`MainnetMark`, stamp.tsx); the solid stamp stays where
+ * money is decided (H3-DESKTOP.md section 2.2). */
+.vex-rf {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-rf::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 14px;
+  background-image: repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px);
+}
+
 /* ── Cell meter ────────────────────────────────────────────────────────────
- * A row of cells: filled cells in the blue, empty cells in a rule outline.
- * Over the limit the fill turns ink (never red). */
+ * VEX Cloud's meter (`.vx-cmp-bars`): cells 6 x 12, 2 apart, an unlit cell
+ * white at 8%, a lit one 39%, the last lit one 60%. Over the limit the lit
+ * cells turn ink (never red). No outline: the fill alone draws each cell. */
 .vex-cell-meter {
   display: inline-flex;
   gap: 2px;
@@ -235,16 +485,18 @@ html[data-still] .vex-swatch {
 }
 
 .vex-cell-meter > i {
-  width: var(--vex-cell, 10px);
-  height: var(--vex-cell, 10px);
+  width: 6px;
+  height: 12px;
   flex: none;
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
+  background: var(--vex-alias-meter-off);
 }
 
 .vex-cell-meter > i[data-on] {
-  background: var(--vex-alias-accent-primary);
-  outline: 0;
+  background: var(--vex-alias-meter-on);
+}
+
+.vex-cell-meter > i[data-head] {
+  background: var(--vex-alias-meter-head);
 }
 
 .vex-cell-meter[data-over] > i[data-on] {
@@ -252,6 +504,8 @@ html[data-still] .vex-swatch {
 }
 
 /* ── Loading line ──────────────────────────────────────────────────────────
+ * R3's line. `VexLoader` draws the loading hatch now (above); the memory
+ * panel's own loading row is the line's last holder.
  * A word and a quiet line, never a skeleton of fake numbers: a 2px track in
  * the quiet rule with one blue segment 34% wide. It loops only while it is
  * mounted, and consumers mount it only for a real pending state: the segment
@@ -302,5 +556,5 @@ html[data-still] .vex-loader__segment {
 }
 
 .vex-loader--paper {
-  --vex-loader-ink: var(--color-paper);
+  --vex-loader-ink: var(--vex-alias-label-primary);
 }

@@ -1,20 +1,24 @@
 /**
- * The first run's furniture on the stage plate (`FirstRunStage.tsx`): what Vex shows for each
- * mood, the crumb's current step and its fill, and the face a screen sets on the stage store and
- * clears when it leaves. The timer beside "Working" is the real time since the work began.
+ * The first run on H3's stage (`FirstRunStage.tsx`, docs/design/H3-DESKTOP.md section 4.9): what
+ * Vex shows for each mood (the Vex key's state and word, her mood through the shell's map), the
+ * left column's steps and the current step's square, and the face a screen sets on the stage
+ * store and clears when it leaves. The timer beside "Working" is the real time since the work
+ * began.
  */
 
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FIRST_RUN_STAGES,
-  FirstRunCrumb,
   StageFace,
-  moodCrumbFill,
+  firstRunSub,
+  firstRunWhere,
   moodFace,
+  moodSquare,
   type FirstRunMood,
   type FirstRunStep,
 } from "../FirstRunStage.js";
+import { StageFrame } from "../StageFrame.js";
 import { getStageVex, resetStageVex, stageVexEnd, stageVexView } from "../stage-vex.js";
 
 beforeEach(() => {
@@ -31,12 +35,16 @@ afterEach(() => {
 
 describe("moodFace", () => {
   it.each<[FirstRunMood, string, string, string]>([
-    ["working", "working", "done", "Working"],
-    ["ready", "idle", "idle", "Ready"],
-    ["concerned", "concerned", "concerned", "Concerned"],
-    ["error", "error", "error", "Error"],
-  ])("says what Vex shows for %s: a pose, a fill and a word", (mood, emotion, swatch, word) => {
-    expect(moodFace(mood, null)).toEqual({ emotion, swatch, word, note: null });
+    ["working", "working", "Working", "think"],
+    ["ready", "ready", "Ready", "hi"],
+    ["concerned", "concerned", "Concerned", "rest"],
+    ["error", "error", "Error", "rest"],
+  ])("says what Vex shows for %s through the shell's mood map", (mood, state, word, herMood) => {
+    expect(moodFace(mood, null)).toMatchObject({ state, word, note: null, mood: herMood });
+  });
+
+  it("offers the way on when a failure holds Continue, as the approved plate draws it", () => {
+    expect(moodFace("blocked", null)).toMatchObject({ state: "error", word: "Error", mood: "offer" });
   });
 
   it("sets the real timer beside Working and nowhere else", () => {
@@ -44,15 +52,16 @@ describe("moodFace", () => {
     expect(moodFace("ready", "0:14").note).toBeNull();
   });
 
-  it("fills the crumb's current step: solid at work and done, a target when it waits on you, a cross on failure", () => {
-    expect(moodCrumbFill("working")).toBe("done");
-    expect(moodCrumbFill("ready")).toBe("done");
-    expect(moodCrumbFill("concerned")).toBe("awaiting");
-    expect(moodCrumbFill("error")).toBe("error");
+  it("squares the current step: grey at work, ink when ready or concerned, red on a failure", () => {
+    expect(moodSquare("working")).toBe("running");
+    expect(moodSquare("ready")).toBe("ink");
+    expect(moodSquare("concerned")).toBe("ink");
+    expect(moodSquare("error")).toBe("failed");
+    expect(moodSquare("blocked")).toBe("failed");
   });
 });
 
-describe("FirstRunCrumb", () => {
+describe("the first run's left column", () => {
   it("names the four stages in order", () => {
     expect(FIRST_RUN_STAGES.map((stage) => stage.label)).toEqual([
       "System check",
@@ -67,8 +76,12 @@ describe("FirstRunCrumb", () => {
     ["runtime", 1],
     ["database", 2],
   ])("marks %s as current, the earlier stages done and the later ones next", (step, at) => {
-    const { container, getByRole } = render(<FirstRunCrumb step={step} mood="working" />);
-    const items = Array.from(container.querySelectorAll("li"));
+    const { container, getByRole } = render(
+      <StageFrame screen="t" title="T" sub={firstRunSub(step)} where={firstRunWhere(step, "working")}>
+        {null}
+      </StageFrame>,
+    );
+    const items = Array.from(container.querySelectorAll("nav li"));
     expect(items).toHaveLength(4);
     items.forEach((li, index) => {
       expect(li.getAttribute("data-state")).toBe(
@@ -79,27 +92,35 @@ describe("FirstRunCrumb", () => {
     expect(container.querySelector('[aria-current="step"]')?.textContent).toContain(
       FIRST_RUN_STAGES[at]?.label ?? "",
     );
+    // The column's head counts the step, as the title cell's second line says it.
+    expect(container.querySelector(".vex-pre__count")?.textContent).toBe(`${String(at + 1)}/4`);
+    expect(firstRunSub(step)).toBe(`First run · Step ${String(at + 1)} of 4`);
   });
 
-  it("draws each stage as a fill with its word: solid for done, the mood's fill for the current one, an outline for the rest", () => {
-    const { container } = render(<FirstRunCrumb step="database" mood="error" />);
-    const fills = Array.from(container.querySelectorAll("li .vex-swatch")).map((swatch) =>
-      swatch.getAttribute("data-s"),
+  it("draws the steps behind you green and DONE, the current one by its mood, the rest an outline", () => {
+    const { container } = render(
+      <StageFrame screen="t" title="T" sub="" where={firstRunWhere("database", "error")}>
+        {null}
+      </StageFrame>,
     );
-    expect(fills).toEqual(["done", "done", "error", "idle"]);
-    // A reader without the picture hears what a done stage and the failed one are.
-    const spoken = Array.from(container.querySelectorAll("li .sr-only")).map((n) => n.textContent);
-    expect(spoken).toEqual(["Done", "Done", "Error"]);
+    const squares = Array.from(container.querySelectorAll("nav li .vex-pre-sq")).map((sq) =>
+      sq.getAttribute("data-sq"),
+    );
+    expect(squares).toEqual(["done", "done", "failed", "none"]);
+    const words = Array.from(container.querySelectorAll("nav li")).map(
+      (li) => li.querySelector(".vex-pre__step-word")?.textContent ?? null,
+    );
+    expect(words).toEqual(["Done", "Done", null, null]);
   });
 });
 
 describe("StageFace", () => {
-  it("sets the face on the stage store and the plate's view follows it", () => {
+  it("sets the face on the stage store and the stage's view follows it", () => {
     render(<StageFace mood="concerned" />);
     expect(stageVexView(getStageVex())).toMatchObject({
-      emotion: "concerned",
-      swatch: "concerned",
+      state: "concerned",
       word: "Concerned",
+      mood: "rest",
     });
   });
 

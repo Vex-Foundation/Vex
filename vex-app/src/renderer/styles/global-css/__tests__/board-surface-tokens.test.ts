@@ -9,8 +9,7 @@
  *  1. the plate paints ALIASES, never literals - the same defect the pre-shell
  *     plate shipped once already, where a fixed dark hex sat under
  *     theme-variable ink;
- *  2. every board alias exists in BOTH theme blocks, so a new one cannot ship
- *     one-room-only;
+ *  2. every board alias is declared in the one room (the app is dark only);
  *  3. every board alias has a `@theme inline` projection - an alias WITHOUT
  *     one compiles to nothing at the call site, silently, which is how
  *     `bg-board-card` would become a transparent card;
@@ -29,6 +28,7 @@ const read = (name: string): string =>
 
 const tokensCss = read("tokens.css");
 const boardCss = read("board.css");
+const bookCss = read("book.css");
 const globalsCss = readFileSync(
   path.join(here, "..", "..", "globals.css"),
   "utf8",
@@ -45,7 +45,6 @@ function ruleBody(css: string, selector: string): string {
 const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const chronos = ruleBody(tokensCss, ":root");
-const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 const themeInline = ruleBody(tokensCss, "@theme inline");
 
 const boardAliases = [
@@ -65,16 +64,15 @@ describe("board surface tokens", () => {
     ]);
   });
 
-  it.each(boardAliases)("defines %s in BOTH theme blocks", (alias) => {
+  it.each(boardAliases)("defines %s in the room", (alias) => {
     expect(chronos).toContain(`${alias}:`);
-    expect(celeris).toContain(`${alias}:`);
   });
 
-  it.each(boardAliases)("resolves %s to a V10 paper step in both rooms", (alias) => {
-    for (const body of [chronos, celeris]) {
-      const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(body)?.[1]?.trim();
-      expect(value).toMatch(/^var\(--color-(paper|paper-2|night|night-0|night-1|night-2)\)$/);
-    }
+  it.each(boardAliases)("resolves %s to an H3 surface step", (alias) => {
+    // The ground, or the raised step for a hovered card
+    // (docs/design/H3-DESKTOP.md section 2.1).
+    const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(chronos)?.[1]?.trim();
+    expect(value).toMatch(/^var\(--color-h3-(ground|raised)\)$/);
   });
 
   it.each([
@@ -118,18 +116,27 @@ describe("board surface tokens", () => {
     expect(ruleBody(boardCss, ".vex-bd")).toContain(
       "background-color: var(--vex-alias-board-surface)",
     );
-    // The selected tile: a 1.5px blue outline drawn inside the tile.
+    // The selected tile: a 1px outline drawn inside the tile (1px rules
+    // only, H3-DESKTOP.md section 2.4).
     const frame = ruleBody(boardCss, '.vex-board-card[data-selected="true"]');
-    expect(frame).toContain("1.5px solid var(--vex-alias-accent-primary)");
-    expect(frame).toContain("outline-offset: -1.5px");
+    expect(frame).toContain("1px solid var(--vex-alias-accent-primary)");
+    expect(frame).toContain("outline-offset: -1px");
     expect(stripComments(boardCss)).not.toMatch(/border-radius/);
   });
 
-  it("asks the sheet for the whole centre and the page padding, 20 28", () => {
-    const page = ruleBody(boardCss, ".vex-ov:has(.vex-bd)");
-    expect(page).toContain("--vex-ov-max: none");
-    expect(page).toContain("--vex-ov-pad: 28px");
-    expect(page).toContain("--vex-ov-top: 20px");
+  it("takes the H3 page frame's body: the whole column, 24 in from each edge", () => {
+    // docs/design/H3-DESKTOP.md section 1.9. The board asks for nothing of its
+    // own any more: R3's 20 28 override is gone, and the frame (book.css)
+    // gives every page the whole column with 24 at each edge.
+    expect(boardCss).not.toContain(".vex-ov:has(.vex-bd)");
+    // The frame caps other pages' blocks at 1136 on the reading line; the
+    // Board, awaiting its own plate (section 4.9), keeps the whole column.
+    const frame = ruleBody(bookCss, '.vex-ov[data-frame="h3"][data-width]');
+    expect(frame).toContain("--vex-ov-pad: 24px");
+    expect(frame).toContain("--vex-ov-top: 24px");
+    expect(bookCss).toMatch(
+      /\.vex-ov\[data-frame="h3"\]\[data-width\]:has\(> \.vex-ov__scroll > \.vex-ov__body > \.vex-bd\)[^{]*\{[^}]*--vex-ov-in: 24px;[^}]*--vex-ov-max: none;/,
+    );
   });
 
   it("draws the shared chip pressed in the one blue, never a hue of its own", () => {

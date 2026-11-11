@@ -63,6 +63,7 @@ vi.mock("../../../../lib/api/projects.js", () => ({
 const { AgentScanScreen } = await import("../AgentScanScreen.js");
 
 const mockFetchNextPage = vi.fn();
+const mockRefetch = vi.fn(() => Promise.resolve());
 
 function mockQuery(
   pages: readonly Result<AgentScanDto>[],
@@ -71,12 +72,15 @@ function mockQuery(
     readonly isError?: boolean;
     readonly hasNextPage?: boolean;
     readonly isFetchingNextPage?: boolean;
+    readonly dataUpdatedAt?: number;
   },
 ): void {
   mockUseAgentScanInfinite.mockReturnValue({
     isLoading: options?.isLoading ?? false,
     isError: options?.isError ?? false,
     data: pages.length > 0 ? { pages: [...pages] } : undefined,
+    dataUpdatedAt: options?.dataUpdatedAt ?? 0,
+    refetch: mockRefetch,
     hasNextPage: options?.hasNextPage ?? false,
     isFetchingNextPage: options?.isFetchingNextPage ?? false,
     fetchNextPage: mockFetchNextPage,
@@ -478,7 +482,29 @@ describe("AgentScanScreen - filter menus behave as menus", () => {
   });
 });
 
+const REFUSED_PAGE: Result<AgentScanDto> = {
+  ok: false,
+  error: {
+    code: "internal.unexpected",
+    domain: "portfolio",
+    message: "boom",
+    retryable: false,
+    userActionable: false,
+    redacted: true,
+    correlationId: "11111111-1111-4111-8111-111111111111",
+  },
+};
+
 describe("AgentScanScreen - states matrix", () => {
+  it("loads in the feed's shape: the word over five cover rows, one status, no history claim", () => {
+    mockQuery([], { isLoading: true });
+    mountScreen();
+    const status = screen.getByRole("status", { name: "Loading activity…" });
+    expect(status.querySelector(".vex-stripes")).not.toBeNull();
+    expect(status.querySelectorAll("[data-vex-cover-rows] > li")).toHaveLength(5);
+    expect(screen.queryByText(/No activity recorded yet/)).toBeNull();
+  });
+
   it("renders a timed-out page as the calm try-again note, NEVER as empty history", () => {
     mockQuery([UNAVAILABLE_PAGE]);
     mountScreen();
@@ -500,23 +526,47 @@ describe("AgentScanScreen - states matrix", () => {
   });
 
   it("renders a failed Result as the warn state, not empty history", () => {
-    mockQuery([
-      {
-        ok: false,
-        error: {
-          code: "internal.unexpected",
-          domain: "portfolio",
-          message: "boom",
-          retryable: false,
-          userActionable: false,
-          redacted: true,
-          correlationId: "11111111-1111-4111-8111-111111111111",
-        },
-      },
-    ]);
+    mockQuery([REFUSED_PAGE]);
     mountScreen();
     expect(screen.getByText("Couldn't load activity.")).not.toBeNull();
     expect(screen.queryByText(/No activity recorded yet/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed REFRESH keeps the rows already shown, says so and offers Retry (H3-DESKTOP section 1.9)", () => {
+    // 2026-11-08 12:41 and 12:45, local time.
+    const goodAt = new Date(2026, 10, 8, 12, 41).getTime();
+    const failedAt = new Date(2026, 10, 8, 12, 45).getTime();
+    mockQuery([availablePage([entry({ id: "1" })])], { dataUpdatedAt: goodAt });
+    const view = render(<AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />);
+    expect(screen.getByRole("list", { name: "Activity" })).not.toBeNull();
+
+    for (const failed of [REFUSED_PAGE, UNAVAILABLE_PAGE]) {
+      mockQuery([failed], { dataUpdatedAt: failedAt });
+      view.rerender(<AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />);
+      expect(screen.getByRole("list", { name: "Activity" })).not.toBeNull();
+      expect(screen.getByRole("alert").textContent).toBe("Couldn't refresh activity.");
+      expect(screen.queryByText("Couldn't load activity.")).toBeNull();
+      // "Updated" stays the time of the rows on screen, not the failure's.
+      expect(document.querySelector("[data-vex-area='page-updated']")?.textContent).toBe(
+        "Updated 12:41",
+      );
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("never keeps one filter's rows for another filter", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    const view = render(<AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />);
+    mockQuery([REFUSED_PAGE]);
+    openMenu("Kind");
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Lend" }));
+    view.rerender(<AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />);
+    expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
+    expect(screen.getByText("Couldn't load activity.")).not.toBeNull();
   });
 });
 
@@ -528,6 +578,12 @@ describe("AgentScanScreen - pagination", () => {
     mountScreen();
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(mockFetchNextPage).toHaveBeenCalled();
+  });
+
+  it("draws the feed as the framed rows list (C3-E-07)", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    mountScreen();
+    expect(screen.getByRole("list", { name: "Activity" }).classList.contains("vex-scan-rows")).toBe(true);
   });
 
   it("notes a degraded LATER page instead of wiping the rows already shown", () => {

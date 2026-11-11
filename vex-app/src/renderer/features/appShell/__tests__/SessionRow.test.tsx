@@ -12,6 +12,9 @@
  * anchors a HoverCard preview, and a double-click renames inline.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -202,25 +205,37 @@ describe("inline rename (double-click)", () => {
   });
 });
 
-describe("a SIDEBAR row (section 4)", () => {
-  it("is the name, then the start time in mono at the right", () => {
+describe("a SIDEBAR row (H3-DESKTOP.md section 1.4)", () => {
+  it("is the name, then the start time at the right, as H3 writes it", () => {
     renderRow(session(), false, "sidebar");
     const row = document.querySelector("[data-vex-ls-item='row']");
     expect(row?.querySelector(".vex-ls-row__t")?.textContent).toBe("Research TAO");
     const time = row?.querySelector(".vex-ls-row__time");
-    expect(time?.textContent).not.toBe("");
-    expect(time?.classList.contains("vex-num")).toBe(true);
+    // The 24-hour clock today and yesterday, "Oct 28" earlier; the sans with
+    // tabular figures, not the mono.
+    expect(time?.textContent).toMatch(/^(?:\d{2}:\d{2}|[A-Z][a-z]{2} \d{1,2})$/);
+    expect(time?.classList.contains("vex-num")).toBe(false);
     expect(row?.querySelector(".vex-ls-row__state")).toBeNull();
     // No ordinal, no counter: sessions go by name.
     expect(row?.textContent).not.toMatch(/\(\d{2}\)/);
   });
 
-  it("trades the time for a fill and its word while a mission has a state", () => {
+  it("trades the time for H3's tag while a mission runs: the blinking square and the word", () => {
     renderRow(session({ mode: "mission", missionStatus: "running" }), false, "sidebar");
     const state = document.querySelector(".vex-ls-row__state");
     expect(state?.textContent).toBe("Running");
-    expect(state?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
+    const square = state?.querySelector(".vex-sq");
+    // Running blinks everywhere (PD-06): the hud square, never solid-still.
+    expect(square?.getAttribute("data-state")).toBe("ongoing");
+    expect((square as HTMLElement | null)?.style.width).toBe("6px");
     expect(document.querySelector(".vex-ls-row__time")).toBeNull();
+  });
+
+  it("gives Waiting the target", () => {
+    renderRow(session({ mode: "mission", missionStatus: "paused_approval" }), false, "sidebar");
+    const state = document.querySelector(".vex-ls-row__state");
+    expect(state?.textContent).toBe("Waiting");
+    expect(state?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("warning");
   });
 
   it("marks the open session with the selection and aria-current, without a swatch", () => {
@@ -228,6 +243,7 @@ describe("a SIDEBAR row (section 4)", () => {
     expect(document.querySelector("[data-vex-ls-item][data-selected]")).not.toBeNull();
     expect(document.querySelector('[aria-current="true"]')).not.toBeNull();
     expect(document.querySelector(".vex-swatch")).toBeNull();
+    expect(document.querySelector(".vex-sq")).toBeNull();
   });
 
   it("keeps Pin and Remove beside the select button, and the hover preview around it", () => {
@@ -258,12 +274,60 @@ describe("a SIDEBAR row (section 4)", () => {
     expect(document.querySelector(".vex-ls-row__t mark")?.textContent).toBe("TAO");
     expect(document.querySelector(".vex-ls-row__t")?.textContent).toBe("Research TAO");
   });
+
+  it("keeps the state in its name while the drawn tag gives way to the keys", () => {
+    // The drawn trailing cell is decoration (it leaves the row on hover and
+    // focus); the name a screen reader hears keeps the word.
+    renderRow(session({ mode: "mission", missionStatus: "running" }), false, "sidebar");
+    expect(document.querySelector(".vex-ls-row__state")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("button", { name: "Research TAO Running" })).not.toBeNull();
+  });
+
+  it("keeps the time in its name the same way", () => {
+    renderRow(session(), false, "sidebar");
+    const time = document.querySelector(".vex-ls-row__time");
+    expect(time?.getAttribute("aria-hidden")).toBe("true");
+    const select = document.querySelector<HTMLElement>(".vex-ls-row__select");
+    expect(select?.querySelector(".sr-only")?.textContent).toBe(time?.textContent);
+  });
+});
+
+describe("the sidebar row's trailing cell on hover and focus (VEX Cloud's `.vx-lc-rowmenu`)", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const css = readFileSync(
+    path.join(here, "..", "..", "..", "styles", "global-css", "left-sidebar.css"),
+    "utf8",
+  );
+  const block = (selector: string): string => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} has a rule`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  it("takes the time and the tag out of the row, so the title gains the room", () => {
+    expect(block(".vex-ls-row:has(:focus-visible) .vex-ls-row__state")).toMatch(/display: none;/);
+    expect(css).not.toMatch(/\.vex-ls-row__(?:time|state)[^{]*\{\s*visibility: hidden/);
+  });
+
+  it("narrows the title's right padding to 8, the keys standing 8 from the edge in the row's flow", () => {
+    expect(block(".vex-ls-row:has(:focus-visible) .vex-ls-row__select")).toMatch(/padding-right: 8px;/);
+    const shown = block(".vex-ls-row:has(:focus-visible) .vex-ls-row__actions");
+    expect(shown).toMatch(/padding-right: 8px;/);
+    expect(shown).toMatch(/opacity: 1;/);
+    // At rest the keys take no width but stay in the tab order (no display
+    // none, no absolute box over the title).
+    const rest = block(".vex-ls-row__actions");
+    expect(rest).toMatch(/max-width: 0;/);
+    expect(rest).not.toMatch(/position: absolute|display: none/);
+  });
 });
 
 describe("the row's state words", () => {
   it("speaks Running, Waiting, Sleeping, Paused and Error, each with its fill", () => {
-    const of = (missionStatus: SessionListItem["missionStatus"]) =>
-      sessionRowState(session({ mode: "mission", missionStatus }));
+    const of = (missionStatus: SessionListItem["missionStatus"]) => {
+      const state = sessionRowState(session({ mode: "mission", missionStatus }));
+      return state === null ? null : { word: state.word, fill: state.fill };
+    };
     expect(of("running")).toEqual({ word: "Running", fill: "done" });
     expect(of("paused_approval")).toEqual({ word: "Waiting", fill: "awaiting" });
     expect(of("paused_plan_acceptance")).toEqual({ word: "Waiting", fill: "awaiting" });
@@ -271,6 +335,20 @@ describe("the row's state words", () => {
     expect(of("paused_wake")).toEqual({ word: "Sleeping", fill: "sleeping" });
     expect(of("paused_user")).toEqual({ word: "Paused", fill: "sleeping" });
     expect(of("paused_error")).toEqual({ word: "Error", fill: "error" });
+  });
+
+  it("gives each word H3's square: the blink for Running, the target for Waiting, the cross for Error", () => {
+    // docs/design/H3-DESKTOP.md section 2.2 and Appendix A.2; Paused and
+    // Sleeping, which H3 does not draw, take VEX Cloud's dotted frame.
+    const square = (missionStatus: SessionListItem["missionStatus"]) =>
+      sessionRowState(session({ mode: "mission", missionStatus }))?.square;
+    expect(square("running")).toBe("ongoing");
+    for (const waiting of ["paused_approval", "paused_plan_acceptance", "paused_user_form"] as const) {
+      expect(square(waiting)).toBe("warning");
+    }
+    expect(square("paused_user")).toBe("paused");
+    expect(square("paused_wake")).toBe("paused");
+    expect(square("paused_error")).toBe("error");
   });
 
   it("says nothing for agent sessions and finished missions (the time shows)", () => {

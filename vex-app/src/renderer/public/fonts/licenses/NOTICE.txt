@@ -5,31 +5,44 @@ The font files in this directory tree are redistributed under the
 SIL Open Font License, Version 1.1 (see OFL-*.txt / *-OFL.txt alongside
 this file).
 
-Shipped (variable WOFF2, latin subset, wght 400-700 + wdth 75-100 axes):
-  /fonts/instrument-sans-latin-var.woff2              - "Instrument Sans" (UI + reading)
-
 Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
-  /fonts/inter-tight-latin-wght.woff2                 - "Inter Tight" (glyph coverage)
-  /fonts/inter-tight-latin-ext-wght.woff2
-  /fonts/inter-tight-italic-latin-wght.woff2
-  /fonts/inter-tight-italic-latin-ext-wght.woff2
-  /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (figures, code)
+  /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (code)
   /fonts/jetbrains-mono-latin-ext-wght.woff2
 
-Shipped (static WOFF2, latin + latin-ext subsets, 400 regular + italic):
-  /fonts/instrument-serif-latin.woff2                 - "Instrument Serif" (display)
-  /fonts/instrument-serif-latin-ext.woff2
-  /fonts/instrument-serif-italic-latin.woff2
-  /fonts/instrument-serif-italic-latin-ext.woff2
+Shipped (static WOFF2, latin + latin-ext + vietnamese subsets, 400 + 600 upright):
+  /fonts/be-vietnam-pro-latin-400-normal.woff2        - "Be Vietnam Pro" (H3 text)
+  /fonts/be-vietnam-pro-latin-ext-400-normal.woff2
+  /fonts/be-vietnam-pro-vietnamese-400-normal.woff2
+  /fonts/be-vietnam-pro-latin-600-normal.woff2
+  /fonts/be-vietnam-pro-latin-ext-600-normal.woff2
+  /fonts/be-vietnam-pro-vietnamese-600-normal.woff2
 
-Inter Tight is the Google Fonts / gstatic subset build of the upstream
-rsms/inter-tight (c) 2022 The Inter Project Authors family. JetBrains Mono
-is the Fontsource-packaged build (fontsource.org) of the upstream OFL
-JetBrains/JetBrainsMono. Instrument Serif is the Google Fonts / gstatic
-subset build of Instrument/instrument-serif ((c) 2022 The Instrument Serif
-Project Authors). Instrument Sans is the latin variable build of
-Instrument/instrument-sans ((c) 2022 The Instrument Sans Project Authors),
-license InstrumentSans-OFL.txt. Inter Tight stays as per-glyph coverage
-behind Instrument Sans (latin-ext, for example Polish), and JetBrains Mono
-is the face for every figure and for code. Doto was retired in UIUX round 3
-(2026-08-21) and Departure Mono in R3 Minimal (2026-10-17); neither ships.
+Shipped (static WOFF2, 400 in latin + latin-ext + vietnamese, 700 in latin +
+latin-ext, upright):
+  /fonts/roboto-mono-latin-400-normal.woff2           - "Roboto Mono" (H3 figures)
+  /fonts/roboto-mono-latin-ext-400-normal.woff2
+  /fonts/roboto-mono-vietnamese-400-normal.woff2
+  /fonts/roboto-mono-latin-700-normal.woff2           - "Roboto Mono" (terminal bold)
+  /fonts/roboto-mono-latin-ext-700-normal.woff2
+
+JetBrains Mono is the Fontsource-packaged build (fontsource.org) of the
+upstream OFL JetBrains/JetBrainsMono, license OFL-JetBrainsMono.txt. It is
+the face for code. Doto was retired in UIUX round 3 (2026-08-21), Departure
+Mono in R3 Minimal (2026-10-17), and Instrument Sans, Instrument Serif and
+Inter Tight in the H3 revamp (2026-11-05); none of them ships.
+
+Be Vietnam Pro is the Fontsource-packaged build (npm
+@fontsource/be-vietnam-pro 5.3.0) of bettergui/BeVietnamPro ((c) 2021 The
+Be Vietnam Pro Project Authors), license BeVietnamPro-OFL.txt. It is the
+H3 text face (2026-11-03). Roboto Mono is the Fontsource-packaged build
+(npm @fontsource/roboto-mono 5.3.0) of googlefonts/robotomono ((c) 2015
+The Roboto Mono Project Authors), license RobotoMono-OFL.txt, static 400
+and 700. It is the H3 figures face (2026-11-03); the 700 weight joined for
+the Studio terminal's bold text (2026-11-04).
+
+The vietnamese subsets (be-vietnam-pro-vietnamese-400/600, roboto-mono-
+vietnamese-400) joined on 2026-11-09: byte copies of VEX Cloud's files, the
+same Fontsource 5.3.0 builds (@fontsource/be-vietnam-pro and
+@fontsource/roboto-mono, package license OFL-1.1), copied byte for byte and
+not re-subset, so the OFL Reserved Font Name rules do not apply. Their
+licences are the two OFL texts above.

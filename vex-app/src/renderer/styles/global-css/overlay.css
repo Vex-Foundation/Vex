@@ -36,6 +36,23 @@
 .vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
   top: calc(var(--head-h) + 40px);
 }
+/* Under H3's header (docs/design/H3-DESKTOP.md section 1.3) the head row is
+ * the frame's own, above the centre, so a sheet starts at the centre's top,
+ * or under the offline row. The Lighter desk stands under the same header
+ * (section 4.9). */
+.vex-shell-frame:is([data-vex-frame="h3"], [data-vex-frame="desk"]) .vex-shell-centre .vex-ov {
+  top: 0;
+}
+.vex-shell-frame:is([data-vex-frame="h3"], [data-vex-frame="desk"]) .vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
+  top: 40px;
+}
+/* Vex's panel lies over the chat's top right (docs/design/H3-DESKTOP.md
+ * section 6.3): the sheet still covers the whole chat, the composer under it
+ * included, but what it holds stands in the chat's room, clear of her
+ * panel's 280 whether she shows or not, as it stood beside her column. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-shell-centre .vex-ov {
+  padding-right: var(--vex-panel-w);
+}
 /* The money ledgers (Agent Scan, All assets, token history): 1100 with the
  * page padding, so the rows read as the design's 112 | 1fr | 120 | 250 grid. */
 .vex-ov[data-width="wide"] {
@@ -59,6 +76,11 @@
   overflow-y: auto;
   padding: var(--vex-ov-top) 0 56px;
 }
+/* A page zooms with the window from 1760 up in H3's frame
+ * (docs/design/H3-DESKTOP.md section 1.11, `--vex-zoom`). */
+.vex-shell-frame[data-vex-frame="h3"] .vex-ov__scroll {
+  zoom: var(--vex-zoom);
+}
 .vex-ov__body {
   box-sizing: border-box;
   width: 100%;
@@ -66,11 +88,12 @@
   margin-inline: auto;
   padding-inline: var(--vex-ov-pad);
 }
-/* The serif page head (Memory, Sessions, How Vex works): serif 40 / 1,
- * `-.01em`, the title ink, margin 0 0 8 (section 1.3). */
+/* The page head (Memory, Sessions, How Vex works): display 40 / 1, `-.01em`,
+ * the title ink, margin 0 0 8 (section 1.3), in the sans since H3 retired
+ * the serif. */
 .vex-ov__chapter {
   margin: 0 0 8px;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 40px;
   font-weight: 400;
   line-height: 1;
@@ -134,7 +157,7 @@
 }
 .vex-seg > button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 /* A framed tag (PROPOSED, OPEN): 22 high, sans 11 / 600 caps at `.08em`,
@@ -209,7 +232,7 @@
 }
 .vex-scan-filter__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-scan-filter__name {
   color: var(--vex-alias-label-tertiary);
@@ -532,7 +555,7 @@
 }
 
 /* The register's own control row (All assets: Hide dust at the right) and
- * the kit checkbox (section 1.5): 16 x 16, a 1.5px ink border, on = the blue
+ * the kit checkbox (section 1.5): 16 x 16, a 1px ink border, on = the blue
  * fill with a white tick. */
 .vex-scan-tools {
   display: flex;
@@ -557,7 +580,7 @@
   height: 16px;
   margin: 0;
   appearance: none;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: transparent;
   cursor: pointer;
 }
@@ -612,7 +635,7 @@
 }
 .vex-scan-more:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-scan-more:disabled {
   cursor: progress;

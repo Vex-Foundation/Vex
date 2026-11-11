@@ -10,13 +10,15 @@
  * R3 (docs/design/R3-MINIMAL.md sections 9.6 and 12): sections are hairline
  * ledger groups with a sans 15 / 600 head, a lead, an optional toolbar and
  * hairline rows (`styles/global-css/memory.css`); tags are quiet 20 high
- * frames, never an accent; loading is a word and a quiet line, a failure is
- * the ink callout, an empty section is one muted sentence.
+ * frames, never an accent; loading is the hatch and its word over parked
+ * cover rows, a failure is the ink callout, an empty section is one muted
+ * sentence.
  */
 
 import type { JSX, ReactNode } from "react";
 import { ErrorCallout } from "../../components/ui/error-callout.js";
-import { StateWord } from "../../components/ui/state-word.js";
+import { LoadingWord } from "../../components/ui/cover.js";
+import { CoverRows } from "./screens/PageLoading.js";
 
 export const SECTION = "vex-mem-sec";
 export const PILL = "vex-mem-tag";
@@ -75,14 +77,17 @@ export function FilterKeys<T extends string>({
   );
 }
 
+/**
+ * A section's first read, H3's loading (docs/design/H3-DESKTOP.md section
+ * 5.6): the stepping hatch and the word, over two parked cover rows on the
+ * card ground where the register's rows will stand. One status, named by the
+ * word; the covers are decoration.
+ */
 export function Loading({ label }: { readonly label: string }): JSX.Element {
   return (
-    <div role="status" aria-live="polite" className="vex-mem-loading">
-      <StateWord state="listening" word={label} />
-      {/* The same line the loader draws; decorative, the word says it. */}
-      <span className="vex-loader vex-loader--ink" aria-hidden>
-        <i className="vex-loader__segment" />
-      </span>
+    <div role="status" aria-label={label} aria-busy="true" className="vex-mem-loading">
+      <LoadingWord word={label} />
+      <CoverRows rows={2} />
     </div>
   );
 }

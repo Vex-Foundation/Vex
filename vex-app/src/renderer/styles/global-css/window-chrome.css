@@ -1,9 +1,17 @@
 /* Window chrome utilities (docs/design/R3-MINIMAL.md section 2.2). The title bar is hidden on every
- * OS; each 44px head row is the drag region and every control inside it opts
- * out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac | win | linux) and
- * `data-chrome` (overlay | native | mac) on <html>. Wired on the running
- * head, the left page's head row, the gutter, the BOOK head and Lighter's
- * top bar (AppShell and shell.css).
+ * OS; the head row at the window's top is the drag region and every control
+ * inside it opts out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac |
+ * win | linux) and `data-chrome` (overlay | native | mac) on <html>. Wired on
+ * the header (ShellHeader) and its cells, the BOOK head and Lighter's top bar
+ * (AppShell and shell.css).
+ *
+ * `--head-h` is that row's height, 76 (H3's header, docs/design/H3-DESKTOP.md
+ * section 4.7). The main process places the window's own chrome on it
+ * (src/main/windows/chrome-options.ts: the traffic lights centred at y 32,
+ * the caption overlay 75 high), so every screen's top row takes it, the
+ * desk's title row and the screens before the shell included; the test there
+ * fails if the two values drift. Rows that no longer meet the window's top
+ * under H3's header keep R3's 44 (shell.css).
  *
  * Example:
  *   <header class="vex-drag">
@@ -17,7 +25,7 @@
   /* Native window-controls width on the right (Windows 138px incl. gap in
    * the design doc; the live value wins when the overlay reports one). */
   --overlay-w: 0px;
-  --head-h: 44px;
+  --head-h: 76px;
 }
 
 /* Windows and Linux with Window Controls Overlay. */
@@ -42,7 +50,7 @@ html[data-chrome="native"] .vex-drag {
 
 /* Head that sits under the native controls: reserve their width plus 8px.
  * Padding, not width: the row and its bottom rule still run to the window
- * edge, under the controls (the native overlay is 43px, 1px short of the
+ * edge, under the controls (the native overlay is 75px, 1px short of the
  * rule, main/windows/chrome-options.ts); only the content stops short.
  * Qualified by `html` so it outranks a head row's own padding shorthand. */
 html .vex-overlay-end {

@@ -208,7 +208,7 @@ afterEach(cleanup);
 describe("PositionBlock scope input", () => {
   it("a global scope reads the global portfolio and prints the full aggregate", async () => {
     readMock.mockResolvedValue(ok(portfolio()));
-    renderWith(<PositionBlock scope={{ kind: "global" }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
     await screen.findByText("$1,234.56");
     expect(readMock).toHaveBeenCalledWith({ scope: "global" });
@@ -219,7 +219,7 @@ describe("PositionBlock scope input", () => {
     readMock.mockResolvedValue(
       ok(portfolio({ scope: "session", liveTotalUsd: 40 })),
     );
-    renderWith(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     await screen.findByText("$40.00");
     expect(readInputs()).toEqual([{ scope: "session", sessionId: SESSION }]);
@@ -230,7 +230,7 @@ describe("PositionBlock scope input", () => {
     readMock.mockResolvedValue(
       ok(portfolio({ scope: "project", liveTotalUsd: 75 })),
     );
-    renderWith(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
 
     await screen.findByText("$75.00");
     expect(readInputs()).toEqual([{ scope: "project", projectId: PROJECT }]);
@@ -247,7 +247,7 @@ describe("PositionBlock scope input", () => {
         ),
       ),
     );
-    renderWith(<PositionBlock scope={{ kind: "wallet", wallet: EVM_WALLET }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "wallet", wallet: EVM_WALLET }} />);
 
     await screen.findByText("$111.11");
     expect(readMock).toHaveBeenCalledWith({
@@ -263,7 +263,7 @@ describe("PositionBlock scope input", () => {
     readMock.mockResolvedValue(ok(portfolio({ scope: "project" })));
     listAvailableMock.mockResolvedValue(inventory([EVM_WALLET], [SOL_WALLET]));
     const { client } = renderWithClient(
-      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} chips={null} />,
+      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} />,
     );
     // The scope's own read resolving is the settle point: the card has
     // mounted, run its effects and painted before the negative is asserted.
@@ -272,6 +272,17 @@ describe("PositionBlock scope input", () => {
     expect(client.getQueryData(["wallets", "available"])).toBeUndefined();
   });
 });
+
+/**
+ * The chain read warning, once the first read has answered: while it runs the
+ * block's one status is the loading one (its covers), so wait for that to go.
+ */
+async function chainWarning(): Promise<HTMLElement> {
+  await waitFor(() =>
+    expect(screen.queryByRole("status", { name: "Loading your portfolio…" })).toBeNull(),
+  );
+  return screen.findByRole("status");
+}
 
 describe("chain read uncertainty", () => {
   it("shows the stale chain and both timestamps beside cached portfolio value", async () => {
@@ -292,9 +303,9 @@ describe("chain read uncertainty", () => {
         }),
       ),
     );
-    const { container } = renderWith(<PositionBlock scope={{ kind: "global" }} chips={null} />);
+    const { container } = renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("Solana: stale since");
     expect(warning.textContent).toContain("Totals include last known values");
     expect(container.querySelector(`time[datetime="${lastSuccessAt}"]`)).not.toBeNull();
@@ -318,9 +329,9 @@ describe("chain read uncertainty", () => {
         }),
       ),
     );
-    renderWith(<PositionBlock scope={{ kind: "global" }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("new tokens on this chain may be missing since");
     expect(warning.textContent).toContain("Reason: http_403");
     expect(warning.textContent).not.toContain("Some balances are stale");
@@ -342,9 +353,9 @@ describe("chain read uncertainty", () => {
         }),
       ),
     );
-    renderWith(<PositionBlock scope={{ kind: "global" }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("public explorer refuses automated reads");
     expect(warning.textContent).toContain(
       "Blockscout base URL override in Settings > API keys > Chain endpoints",
@@ -362,9 +373,9 @@ describe("chain read uncertainty", () => {
         }),
       ),
     );
-    renderWith(<PositionBlock scope={{ kind: "global" }} chips={null} />);
+    renderWith(<PositionBlock scope={{ kind: "global" }} />);
 
-    const warning = await screen.findByRole("status");
+    const warning = await chainWarning();
     expect(warning.textContent).toContain("Latest snapshot is partial (1 unresolved chain reads)");
     expect(warning.textContent).toContain("P&L is unavailable");
   });

@@ -172,17 +172,18 @@ describe("boardCardValue over non-Latin tickers", () => {
 
 /**
  * THE PROPORTIONAL SURFACE. The ticker is not `tabular-nums`: it renders in
- * Instrument Sans regular at 12.5px, whose advances run from `I` at 3.18px to
- * `W` at 13.61px against a slot of 9.1px (the widest glyph the allowlist
- * admits, `V` and `A`). Counting characters there is not measuring width, and
- * this is what says so.
+ * H3's sans, Be Vietnam Pro regular at 12.5px, whose advances run from `I` at
+ * 3.23px to `W` at 12.56px against a slot of 9.25px (the widest glyph the
+ * allowlist admits, `A` at 9.20, rounded up). Counting characters there is not
+ * measuring width, and this is what says so.
  */
 describe("boardCardValue on the proportional surface", () => {
   it("charges a wide Latin glyph two slots and a narrow one one", () => {
-    // Measured at 12.5px: W 13.61, M 11.32, Q 9.84, % and O 9.82, G 9.56,
-    // D 9.40, C 9.26, H and N 9.20 - every one past the 9.1px slot. (U, at
-    // 8.90, is charged two as well: over-charging is the safe direction.)
-    // E 7.97, A 9.10, I 3.18 - every one inside it.
+    // Measured at 12.5px in Chromium: W 12.56, M 10.67, % 10.63, O 10.33,
+    // Q 10.28, G 9.80, C 9.69 - every one past the 9.25px slot. N 9.16,
+    // D 9.11, U 9.06 and H 8.88 now measure inside it and are charged two
+    // all the same: over-charging is the safe direction.
+    // A 9.20, E 7.75, I 3.23 - every one inside it.
     for (const wide of ["W", "M", "C", "D", "G", "H", "N", "O", "Q", "U", "%"]) {
       expect(boardCardValueSlots(wide, "proportional")).toBe(2);
     }
@@ -196,9 +197,9 @@ describe("boardCardValue on the proportional surface", () => {
 
   it("shortens WWWWWWWW, which a character count let through", () => {
     // THE DEFECT: eight characters, eight of ten slots under a count, and
-    // 107px of glyphs against the 91px a ten-slot ticker may take - clipped,
-    // with `shortened` false and a neutral affordance saying nothing had been
-    // cut.
+    // about 100px of glyphs (8 x 12.56) against the 92.5px a ten-slot ticker
+    // may take - clipped, with `shortened` false and a neutral affordance
+    // saying nothing had been cut.
     expect(boardCardValueSlots("WWWWWWWW", "proportional")).toBe(16);
     const printed = boardCardValue(
       "WWWWWWWW",
@@ -207,8 +208,8 @@ describe("boardCardValue on the proportional surface", () => {
     );
     expect(printed.shortened).toBe(true);
     expect(printed.text).toBe("WWWW…");
-    // 4 x 13.61 is 54.4px and the ellipsis 8.2px: inside the 91px a ten-slot
-    // ticker may take, and inside the 120px identity column.
+    // 4 x 12.56 is 50.3px with the ellipsis after it: inside the 92.5px a
+    // ten-slot ticker may take, and inside the 126px identity column.
     expect(
       boardCardValueSlots(printed.text.slice(0, -1), "proportional"),
     ).toBeLessThanOrEqual(BOARD_CARD_TICKER_MAX_SLOTS - 2);
@@ -217,9 +218,9 @@ describe("boardCardValue on the proportional surface", () => {
   it("weighs a lowercase glyph as its capital, which is the safe direction", () => {
     // The tile no longer forces capitals, but a lowercase glyph is still
     // weighed as its capital, which is never narrower than what renders: the
-    // widest lowercase among the one-slot capitals is 7.6px against the 9.1px
-    // slot, and `w` (9.6px) and `m` (11.5px), which ARE wider than a slot,
-    // land in the two-slot class as `W` and `M`.
+    // widest lowercase among the one-slot capitals (`b`, `d`, `p`, `q`) is
+    // 8.16px against the 9.25px slot, and `w` (10.88px) and `m` (11.17px),
+    // which ARE wider than a slot, land in the two-slot class as `W` and `M`.
     expect(boardCardValueSlots("wwwwwwww", "proportional")).toBe(16);
     expect(
       boardCardValue("wwwwwwww", BOARD_CARD_TICKER_MAX_SLOTS, "proportional")
@@ -274,32 +275,46 @@ describe("anyShortened", () => {
  * change to a budget constant would otherwise slip past: raise a budget past
  * its column and the tile cuts a figure with `shortened` still false.
  *
- * The advances are computed from the shipped font files (JetBrains Mono
- * advances 0.6em; Instrument Sans measured with kerning), so they are the
- * browser's numbers to within a pixel and the e2e matrix re-measures them in
- * a real engine.
+ * The advances are H3's bundled faces (docs/design/H3-DESKTOP.md section 2.3),
+ * measured in Chromium on 4 November 2026: Roboto Mono advances 0.6em like
+ * the JetBrains Mono it replaced, so the figure columns kept their numbers;
+ * Be Vietnam Pro is wider than Instrument Sans, so the `24h` window, the
+ * ticker slot and the stat label moved. The e2e matrix re-measures them in a
+ * real engine.
  */
 describe("the budgets fit the columns the tile floor leaves", () => {
   /**
    * The tile's inner floor: the price row binds at whole-pixel advances (it
-   * measures 287), see board-layout.css.
+   * measures 285.6), see board-layout.css.
    */
   const FLOOR_INNER = 288;
-  /** JetBrains Mono 13 with `.vex-num` at -.01em: 7.8 - 0.13. */
+  /** Roboto Mono 13 with `.vex-num` at -.01em: 7.8 - 0.13 (measured 7.67). */
   const MONO_13 = 7.67;
-  /** JetBrains Mono 26 / 500 at -.03em: 15.6 - 0.78. */
+  /** Roboto Mono 26 / 500 at -.03em: 15.6 - 0.78 (measured 14.82). */
   const MONO_26 = 14.82;
-  /** `24h` in Instrument Sans 12. */
-  const WINDOW_24H = 20.51;
-  /** The widest glyph the proportional allowlist admits, at 12.5px. */
-  const SLOT = 9.1;
+  /** `24h` in Be Vietnam Pro 12 (Instrument Sans set it at 20.51). */
+  const WINDOW_24H = 23.22;
+  /** `24h` at whole-pixel advances: 2 7.81, 4 8.53, h 7.00 round to 8 + 9 + 7. */
+  const WINDOW_24H_ROUNDED = 24;
+  /**
+   * The gap between the price, the delta and the window: 8, R3's 10 less the
+   * 2px each that H3's wider `24h` needs back (`TokenCardV3.tsx`).
+   */
+  const ROW_GAP = 8;
+  /** The widest glyph the proportional allowlist admits, `A` 9.20, rounded up. */
+  const SLOT = 9.25;
+  /** `24h Volume`, the widest stat label, in Be Vietnam Pro 11.5. */
+  // "24h Volume" in sans 11, Be Vietnam Pro, on Linux Chromium (the widest engine).
+  const WIDEST_STAT_LABEL = 67;
+  // The four figures stand 4 apart (board-layout.css, `.vex-board-card-stats`).
+  const STAT_GAP = 4;
 
   it("fits the widest price, delta and window on one row at the floor", () => {
     const row =
       BOARD_CARD_PRICE_MAX_SLOTS * MONO_26 +
-      10 +
+      ROW_GAP +
       BOARD_CARD_DELTA_MAX_SLOTS * MONO_13 +
-      10 +
+      ROW_GAP +
       WINDOW_24H;
     expect(row).toBeLessThanOrEqual(FLOOR_INNER);
     // And it is the row the floor was derived from, not slack: one more slot
@@ -311,20 +326,27 @@ describe("the budgets fit the columns the tile floor leaves", () => {
     // Chromium on Linux without subpixel text positioning rounds each glyph
     // advance to a whole pixel: the mono 26 advance 15.6 becomes 16 (15.22
     // after the -.03em tracking), the mono 13 advance 7.8 becomes 8 (7.87
-    // after -.01em), and `24h` measures 21.5 instead of 20.51. The fractional
-    // row of 279.71 above is then 287.1, which is what made 282 too narrow.
+    // after -.01em), and `24h` measures 24 instead of 23.22. The fractional
+    // row of 278.5 above is then 285.6.
     const priceRounded = BOARD_CARD_PRICE_MAX_SLOTS * (16 - 0.78);
     const deltaRounded = BOARD_CARD_DELTA_MAX_SLOTS * (8 - 0.13);
-    const row = priceRounded + 10 + deltaRounded + 10 + 21.5;
+    const row = priceRounded + ROW_GAP + deltaRounded + ROW_GAP + WINDOW_24H_ROUNDED;
     expect(row).toBeLessThanOrEqual(FLOOR_INNER);
     // The rounding is what moved the floor: the same row does not fit 282.
     expect(row).toBeGreaterThan(282);
+    // And R3's 10px gaps no longer fit with H3's `24h`: that is why they are 8.
+    expect(priceRounded + 10 + deltaRounded + 10 + WINDOW_24H_ROUNDED).toBeGreaterThan(FLOOR_INNER);
   });
 
   it("fits the widest stat value in a column of four, and one more slot would not", () => {
-    const column = (FLOOR_INNER - 3 * 6) / 4;
+    const column = (FLOOR_INNER - 3 * STAT_GAP) / 4;
     expect(BOARD_CARD_STAT_MAX_SLOTS * MONO_13).toBeLessThanOrEqual(column);
     expect((BOARD_CARD_STAT_MAX_SLOTS + 1) * MONO_13).toBeGreaterThan(column);
+  });
+
+  it("fits the widest stat label in a column of four", () => {
+    // 67 in a 69 column: the label sits over its value whole.
+    expect(WIDEST_STAT_LABEL).toBeLessThanOrEqual((FLOOR_INNER - 3 * STAT_GAP) / 4);
   });
 
   it("keeps a ten-slot ticker inside the identity column", () => {

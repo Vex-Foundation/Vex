@@ -1,18 +1,15 @@
-/* THE SETUP WIZARD AND ITS STEP FORMS (docs/design/R3-MINIMAL.md sections 9.6
- * and 10.3).
+/* THE SETUP WIZARD AND ITS STEP FORMS.
  *
  * Two hosts draw the same seven step forms:
  *
- *   the wizard   a plate with Vex at the left (480 at 1440, a third of the
- *                window under it, gone under 1180; no word under her), and at
- *                the right the named
- *                stepper (top band padding 30 72 0), the form (body padding
- *                40 72 0, column max 600) and a footer that stays at the foot
- *                of the window (padding 16 72 22, a quiet rule above) with the
- *                privacy link and the step's actions. Under 1360 the side
- *                padding is the 1000 x 720 value, 40; under 1180 the plate
- *                leaves and a 26 vx mark with Vex's state word stands above
- *                the form (top 22 40 0, body 26 40 0, foot 12 40 16, title 38);
+ *   the wizard   on H3's stage (docs/design/H3-DESKTOP.md section 4.9; the
+ *                plates `stage-wizard-password` and `stage-wizard-wallets`,
+ *                approved as drawn): the stage frame (`stage.css`) holds the
+ *                seven steps in its left column and Kimm in her own; the work
+ *                column is the step's page (the title in sans 33 at 600, the
+ *                lead, the form) over the step's bottom row. What the stage
+ *                re-pins in the step bodies is scoped to `.vex-pre` in
+ *                `stage.css`, so Settings never reads it;
  *   Settings     the step form in back-edit mode under the Settings section
  *                head (the `.vex-set__head` grammar of settings.css: the title
  *                22 / 500 with its status word, the lead 14), the actions at
@@ -21,168 +18,29 @@
  * The step bodies share one vocabulary (label and value rows, provider rows,
  * number rows, the model picker, the review grid, the card), so a form reads
  * the same in both hosts. Radius 0, no shadow, no blur, no gradient ramp; every
- * colour is an alias except the plate's day ground (spec section 1.1, the value
- * chronos-gate.css paints the stage plate with) and the selection wash, which
- * has no alias yet (blue at 7.5% by day, periwinkle at 10% at night, the value
- * settings.css draws its selected row with). */
+ * colour is an alias. The selection wash is the H3 selected step,
+ * `--vex-alias-interactive-active`. */
 
 /* ============================================================ *
- *  The wizard frame                                             *
+ *  The wizard in the stage's work column                        *
  * ============================================================ */
-.vex-wz {
-  --wz-pad: 72px;
-  --wz-sel: rgba(163, 171, 255, 0.1);
-  position: relative;
-  display: grid;
-  grid-template-columns: min(480px, 33.333vw) minmax(0, 1fr);
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background: var(--vex-alias-bg-base);
-  font-family: var(--font-sans);
-  color: var(--vex-alias-label-primary);
-}
-[data-vex-theme="celeris"] .vex-wz,
-[data-vex-theme="celeris"] .vex-wzs {
-  --wz-sel: rgba(0, 0, 192, 0.075);
-}
-.vex-wzs {
-  --wz-sel: rgba(163, 171, 255, 0.1);
-}
-
-/* The plate: the plateau print by day or night (wizard position 50% 80%), its
- * grain and Vex rising from the token; no state word under her (owner). The
- * ground shows while the photograph decodes. */
-.vex-wz__plate {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  background: var(--color-night-0);
-}
-[data-vex-theme="celeris"] .vex-wz__plate {
-  background: #c7b6a6;
-}
-.vex-wz__print {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  object-fit: cover;
-  object-position: 50% 80%;
-  user-select: none;
-}
-.vex-wz__print--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-wz__print--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-wz__print--night {
-  display: none;
-}
-.vex-wz__grain {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0.1;
-  mix-blend-mode: multiply;
-  background-image: url(/art/grain.svg);
-  background-size: 220px 220px;
-}
-/* The wizard's token stands at bottom 104, 14 px under the wake's 118 (spec
- * section 10.1): her host is the plate's own height, set 14 px lower, so her
- * scale is the wake's. */
-.vex-wz__vex {
-  position: absolute;
-  top: 14px;
-  right: 0;
-  bottom: -14px;
-  left: 0;
-  z-index: 2;
-}
-/* The plate's 44 px head row: the hidden title bar's drag region over the
- * print, where the macOS traffic lights sit. */
-.vex-wz__drag {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: var(--head-h, 44px);
-}
-
 .vex-wz__main {
+  --wz-sel: var(--vex-alias-interactive-active);
   display: flex;
-  flex-direction: column;
-  min-width: 0;
   min-height: 0;
-}
-
-/* The top band is the hidden title bar's drag region (the stepper is display
- * only); its rule runs under the Windows and Linux caption buttons. */
-.vex-wz__top {
-  flex: none;
-  padding: 30px var(--wz-pad) 0;
-}
-
-/* The named stepper: 13, the current step blue 500 with a 2px underline, done
- * and upcoming steps muted; done is the solid swatch, the current step solid,
- * upcoming the outline. */
-.vex-wz-steps {
-  display: flex;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-wz-steps__step {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 7px;
-  margin-right: 20px;
-  padding: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-wz-steps__step:last-child {
-  margin-right: 0;
-}
-.vex-wz-steps__step .vex-swatch[data-s] {
-  color: var(--vex-alias-accent-primary);
-}
-.vex-wz-steps__step[aria-current="step"] {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-wz-steps__step[aria-current="step"]::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: var(--vex-alias-accent-primary);
-}
-
-/* The body scrolls; the step fills it so the footer stands at the window's
- * foot when the form is short and sticks there when it is long. */
-.vex-wz__body {
-  display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  min-height: 0;
-  overflow-x: clip;
-  overflow-y: auto;
 }
+.vex-wzs {
+  --wz-sel: var(--vex-alias-interactive-active);
+}
+
+/* One step's pane: it fills the work column, so its page scrolls above its
+ * bottom row and the row stands on the bottom row's seam. */
 .vex-wz__step {
   display: flex;
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 auto;
   flex-direction: column;
   animation: vex-surface-enter var(--vex-duration-base) var(--vex-ease-out) both;
 }
@@ -202,62 +60,44 @@
   }
 }
 .vex-wz__loading {
-  padding: 40px var(--wz-pad) 0;
+  padding: 28px 24px;
 }
 
 /* --- The step panel in the wizard ------------------------------ */
-.vex-wzp {
-  display: flex;
-  flex: 1 0 auto;
-  flex-direction: column;
-}
+.vex-wzp,
 .vex-wzp__form {
   display: flex;
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 auto;
   flex-direction: column;
 }
-.vex-wzp__head,
-.vex-wzp__content {
+/* A page's body: 24 in from the edges, as the transcript and the welcome. */
+.vex-wzp__page {
   box-sizing: border-box;
   width: 100%;
-  max-width: calc(600px + 2 * var(--wz-pad));
-  padding-inline: var(--wz-pad);
+  max-width: 760px;
+  padding: 28px 24px 32px;
 }
-.vex-wzp__head {
-  padding-top: 40px;
-}
-.vex-wzp__content {
-  padding-bottom: 32px;
-}
-/* Above the form under 1180: the 26 vx mark and Vex's state word. */
-.vex-wzp__mini {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 18px;
-  font-size: 13px;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-wzp__eyebrow {
-  margin: 0 0 10px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--vex-alias-label-tertiary);
-}
+/* A step's title: sans 33 at 600, H3's largest figure size (Portfolio's
+ * equity); the lead under it in ink 2. */
 .vex-wzp__title {
-  margin: 0 0 12px;
-  font-family: var(--font-serif);
-  font-size: 44px;
-  font-weight: 400;
-  line-height: 1.02;
-  letter-spacing: -0.012em;
-  color: var(--vex-alias-accent-primary);
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 40px;
+  color: var(--vex-alias-label-primary);
 }
 .vex-wzp__lead {
-  margin: 0 0 26px;
-  font-size: 15px;
-  line-height: 1.55;
+  max-width: 660px;
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--vex-alias-label-secondary);
+}
+.vex-wzp__content {
+  max-width: 712px;
+  margin-top: 36px;
 }
 /* Review's edit path: the step being edited and the way back. */
 .vex-wzp__editing {
@@ -271,38 +111,12 @@
   font-size: 13px;
   color: var(--vex-alias-label-secondary);
 }
-.vex-wzp__foot {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: auto;
-  padding: 16px var(--wz-pad) 22px;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--vex-alias-bg-base);
-}
-.vex-wzp__sp {
-  flex: 1 1 auto;
-}
-.vex-wzp__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-}
+/* The privacy link, in the stage's bottom-left cell: ink with an underline
+ * (`stage.css` paints the cell's links). */
 .vex-wzp__meta {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-wzp__meta:hover {
-  color: var(--vex-alias-label-primary);
 }
 .vex-wzp__meta:focus-visible,
 .vex-wzs__meta:focus-visible,
@@ -311,55 +125,31 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 1359px) {
-  .vex-wz {
-    --wz-pad: 40px;
-  }
-}
-@media (max-width: 1179px) {
-  .vex-wz {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .vex-wz__plate {
-    display: none;
-  }
-  .vex-wz__top {
-    padding-top: 22px;
-  }
-  .vex-wzp__head {
-    padding-top: 26px;
-  }
-  .vex-wzp__foot {
-    padding-top: 12px;
-    padding-bottom: 16px;
-  }
-  .vex-wzp__mini {
-    display: flex;
-  }
-  .vex-wzp__title {
-    font-size: 38px;
-  }
-}
-/* macOS without the plate: the traffic lights sit at the window's top left,
- * so the top band starts under the 44 px head row. */
-@media (max-width: 1179px) {
-  html[data-os="mac"] .vex-wz__top {
-    padding-top: var(--head-h, 44px);
-  }
-}
-
 /* --- The step panel in Settings -------------------------------- */
 .vex-wzs {
   display: flex;
   flex-direction: column;
 }
+/* The Save band (VEX Cloud's `.vx-savebar`, D6-8; owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9): a band at least 56 high under the rule, the keys
+ * as its end cells, each at least 148 wide, the band's height, its left rule
+ * on. A Save that will not act is held (the kit's held key: no fill, a muted
+ * word), so a clean form shows no blue. */
 .vex-wzs__actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
-  gap: 10px;
+  min-height: 56px;
   margin-top: 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-wzs__actions > [data-vex-button] {
+  height: auto;
+  min-height: 56px;
+  min-width: 148px;
+  border-width: 0 0 0 1px;
+  border-left-color: var(--vex-alias-rule);
 }
 .vex-wzs__meta {
   display: inline-flex;

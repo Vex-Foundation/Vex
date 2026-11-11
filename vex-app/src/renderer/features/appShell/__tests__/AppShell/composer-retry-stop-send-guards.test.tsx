@@ -231,16 +231,16 @@ describe("AppShell", () => {
     const { container } = renderShell();
     await screen.findByText("Stoppable chat");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "Long-running research" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop agent" });
-    // The title bar's token chip names the live turn (Thinking or Working).
+    // The header's VEX cell carries the live turn (Thinking or Working).
     await waitFor(() =>
       expect(
         container
-          .querySelector('[data-vex-area="vex-token-chip"]')
+          .querySelector('[data-vex-area="vex-head-cell"]')
           ?.getAttribute("data-vex-state"),
       ).toMatch(/^(thinking|working)$/),
     );
@@ -286,7 +286,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Stop early");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "do something" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -303,7 +303,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: row.id });
 
     renderShell();
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "hello while loading" } });
 
     const send = screen.getByRole("button", { name: "Send message" });
@@ -341,7 +341,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: row.id });
 
     renderShell();
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "send despite error" } });
     const send = screen.getByRole("button", { name: "Send message" });
     expect((send as HTMLButtonElement).disabled).toBe(false);

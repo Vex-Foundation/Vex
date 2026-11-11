@@ -31,7 +31,7 @@
  * setting, and a reader who found it "on" would have no idea what it was
  * doing. `aria-pressed` still reports which tile the spotlight is currently
  * about, so the selected state is not left to an outline colour; the selected
- * tile also wears the 1.5px blue outline `board.css` draws inside it.
+ * tile also wears the 1px blue outline `board.css` draws inside it.
  *
  * THREE DATA STATES, and each is a designed state of the SAME elements, never
  * a missing element: a pool with no hydration row, a row whose price the
@@ -121,7 +121,7 @@ import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
 /**
  * The tile plate.
  *
- * `vex-board-card` is the selected-tile seam (`board.css` draws the 1.5px blue
+ * `vex-board-card` is the selected-tile seam (`board.css` draws the 1px blue
  * outline inside it) and `vex-bd-tile` is the frame (`board-layout.css`: the
  * tile's right and bottom rule, its padding 16 18 14, no fill, the hover
  * wash). The hover moves COLOUR only, never geometry: a tile that scaled or
@@ -171,11 +171,11 @@ export function TokenCardV3({
   // budgets belong to `boardCardValueBudget.ts`; the accessible name below
   // and the disclosure panel both keep the WHOLE strings, so nothing here
   // removes a value from the reader - it decides which copy is on the plate.
-  // The ticker is the tile's one PROPORTIONAL surface: it renders in
-  // Instrument Sans, where `W` advances well over twice as far as `I`, so it
-  // is weighed per glyph rather than counted. Everything below renders in
-  // JetBrains Mono with `tabular-nums`, where a count of characters genuinely
-  // is a width.
+  // The ticker is the tile's one PROPORTIONAL surface: it renders in the
+  // sans (Be Vietnam Pro), where `W` advances well over twice as far as `I`,
+  // so it is weighed per glyph rather than counted. Everything below renders
+  // in the mono (Roboto Mono) with `tabular-nums`, where a count of
+  // characters genuinely is a width.
   const printedTicker = boardCardValue(
     ticker,
     BOARD_CARD_TICKER_MAX_SLOTS,
@@ -346,7 +346,15 @@ export function TokenCardV3({
           * the right priority, because the delta and the window are short,
           * fixed and meaningless apart, and because the disclosure in the
           * header carries the whole decimal string either way. */}
-        <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2.5">
+        {/* 8px BETWEEN THE THREE, not R3's 10. H3's sans (Be Vietnam Pro)
+          * sets `24h` at 23.22px where Instrument Sans set 20.51, and at
+          * whole-pixel advances (Linux Chromium) the row of the widest price,
+          * delta and window measured about 290 against the 288 floor. The two
+          * gaps give 2px each back, so the row is 285.6 there (278.5 at
+          * fractional advances) and every column threshold in
+          * `board-layout.css` stays where it was. Derivation: the head of
+          * `boardCardValueBudget.ts` and its geometry test. */}
+        <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2">
           <span
             data-vex-area="board-token-price"
             data-shortened={printedPrice.shortened ? "true" : undefined}
@@ -575,8 +583,9 @@ function Stat({
   // NEITHER LINE ELLIPSIZES IN CSS, and that is why the value arrives already
   // decided. A stat label is fixed product copy and a stat value is a figure
   // a reader is about to act on; the floor in `board-layout.css` is sized so
-  // every realistic pair fits whole (binding label "24h Volume" at 63px in
-  // sans 11.5, widest value "$1234.5B" at 62px in mono 13). A schema extreme
+  // every realistic pair fits whole (binding label "24h Volume" at 67px in
+  // sans 11, Be Vietnam Pro on Linux Chromium, in a 69px column; widest value
+  // "$1234.5B" at 62px in mono 13). A schema extreme
   // that cannot fit is shortened by `boardCardValueBudget.ts` BEFORE it gets
   // here, so what reaches this cell always fits and always says whether it
   // is the whole figure - rather than being clipped by the tile with nothing
@@ -584,7 +593,7 @@ function Stat({
   // is a figure (mono, tabular).
   return (
     <div className="min-w-0">
-      <dt className="whitespace-nowrap text-[11.5px] leading-[16px] text-ink-tertiary">
+      <dt className="whitespace-nowrap text-[11px] leading-[16px] text-ink-tertiary">
         {label}
       </dt>
       <dd

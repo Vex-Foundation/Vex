@@ -1,25 +1,29 @@
 /**
- * THE STUDIO BODY OF THE LEFT SIDEBAR, column 1 while `runtimeMode ===
- * "studio"` (docs/design/R3-MINIMAL.md sections 2.1 and 4, "Studio").
+ * THE STUDIO SIDEBAR, column 1 while `runtimeMode === "studio"`, in H3 cells
+ * (our approved Studio plate, `?plate=studio-project` in the harness;
+ * docs/design/H3-DESKTOP.md sections 1.4 and 4.9).
  *
  * Studio is a place in the app, not a second application, so its column IS
- * the left sidebar: the same 44px head (the vx wordmark and the collapse key),
- * the same New chat and Search rows, the same nav with Studio selected, the
- * same account row at the foot. Only the BODY under the nav is Studio's: New
- * project, the "Projects" group with its rows (34 high, the selected one in
- * blue on the selection wash), the Welcome row, and the explorer of the open
- * project ("Explorer · {name}", rows 28 high, 13.5, line icons 14 in ink 2).
- * The nav's Chat row is the way back to the agent shell; the old Agent and
- * Studio capsule is gone (the store's `setRuntimeMode` and the shell's
- * `data-vex-runtime-mode` seam are unchanged).
+ * the chats column with Studio's own cells: the head (the logo cell and the
+ * sidebar key) is the frame's header over it (`headless`; a standalone mount
+ * draws its own 44px head row), and the account cell is the bottom row's.
+ * Open, top to bottom:
  *
- * ## The collapsed rail is ICONS ONLY
- *
- * Collapsing the column leaves one 40 x 40 key per control and nothing else,
- * with tooltips and accessible names carrying the words: New chat, Search,
- * the expand key, the nav, New project, a folder key per project and the
- * Welcome key. Every section title, count and placeholder sentence is
- * wide-only.
+ *   NEW PROJECT    the 55 cell on the cell fill, where the agent column has
+ *                  NEW CHAT: Studio's one way to make something
+ *   Search files   the 48 cell; it opens ONE field over the projects and the
+ *                  open project's files (below)
+ *   the nav        FOLDED to its Studio row, with a chevron key that unfolds
+ *                  the nine rows in place and folds them again (the fold is
+ *                  this column's own state, `SidebarNav`'s `fold`). The
+ *                  Studio row, pressed where it is current, returns to
+ *                  Studio's start (the welcome); the Chat row is the way back
+ *                  to the agent shell and its New chat
+ *   PROJECTS       a 44 head, rows on the 36 pitch with a RUNNING tag while a
+ *                  shell of the project's is live, "Show all N" under three
+ *                  (`StudioProjectsSection`)
+ *   EXPLORER       a 44 head with the new file, new folder, refresh and
+ *                  collapse keys, the tree on a 30 pitch (`ExplorerTree`)
  *
  * ## The explorer is a PANE, not a box
  *
@@ -32,6 +36,17 @@
  * session, drop its watcher and throw away every folder the user expanded.
  * Without ANY active project there is nothing to render, so it is absent.
  *
+ * ## The rail is ICONS ONLY, and its files are a drawer
+ *
+ * Folded to the 76px rail, the column keeps one key per control, each the
+ * rail's whole width in the open column's order: the Expand key (where the
+ * column can open, from 1280 up), New project, Search, the nine nav keys.
+ * Tooltips and accessible names carry the words. Under 1280 the column never
+ * opens (docs/design/H3-DESKTOP.md section 4.12: no track changes there), so
+ * the rail ends in a Projects and files key instead: it opens the same
+ * projects and explorer as a 248 drawer over the chat (D2; under the band
+ * below 1024), and the drawer closes on a pick, on Escape and on the key.
+ *
  * ## Search
  *
  * The Search row opens ONE field over two kinds of thing - project names and
@@ -41,9 +56,9 @@
  * answer while the index builds. The index has a SESSION lifetime - walked
  * when the search opens, reused for every keystroke, released when it closes -
  * and its bounds and its age are stated on screen (`rail-search-model.ts`,
- * `StudioRailSearchResults.tsx`). Like the agent sidebar's search, the field
- * takes the place of New chat, Search and the nav while it is open; Escape
- * clears a typed query first, then closes.
+ * `StudioRailSearchResults.tsx`). As in the agent column, the field takes the
+ * search cell's place with New project above it and the nav out of the way;
+ * Escape clears a typed query first, then closes.
  */
 
 import { ProjectCleanupNotices } from "../projects/ProjectCleanupNotices.js";
@@ -61,15 +76,17 @@ import {
 import type { FileNode } from "@shared/schemas/files.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import {
+  LineChevronDown,
+  LineChevronUp,
   LineClose,
-  LineHome,
-  LineNewChat,
+  LineFolder,
   LinePanelLeft,
   LinePlus,
   LineSearch,
 } from "../../../../components/icons/line/index.js";
 import { SplitPane } from "../../../../components/ui/split-pane.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
+import { H3_CONSOLE_LINE_HEIGHT } from "../../../../lib/shell-columns.js";
 import { useQuietScrollbars } from "../../../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 import { cn } from "../../../../lib/utils.js";
@@ -92,7 +109,9 @@ import {
   projectFileDriftLabel,
   STUDIO_DRIFT_SENTENCES,
   STUDIO_EXPLORER_SECTION,
-  STUDIO_NEW_CHAT_LABEL,
+  STUDIO_FILES_DRAWER_LABEL,
+  STUDIO_NAV_FOLD_LABEL,
+  STUDIO_NAV_UNFOLD_LABEL,
   STUDIO_NEW_PROJECT_LABEL,
   STUDIO_RAIL_SPLIT_LABEL,
   STUDIO_SEARCH_CLEAR_LABEL,
@@ -103,7 +122,6 @@ import {
   STUDIO_SIDEBAR_COLLAPSE_LABEL,
   STUDIO_SIDEBAR_EXPAND_LABEL,
   STUDIO_SIDEBAR_LABEL,
-  STUDIO_WELCOME_ROW_LABEL,
 } from "../studio-copy.js";
 import { driftedArtifactPaths } from "./project-row-model.js";
 import {
@@ -114,6 +132,7 @@ import {
 import { StudioProjectsSection } from "./StudioProjectsSection.js";
 import { StudioRailSearchResults } from "./StudioRailSearchResults.js";
 import { useRailFileIndex } from "./use-rail-file-index.js";
+
 
 /** The listbox id the search field's `aria-controls` points at. */
 const SEARCH_LISTBOX_ID = "studio-rail-search-results";
@@ -177,15 +196,9 @@ export function focusStudioRailSearch(): boolean {
   return true;
 }
 
-/**
- * The left sidebar's New chat from Studio: back to the agent shell, then the
- * same new session form the agent sidebar opens.
- */
-function openNewChatFromStudio(): void {
-  const store = useUiStore.getState();
-  store.navigate("chat");
-  store.openCreateSession(null);
-}
+
+/** The drawer's id, for its key's `aria-controls`. */
+const STUDIO_FILES_DRAWER_ID = "studio-files-drawer";
 
 export interface StudioSidebarProps {
   /**
@@ -194,32 +207,45 @@ export interface StudioSidebarProps {
    * request somewhere else.
    */
   readonly onCreateProject?: () => void;
-  /** New chat. Defaults to the agent shell's new session form. */
-  readonly onCreateChat?: () => void;
   /** Rail state decided by the shell frame (breakpoint-aware). */
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
+  /**
+   * Whether the rail can open into the column. False under 1280, where the
+   * rail ends in the Projects and files key and its drawer instead.
+   */
+  readonly expandable?: boolean;
+  /** The drawer's top under the header: the console line's under 1024, else 0. */
+  readonly drawerTop?: number;
   readonly activeProjectId: string | null;
   readonly onSelectProject: (projectId: string) => void;
   readonly onSelectWelcome: () => void;
   /** Test seam; production uses the window's registry. */
   readonly explorerRegistry?: ExplorerRegistry;
+  /**
+   * The frame draws this column's head and foot cells: the logo cell and
+   * the sidebar key in its header (`ShellHeader`), the account cell in its
+   * bottom row. The column holds only its body.
+   */
+  readonly headless?: boolean;
 }
 
 export function StudioSidebar({
   onCreateProject = openProjectCreator,
-  onCreateChat = openNewChatFromStudio,
   collapsed,
   onToggleSidebar,
+  expandable = true,
+  drawerTop = H3_CONSOLE_LINE_HEIGHT,
   activeProjectId,
   onSelectProject,
   onSelectWelcome,
   explorerRegistry,
+  headless = false,
 }: StudioSidebarProps): JSX.Element {
   const query = useProjects();
   const queryClient = useQueryClient();
 
-  // The open rail renders its sections; closed, the icon rail.
+  // The open column renders its sections; closed, the icon rail.
   const wide = !collapsed;
 
   const explorerShare = useUiStore((state) => state.studioRailExplorerShare);
@@ -237,6 +263,37 @@ export function StudioSidebar({
   useEffect((): void => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  // The nav's fold (the plate: folded to its Studio row). Launch-ephemeral:
+  // every Studio entry starts folded.
+  const [navFolded, setNavFolded] = useState(true);
+
+  // THE DRAWER, under 1024 only: the rail cannot open there, so its Projects
+  // and files key opens the projects and the explorer over the centre's left
+  // edge. Leaving the band (the rail can open again) closes it.
+  const drawerAllowed = collapsed && !expandable;
+  const [drawerRequested, setDrawerRequested] = useState(false);
+  const drawerOpen = drawerAllowed && drawerRequested;
+  useEffect((): void => {
+    if (!drawerAllowed) setDrawerRequested(false);
+  }, [drawerAllowed]);
+  const drawerKeyRef = useRef<HTMLButtonElement | null>(null);
+  const closeDrawer = useCallback((): void => {
+    setDrawerRequested(false);
+  }, []);
+  // Escape closes the drawer wherever the focus is in it, and gives the
+  // focus back to the key that opened it.
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setDrawerRequested(false);
+      drawerKeyRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
 
   // The bounded project list's own toggle. The SPLIT's share is the persisted
   // preference.
@@ -303,7 +360,8 @@ export function StudioSidebar({
   }, []);
 
   // The Search key on a collapsed rail expands it first - a search field has
-  // no room on the 56px spine. Same rule as the sessions rail.
+  // no room on the rail. Under 1024 the rail cannot open, so the key opens
+  // the field the only way it can: by asking the frame, which keeps the rail.
   const toggleSearch = useCallback((): void => {
     if (collapsed) {
       onToggleSidebar();
@@ -326,7 +384,7 @@ export function StudioSidebar({
    * to it - VS Code's Quick Open behaves the same way.
    *
    * The collapsed branch mirrors the magnifier's, and it is the only place the
-   * rail is expanded: a search field has no room on the 56px spine. The
+   * rail is expanded: a search field has no room on the rail. The
    * `searchOpen` effect above lands the focus in that case, because the input
    * does not exist yet at this point.
    */
@@ -353,14 +411,24 @@ export function StudioSidebar({
    * `mode` defaults to `"pinned"`, which is what every route but the tree's
    * single click means: a search hit the user picked out of a list is a file
    * they chose, not one they browsed past. Only `ExplorerTree` passes
-   * `"preview"`, and only for a single click.
+   * `"preview"`, and only for a single click. A pick closes the drawer.
    */
   const handleOpenFile = useCallback(
     (node: FileNode, mode: FileOpenMode = "pinned"): void => {
       if (activeProjectId === null) return;
       publishFileOpen(activeProjectId, node, mode);
+      closeDrawer();
     },
-    [activeProjectId],
+    [activeProjectId, closeDrawer],
+  );
+
+  /** A project picked in the column or the drawer; the drawer closes on it. */
+  const selectProject = useCallback(
+    (projectId: string): void => {
+      onSelectProject(projectId);
+      closeDrawer();
+    },
+    [onSelectProject, closeDrawer],
   );
 
   const moveActiveHit = useCallback(
@@ -384,7 +452,7 @@ export function StudioSidebar({
       const project = results.projects[index];
       if (project !== undefined) {
         closeSearch();
-        onSelectProject(project.id);
+        selectProject(project.id);
         return;
       }
       const node = results.files[index - results.projects.length];
@@ -392,7 +460,7 @@ export function StudioSidebar({
       closeSearch();
       handleOpenFile(node);
     },
-    [closeSearch, handleOpenFile, onSelectProject, results],
+    [closeSearch, handleOpenFile, selectProject, results],
   );
 
   // Enter with nothing highlighted opens the FIRST hit, which is what a user
@@ -463,6 +531,18 @@ export function StudioSidebar({
     return labelled;
   }, [activeProject]);
 
+  // The Studio row, pressed where it is the current one (no page over
+  // Studio), returns to Studio's start: the welcome.
+  const onCurrentNav = useCallback(
+    (destination: string): void => {
+      if (destination === "studio") {
+        onSelectWelcome();
+        closeDrawer();
+      }
+    },
+    [onSelectWelcome, closeDrawer],
+  );
+
   const projectsRegion = (
     <div
       ref={listScrollRef}
@@ -475,42 +555,26 @@ export function StudioSidebar({
       <StudioProjectsSection
         projects={allProjects}
         activeProjectId={activeProjectId}
-        collapsed={!wide}
         isLoading={query.isLoading}
         hasError={readFailed}
         onRetry={retry}
-        onSelect={onSelectProject}
-        // The rail shows every project as a key (the spine scrolls); the
-        // open sidebar bounds the list and says how many exist.
-        showAll={wide ? showAllProjects : true}
+        onSelect={selectProject}
+        showAll={showAllProjects}
         onShowAllChange={setShowAllProjects}
       />
 
-      <ProjectCleanupNotices collapsed={!wide} onExpand={onToggleSidebar} showReadError={!query.isPending && !readFailed} />
-
-      <div className="vex-st-welcome">
-        <NavKey
-          icon={<LineHome className="vex-ls-nrow__i" />}
-          label={STUDIO_WELCOME_ROW_LABEL}
-          rail={!wide}
-          current={activeProjectId === null}
-          ariaCurrent="true"
-          onClick={onSelectWelcome}
-        />
-      </div>
+      <ProjectCleanupNotices showReadError={!query.isPending && !readFailed} />
     </div>
   );
 
   const explorerPane =
     activeProject === null ? null : (
       <div className="vex-st-xpane flex h-full min-h-0 flex-col" data-vex-rail-pane="explorer">
-        {/* The pane takes the rest of the column. Its head says the section
-          * and the folder in one line, "Explorer · {project}" (12 / 500
-          * muted), with the create, refresh and collapse keys at the right;
-          * the rows follow with no frame around them. */}
+        {/* EXPLORER, the pane's 44 head, with its keys at the right; the
+          * rows follow on the 30 pitch with no frame around them. The open
+          * project's name is the header's title cell. */}
         <ExplorerHeader
-          section={STUDIO_EXPLORER_SECTION}
-          title={activeProject.name}
+          title={STUDIO_EXPLORER_SECTION}
           onRefresh={refreshExplorer}
           onCollapseAll={collapseExplorer}
           onCreateFile={createExplorerFile}
@@ -526,39 +590,64 @@ export function StudioSidebar({
       </div>
     );
 
+  // The projects and the explorer, split by the draggable rule: the open
+  // column's body, and the drawer's.
+  const projectsAndFiles =
+    explorerPane !== null ? (
+      <SplitPane
+        orientation="vertical"
+        sizes={[1 - explorerShare, explorerShare]}
+        onResize={(next) => {
+          const share = next[1];
+          if (share !== undefined) setExplorerShare(share);
+        }}
+        minPaneSize={96}
+        separatorLabel={() => STUDIO_RAIL_SPLIT_LABEL}
+        className="min-h-0 flex-1"
+      >
+        {projectsRegion}
+        {explorerPane}
+      </SplitPane>
+    ) : (
+      projectsRegion
+    );
+
   const newProjectKey = (
     <NavKey
       icon={<LinePlus className="vex-ls-nrow__i" />}
       label={STUDIO_NEW_PROJECT_LABEL}
       rail={!wide}
       onClick={() => onCreateProject()}
+      className="vex-ls-nrow--new"
     />
   );
 
-  const body = (
-    // HIDDEN, never unmounted, while the search shows results: unmounting the
-    // tree would release the explorer session and lose every folder the user
-    // expanded.
-    <div className="vex-st-body flex min-h-0 flex-1 flex-col" hidden={searching}>
-      {wide && explorerPane !== null ? (
-        <SplitPane
-          orientation="vertical"
-          sizes={[1 - explorerShare, explorerShare]}
-          onResize={(next) => {
-            const share = next[1];
-            if (share !== undefined) setExplorerShare(share);
-          }}
-          minPaneSize={96}
-          separatorLabel={() => STUDIO_RAIL_SPLIT_LABEL}
-          className="min-h-0 flex-1"
-        >
-          {projectsRegion}
-          {explorerPane}
-        </SplitPane>
-      ) : (
-        projectsRegion
-      )}
-    </div>
+  const searchKey = (
+    <NavKey
+      icon={<LineSearch className="vex-ls-nrow__i" />}
+      label={STUDIO_SEARCH_ROW_LABEL}
+      ariaLabel={STUDIO_SEARCH_OPEN_LABEL}
+      rail={!wide}
+      onClick={toggleSearch}
+      className="vex-ls-nrow--search"
+    />
+  );
+
+  // The chevron key beside the Studio row: unfolds the nine rows in place,
+  // and folds them back.
+  const navFoldKey = (
+    <Tooltip label={navFolded ? STUDIO_NAV_UNFOLD_LABEL : STUDIO_NAV_FOLD_LABEL}>
+      <button
+        type="button"
+        aria-label={navFolded ? STUDIO_NAV_UNFOLD_LABEL : STUDIO_NAV_FOLD_LABEL}
+        aria-expanded={!navFolded}
+        onClick={() => setNavFolded((folded) => !folded)}
+        className="vex-ls-nav__fold"
+        data-vex-nav-fold=""
+      >
+        {navFolded ? <LineChevronDown size={16} /> : <LineChevronUp size={16} />}
+      </button>
+    </Tooltip>
   );
 
   return (
@@ -572,7 +661,7 @@ export function StudioSidebar({
       data-vex-sidebar-open={collapsed ? "false" : "true"}
       data-rail={collapsed || undefined}
     >
-      {wide ? (
+      {headless ? null : wide ? (
         <header className="vex-ls-head vex-drag vex-lights-start">
           <SidebarHomeSigil sidebarOpen />
           <Tooltip label="Collapse sidebar" side="bottom">
@@ -595,80 +684,127 @@ export function StudioSidebar({
         </div>
       )}
 
-      <div className="vex-ls-body">
-        {wide && searchOpen ? (
-          <div className="vex-ls-find vex-st-find">
-            <StudioSearchField
-              value={searchText}
-              onChange={(value) => {
-                setSearchText(value);
-                setActiveHit(-1);
-              }}
-              onClose={closeSearch}
-              onClear={clearSearch}
-              inputRef={(el) => {
-                searchInputRef.current = el;
-              }}
-              listboxId={SEARCH_LISTBOX_ID}
-              activeOptionId={activeHit < 0 ? null : searchOptionId(activeHit)}
-              expanded={searching && hitCount > 0}
-              onMove={moveActiveHit}
-              onActivate={activateHit}
-            />
-          </div>
-        ) : (
-          <>
-            <NavKey
-              icon={<LineNewChat className="vex-ls-nrow__i" />}
-              label={STUDIO_NEW_CHAT_LABEL}
-              rail={!wide}
-              onClick={() => onCreateChat()}
-              className="vex-ls-nrow--new"
-            />
-            <NavKey
-              icon={<LineSearch className="vex-ls-nrow__i" />}
-              label={STUDIO_SEARCH_ROW_LABEL}
-              ariaLabel={STUDIO_SEARCH_OPEN_LABEL}
-              rail={!wide}
-              onClick={toggleSearch}
-            />
-            {wide ? null : (
-              <NavKey
-                icon={<LinePanelLeft className="vex-ls-nrow__i" />}
-                label={STUDIO_SIDEBAR_EXPAND_LABEL}
-                rail
-                onClick={onToggleSidebar}
+      {wide ? (
+        <div className="vex-ls-body">
+          {newProjectKey}
+          {searchOpen ? (
+            <div className="vex-ls-find vex-st-find">
+              <StudioSearchField
+                value={searchText}
+                onChange={(value) => {
+                  setSearchText(value);
+                  setActiveHit(-1);
+                }}
+                onClose={closeSearch}
+                onClear={clearSearch}
+                inputRef={(el) => {
+                  searchInputRef.current = el;
+                }}
+                listboxId={SEARCH_LISTBOX_ID}
+                activeOptionId={activeHit < 0 ? null : searchOptionId(activeHit)}
+                expanded={searching && hitCount > 0}
+                onMove={moveActiveHit}
+                onActivate={activateHit}
               />
-            )}
-            <div aria-hidden className="vex-ls-gap" />
-            {/* Missions from Studio lands on the agent shell with the Mission
-              * filter set; the agent sidebar owns its own search. */}
-            <SidebarNav rail={!wide} onMissions={() => undefined} />
-            <div aria-hidden className="vex-ls-gap" />
-            {newProjectKey}
-          </>
-        )}
+            </div>
+          ) : (
+            <>
+              {searchKey}
+              <SidebarNav
+                rail={false}
+                // Missions from Studio lands on the agent shell with the
+                // Mission filter set; the agent sidebar owns its own search.
+                onMissions={() => undefined}
+                fold={{ folded: navFolded, destination: "studio", toggle: navFoldKey }}
+                onCurrent={onCurrentNav}
+              />
+            </>
+          )}
 
-        {searching ? (
-          <StudioRailSearchResults
-            results={results}
-            listboxId={SEARCH_LISTBOX_ID}
-            activeIndex={activeHit}
-            optionId={searchOptionId}
-            onOpenProject={(projectId) => {
-              closeSearch();
-              onSelectProject(projectId);
-            }}
-            onOpenFile={(node) => {
-              closeSearch();
-              handleOpenFile(node);
-            }}
-            fileSearchAvailable={activeProjectId !== null}
+          {searching ? (
+            <StudioRailSearchResults
+              results={results}
+              listboxId={SEARCH_LISTBOX_ID}
+              activeIndex={activeHit}
+              optionId={searchOptionId}
+              onOpenProject={(projectId) => {
+                closeSearch();
+                selectProject(projectId);
+              }}
+              onOpenFile={(node) => {
+                closeSearch();
+                handleOpenFile(node);
+              }}
+              fileSearchAvailable={activeProjectId !== null}
+            />
+          ) : null}
+
+          {/* HIDDEN, never unmounted, while the search shows results:
+            * unmounting the tree would release the explorer session and lose
+            * every folder the user expanded. */}
+          <div className="vex-st-body flex min-h-0 flex-1 flex-col" hidden={searching}>
+            {projectsAndFiles}
+          </div>
+        </div>
+      ) : (
+        <div className="vex-ls-body">
+          {/* The rail's cells, the open column's in the same order, each 76
+            * wide: the Expand key where the column can open, New project,
+            * Search, the nine nav keys; under 1024 the Projects and files
+            * key at the end instead. */}
+          {expandable ? (
+            <Tooltip label={STUDIO_SIDEBAR_EXPAND_LABEL}>
+              <button
+                type="button"
+                aria-label={STUDIO_SIDEBAR_EXPAND_LABEL}
+                aria-expanded={false}
+                onClick={onToggleSidebar}
+                className="vex-ls-nrow vex-ls-nrow--expand"
+              >
+                <LinePanelLeft className="vex-ls-nrow__i" />
+              </button>
+            </Tooltip>
+          ) : null}
+          {newProjectKey}
+          {searchKey}
+          <SidebarNav rail onMissions={() => undefined} onCurrent={onCurrentNav} />
+          <ProjectCleanupNotices
+            collapsed
+            onExpand={expandable ? onToggleSidebar : () => setDrawerRequested(true)}
+            showReadError={!query.isPending && !readFailed}
           />
-        ) : null}
+          {expandable ? null : (
+            <Tooltip label={STUDIO_FILES_DRAWER_LABEL}>
+              <button
+                ref={drawerKeyRef}
+                type="button"
+                aria-label={STUDIO_FILES_DRAWER_LABEL}
+                aria-expanded={drawerOpen}
+                aria-controls={drawerOpen ? STUDIO_FILES_DRAWER_ID : undefined}
+                onClick={() => setDrawerRequested((open) => !open)}
+                className="vex-ls-nrow vex-ls-nrow--files"
+                data-open={drawerOpen || undefined}
+              >
+                <LineFolder className="vex-ls-nrow__i" />
+              </button>
+            </Tooltip>
+          )}
+        </div>
+      )}
 
-        {body}
-      </div>
+      {/* THE DRAWER: the projects and the explorer, 248 wide over the
+        * centre's left edge, from under the band to the window's foot. */}
+      {drawerOpen ? (
+        <section
+          id={STUDIO_FILES_DRAWER_ID}
+          aria-label={STUDIO_FILES_DRAWER_LABEL}
+          className="vex-ls vex-st vex-st-drawer"
+          data-vex-area="studio-files-drawer"
+          style={{ top: drawerTop }}
+        >
+          <div className="vex-st-body flex min-h-0 flex-1 flex-col">{projectsAndFiles}</div>
+        </section>
+      ) : null}
 
       {/* The update card stands here, above the account row, as in the agent
         * sidebar; the rail has no room for it, so the card floats clear. */}
@@ -676,9 +812,13 @@ export function StudioSidebar({
         <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       ) : null}
 
-      <footer className="vex-ls-foot" data-rail-foot>
-        <SidebarProfile sidebarOpen={wide} />
-      </footer>
+      {/* The account row: the frame's bottom row draws it under this column
+        * (its account cell) when the header draws the head. */}
+      {headless ? null : (
+        <footer className="vex-ls-foot" data-rail-foot>
+          <SidebarProfile sidebarOpen={wide} />
+        </footer>
+      )}
     </aside>
   );
 }

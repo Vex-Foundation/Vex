@@ -8,13 +8,21 @@
  * `window.vex.approvals.{approve,reject}` to `prepareApprove`/`prepareReject`
  * to the background `runResumeAfterDecision`.
  *
- * REAL FUNDS, ON EVERY CARD (docs/design/R3-MINIMAL.md section 8). Every
- * desktop wallet is a real wallet, so the card always wears the 1.5px ink
- * frame, the 10px hatch band down its leading edge and the reversed `Real
- * funds` stamp in its top row (`.vex-real-funds`, approval.css), with the
- * target swatch beside "Approval needed". Ink, never red and never blue: the
- * stamp is a fact about the money, not a status colour. No veil: the card is
- * the one framed thing on screen.
+ * THE H3 FRAME (docs/design/H3-DESKTOP.md sections 1.7 and 4.2). The card is
+ * a square cell bounded by 1px rules, a stack of cells inside: the head (the
+ * act as the eyebrow, "Confirm this swap"; MAINNET and the REAL FUNDS stamp at
+ * the right; the plain sentence; the consequence line), the money rows, the
+ * risk sentences and "All signed fields". Every desktop wallet is a real
+ * wallet, so every card that can move funds carries MAINNET and the stamp,
+ * the ink fill with its hatch glyph (approval.css). Ink, never red and never
+ * blue: the stamp is a fact about the money, not a status colour. No veil.
+ * The section keeps the `vex-real-funds` class and the `data-vex-real-funds`
+ * hook every full card has carried; R3's 1.5px ink frame and 10px hatch band
+ * that hung on them retired with H3, whose card is a plain ruled cell.
+ *
+ * THIS SLICE CHANGES HOW THE CARD LOOKS, NEVER HOW IT DECIDES. What Approve
+ * and Reject do, the two-step confirm below, the fields shown as signed and
+ * every IPC call are exactly as they were (section 4.3).
  *
  * The action button is named by tool family from the one action-word table
  * (`approvalActionWord`): "Approve bridge", "Approve order", "Approve swap",
@@ -40,22 +48,27 @@
  *     retry a dangerous action.
  *   - `Result.ok === false` surfaces as an inline error (TanStack `isError`
  *     does not catch application-level `Result` failures: Codex F3 #1).
- *   - `aria-live="polite"` so screen readers announce the card without
- *     stealing focus from existing content.
+ *   - Named as Cloud names its card (`TakeoverCard.tsx`): by the eyebrow
+ *     ("Confirm this swap"), described by the sentence, `aria-busy` while a
+ *     decision runs. No card-wide live region: what changes is said by the
+ *     footer's `role="status"` (the in-flight and settled words) and the
+ *     failure line's `role="alert"`, never the whole card at once.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { useApprove, useReject } from "../../lib/api/approvals.js";
 import { approvalActionWord } from "../vex/needs-you.js";
 import { invalidateOnApprovalResolve } from "./approvals/invalidate-on-resolve.js";
 import { isHighRisk as classifyHighRisk } from "./ApprovalCard/risk.js";
-import { approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
+import { approvalGateLine, approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
-import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
+import { APPROVING_WORD, ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
 import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
+import { ClipCue, useRowsBelow } from "./ApprovalCard/clip-cue.js";
 
 const CONFIRM_RESET_MS = 4_000;
 
@@ -93,6 +106,8 @@ function approveLabelFor(summary: ApprovalSummaryDto): string {
  * key that only dims for that long reads as a click that did not land, so it
  * names the step it is on instead, and the name has to stay true for the
  * whole window, which rules out a phase the card cannot actually observe.
+ * Every other card says Cloud's word for the same moment, "Approving…"
+ * (H3-DESKTOP.md Appendix A.7).
  */
 function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (isLighterOrderCreateApproval(summary)) return "Signing and sending";
@@ -100,7 +115,7 @@ function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
     return summary.preview.criticalArgs.revoke === true ? "Revoking" : "Authorizing";
   }
-  return "Working";
+  return APPROVING_WORD;
 }
 
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
@@ -143,6 +158,13 @@ export interface ApprovalCardProps {
    */
   readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
   /**
+   * Fires when a decision did not go through (its reply was a failure or it
+   * never answered), after the card has shown its failure line. Display
+   * only: the chat publishes it for Kimm's mood clock
+   * (`approvals/decision-signal.ts`); nothing here waits on it.
+   */
+  readonly onDecisionFailed?: (decision: "approve" | "reject") => void;
+  /**
    * `row` folds the card to one line for the Needs you page (section 8.5):
    * the sentence, the meta line, Reject and "Review {action}". The decision
    * state lives in THIS component either way, so switching a card between its
@@ -151,6 +173,15 @@ export interface ApprovalCardProps {
   readonly layout?: "card" | "row";
   /** The row's Review key: open this decision as the full card. */
   readonly onReview?: () => void;
+  /**
+   * The chat's bottom-row seat (docs/design/H3-DESKTOP.md section 1.8,
+   * `ApprovalCard/approval-dock.tsx`). Given one, the full card draws its
+   * decision footer there as the decision row: the reason field, Reject, the
+   * gate line and the approve key. It is the same footer with the same
+   * handlers and the same state, only drawn elsewhere; `null` or absent keeps
+   * it inside the card, as on every other surface.
+   */
+  readonly decisionDock?: HTMLElement | null;
 }
 
 /**
@@ -167,13 +198,18 @@ export function ApprovalCard({
   idVariant,
   projectName = null,
   onResolved,
+  onDecisionFailed,
   layout = "card",
   onReview,
+  decisionDock = null,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
   const reject = useReject();
   const rejectRef = useRef<HTMLButtonElement | null>(null);
+  // The card's box, for the clip cue's measure (display only).
+  const cardRef = useRef<HTMLElement | null>(null);
+  const rowsOutOfView = useRowsBelow(cardRef, layout === "card" ? decisionDock : null, layout === "card");
 
   const isHighRisk = useMemo(
     () => classifyHighRisk(summary),
@@ -238,12 +274,14 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("approve");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("approve");
         },
       },
     );
@@ -269,15 +307,26 @@ export function ApprovalCard({
           } else {
             markDecision(null);
             setInlineError(result.error.message);
+            onDecisionFailed?.("reject");
             void invalidateOnResolve();
           }
         },
         onError: (e) => {
           markDecision(null);
           setInlineError(e.message);
+          onDecisionFailed?.("reject");
         },
       },
     );
+  };
+
+  // THE SEND BAND (C3-D-27): words in the reason take Approve out of the
+  // band. An approve armed by a first press must not survive that and come
+  // back armed when the words are cleared, so typing words disarms it; an
+  // armed Reject stays armed, since the send key is the same reject.
+  const onRejectReasonChange = (value: string): void => {
+    setRejectReason(value);
+    if (value.trim() !== "") setArmedAction((armed) => (armed === "approve" ? null : armed));
   };
 
   const onApproveClick = (): void => {
@@ -300,6 +349,7 @@ export function ApprovalCard({
   const titleId = `approval-card-${summary.id}${
     idVariant ? `-${idVariant}` : ""
   }-title`;
+  const eyebrowId = `approval-card-${summary.id}${idVariant ? `-${idVariant}` : ""}-eyebrow`;
   const previewTool = summary.preview?.toolName ?? null;
   const namespace = summary.preview?.namespace ?? null;
   const toolName = previewTool ?? summary.toolName ?? "(unknown tool)";
@@ -310,13 +360,15 @@ export function ApprovalCard({
 
   const settledDecision = decision === "approved" || decision === "rejected" ? decision : null;
   const rejectPending = reject.isPending || decision === "rejecting";
+  const approvePending = approve.isPending || decision === "approving";
+  const busy = approvePending || rejectPending;
 
   if (layout === "row") {
     return (
       <section
         role="region"
         aria-labelledby={titleId}
-        aria-live="polite"
+        aria-busy={approve.isPending || rejectPending || undefined}
         data-vex-area="approval-card"
         data-vex-approval-layout="row"
         data-approval-id={summary.id}
@@ -341,20 +393,62 @@ export function ApprovalCard({
     );
   }
 
+  // THE DECISION FOOTER, built once. Inside the card on every surface, or,
+  // given the chat's dock, drawn into the shell's bottom row as H3's
+  // decision row (section 1.8). Both are this one element: the same props,
+  // the same handlers, the same state, so the two-step confirm, the
+  // two-press Reject, the click lock and the reason that travels with Reject
+  // are exactly the card's either way. Docked, it names itself by the card's
+  // title and adds the gate line in its middle cell (Appendix A.7).
+  const docked = decisionDock !== null;
+  // The failure line rides with the footer (Cloud's `FooterAlert`, DG5-28):
+  // right over the keys wherever they are drawn, so a docked card's failure
+  // is said over the bottom row, not in the transcript behind it.
+  const decisionActions = (
+    <ApprovalDecisionActions
+      isHighRisk={isHighRisk}
+      armedAction={armedAction}
+      inFlight={inFlight}
+      rejectRef={rejectRef}
+      onReject={onRejectClick}
+      onApprove={onApproveClick}
+      rejectReason={rejectReason}
+      onRejectReasonChange={onRejectReasonChange}
+      approveLabel={approveLabel}
+      confirmApproveLabel={confirmApproveLabel}
+      pendingApproveLabel={pendingApproveLabel}
+      approvePending={approvePending}
+      rejectPending={rejectPending}
+      settledDecision={settledDecision}
+      wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
+      rejectReasonInput={summary.origin !== "desk"}
+      failure={inlineError}
+      cue={<ClipCue below={rowsOutOfView} />}
+      dock={docked ? { labelledBy: titleId, gateLine: approvalGateLine(isHighRisk, CONFIRM_RESET_MS) } : null}
+    />
+  );
+
   return (
     <section
+      ref={cardRef}
       role="region"
-      aria-labelledby={titleId}
-      aria-live="polite"
+      // Cloud's card: named by the eyebrow, described by the sentence, busy
+      // while a decision runs. No card-wide live region (module note).
+      aria-labelledby={eyebrowId}
+      aria-describedby={titleId}
+      aria-busy={busy || undefined}
       data-vex-area="approval-card"
       data-vex-approval-layout="card"
+      // Where this card's decision row is drawn: in the shell's bottom row,
+      // or (absent) in its own footer.
+      data-vex-decision-docked={docked ? "" : undefined}
       data-approval-id={summary.id}
       // S5: the act ledger's "Awaiting signature" stamp-links jump here and
       // call focus(); tabIndex={-1} makes the region programmatically
       // focusable without entering the tab order.
       tabIndex={-1}
-      // REAL FUNDS (module note): the ink frame and the hatch band are this
-      // card's whole emphasis, the one framed thing on screen.
+      // REAL FUNDS (module note): the hook every full card carries; the
+      // head's MAINNET and stamp are how the card shows it.
       data-vex-real-funds=""
       // NOT `overflow-hidden`: any `overflow` other than `visible` becomes the
       // containing scrollport for a `position: sticky` descendant (CSS
@@ -371,28 +465,12 @@ export function ApprovalCard({
           namespace={namespace}
           toolName={toolName}
           criticalArgs={criticalArgs}
-          inlineError={inlineError}
           projectName={projectName}
           signedGlint={signedGlint}
+          eyebrowId={eyebrowId}
+          busy={busy}
         />
-        <ApprovalDecisionActions
-          isHighRisk={isHighRisk}
-          armedAction={armedAction}
-          inFlight={inFlight}
-          rejectRef={rejectRef}
-          onReject={onRejectClick}
-          onApprove={onApproveClick}
-          rejectReason={rejectReason}
-          onRejectReasonChange={setRejectReason}
-          approveLabel={approveLabel}
-          confirmApproveLabel={confirmApproveLabel}
-          pendingApproveLabel={pendingApproveLabel}
-          approvePending={approve.isPending || decision === "approving"}
-          rejectPending={rejectPending}
-          settledDecision={settledDecision}
-          wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
-          rejectReasonInput={summary.origin !== "desk"}
-        />
+        {decisionDock === null ? decisionActions : createPortal(decisionActions, decisionDock)}
       </div>
     </section>
   );

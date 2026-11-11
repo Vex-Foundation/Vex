@@ -1,15 +1,16 @@
-/* THE TITLE BAR (docs/design/R3-MINIMAL.md sections 1.5, 2.2, 3 and 12): the
- * centre column's 44px head row and the window's drag region. The left cell
- * says where you are; the right cluster holds the page keys, the Studio host
- * pill, Notices, "Needs you · N" and the token chip, 8 apart, each control 32
- * high. Popovers are flat paper panels with a 1.5px ink frame and never a
- * shadow. Paper, ink, one blue, radius 0, tokens only.
+/* THE TITLE BAR (docs/design/R3-MINIMAL.md sections 1.5, 2.2, 3 and 12),
+ * inside THE HEADER (docs/design/H3-DESKTOP.md section 1.3, below): the
+ * title cell says where you are and ends in the cluster, the page keys, the
+ * Studio host pill, Notices and "Needs you · N", 8 apart, each control 32
+ * high; the Vex key has its own cell (the token chip ends the Lighter
+ * desk's title row). Popovers are flat paper panels
+ * with a 1px ink frame and never a shadow. Paper, ink, one blue, radius 0,
+ * tokens only.
  *
- * The row's right padding reserves the Windows and Linux caption buttons
- * wherever the Vex column under them is narrower than they are
- * (`--vex-vex-track` is the solved right track, set by the frame;
- * `--overlay-w` is 0 on macOS and on a native frame): the caption reserve plus
- * the row's own 12, so 150 with Vex hidden (section 2.2).
+ * The header's last cell reserves the Windows and Linux caption buttons
+ * (`--overlay-w` is 0 on macOS and on a native frame). The running head's own
+ * right padding below is R3's reserve, against the solved right track
+ * (`--vex-vex-track`): the header resets it in its title cell.
  *
  * NO Z-INDEX on the row, so it is not a stacking context: the popovers its
  * controls open stack by their own z-index against the page under the row. */
@@ -45,6 +46,198 @@
   justify-content: flex-end;
   gap: 8px;
   font-family: var(--font-sans);
+}
+
+/* ── THE HEADER (docs/design/H3-DESKTOP.md section 1.3) ─────────────────────
+ * One row of cells across the window (ShellHeader.tsx), the frame's first
+ * grid row and the window's drag region, with the one rule under it. Its own
+ * grid, written by the frame (`shellHeadTemplateColumns`), names each cell's
+ * lines: chats, vex, title, funds and reserve. The running head is its title
+ * cell, so the row's height, rule and caption reserve are the header's, not
+ * the title cell's. Like the running head, NO Z-INDEX: the popovers its
+ * controls open stack by their own z-index against the columns under it. */
+.vex-shell-head {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  height: var(--head-h);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-sans);
+}
+/* Every cell on the one row: placed by its column's lines alone, a cell
+ * whose lines come before the previous cell's would start a second row. */
+.vex-shell-head > [data-vex-head-cell] {
+  display: flex;
+  grid-row: 1;
+  min-width: 0;
+  align-items: center;
+}
+.vex-shell-head > [data-vex-head-cell="chats"] {
+  grid-column: chats;
+}
+/* The sidebar's own head row, moved up into the cell: the header draws the
+ * row's height and rule. */
+.vex-shell-head > .vex-ls-head {
+  height: auto;
+  border-bottom: 0;
+}
+/* Over the rail the mark stands alone, centred; on macOS the traffic lights
+ * take the whole cell, so it is not drawn there. */
+.vex-shell-head__rail {
+  justify-content: center;
+}
+html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
+  display: none;
+}
+.vex-shell-head__logo,
+.vex-shell-head__key {
+  display: flex;
+  align-items: center;
+}
+/* The cell over Vex's column fills the row's whole height. On the desk H3's
+ * Vex key stands in it with the rule on its right (section 1.3); D2's VEX
+ * cell takes the rule on its left (below). */
+.vex-shell-head > [data-vex-head-cell="vex-key"] {
+  grid-column: vex;
+  align-items: stretch;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-shell-head > [data-vex-head-cell="vex-key"]:empty {
+  border-right: 0;
+}
+.vex-shell-head > [data-vex-head-cell="title"] {
+  grid-column: title;
+  height: auto;
+  padding-inline: 22px 16px;
+  border-bottom: 0;
+}
+/* In H3's frame the chat's title starts on the reading line, as the
+ * transcript's text does (section 1.11, `--vex-read-x`); over a page's
+ * strip, where the page takes the whole width, 24 in. */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-head > [data-vex-head-cell="title"] {
+  padding-inline-start: var(--vex-read-x);
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="strip"] > .vex-shell-head > [data-vex-head-cell="title"] {
+  padding-inline-start: 24px;
+}
+.vex-shell-head > [data-vex-head-cell="funds"] {
+  grid-column: funds;
+  gap: 8px;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+.vex-shell-head > [data-vex-head-cell="caption-reserve"] {
+  grid-column: reserve;
+}
+
+/* ── D2's cells (docs/design/H3-DESKTOP.md section 6.2) ───────────────────
+ * NEEDS YOU over the chat, between its title and the network statement: the
+ * whole cell is one key that opens the Needs you page (NeedsYouHeadCell),
+ * the word in caps 12 at 600, its count a figure after it, muted at zero, as
+ * the console's head draws them. Under 1024 the console line carries Needs
+ * you (section 1.10), so the cell leaves the row. */
+.vex-shell-head > [data-vex-head-cell="needs"] {
+  grid-column: needs;
+  align-items: stretch;
+  border-left: 1px solid var(--vex-alias-rule);
+}
+.vex-shell-frame[data-vex-tier="band"] > .vex-shell-head > [data-vex-head-cell="needs"] {
+  display: none;
+}
+.vex-head-needs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-head-needs:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-head-needs:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-head-needs__word {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-head-needs__count {
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: var(--tracking-figure);
+}
+.vex-head-needs__count[data-zero] {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* THE VEX CELL over Vex's column at the right edge (VexHeadCell): VEX in caps
+ * 24 in from the column's rule, and at its right end the 44 square key with
+ * the panel glyph, 16 in from the cell's edge (the caption reserve, on
+ * Windows and Linux, after it). The cell's rule on its left runs on down as
+ * her column's own. The desk keeps H3's Vex key and its rule (above). */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-head > [data-vex-head-cell="vex-key"] {
+  border-right: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-head-vex {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px 0 24px;
+}
+.vex-head-vex__word {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-head-vex__key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard),
+    color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-head-vex__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-head-vex__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-head-vex__key[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-head-needs,
+  .vex-head-vex__key {
+    transition: none;
+  }
 }
 
 /* ── Left cell: the title (14 / 500) and its mode or count (13, muted) ───── */
@@ -162,7 +355,7 @@
   background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
 }
 .vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="error"] > span:first-child {
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   background:
     linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
     linear-gradient(-45deg, transparent 44%, currentColor 44% 56%, transparent 56%);
@@ -177,8 +370,6 @@
   letter-spacing: -0.01em;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-tb-needs__key,
-.vex-tb-needs__retry,
 .vex-tb-chip,
 .vex-tb-pill,
 .vex-tb-key {
@@ -187,8 +378,6 @@
     border-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 :is(
-    .vex-tb-needs__key,
-    .vex-tb-needs__retry,
     .vex-tb-chip,
     .vex-tb-pill,
     .vex-tb-key,
@@ -197,11 +386,9 @@
     .vex-tb-notice__dismiss
   ):focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .vex-tb-needs__key,
-  .vex-tb-needs__retry,
   .vex-tb-chip,
   .vex-tb-pill,
   .vex-tb-key {
@@ -270,56 +457,6 @@
   background: var(--vex-alias-interactive-active);
 }
 
-/* ── Needs you · N: 32 high, 13 / 500; the frame is ink while N is above 0
- * (or unknown), the quiet rule at 0 ─────────────────────────────────────── */
-.vex-tb-needs {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-}
-.vex-tb-needs__frame {
-  display: inline-flex;
-  height: 32px;
-  align-items: stretch;
-  border: 1px solid var(--vex-alias-rule);
-}
-.vex-tb-needs__frame[data-pending] {
-  border-color: var(--vex-alias-rule-ink);
-}
-.vex-tb-needs__key {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.vex-tb-needs__key:hover,
-.vex-tb-needs__key[aria-expanded="true"] {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-tb-needs__retry {
-  padding: 0 10px 0 2px;
-  border: 0;
-  background: transparent;
-  color: var(--vex-alias-accent-primary);
-  font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.vex-tb-needs__retry:enabled:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.vex-tb-needs__retry:disabled {
-  color: var(--vex-alias-label-tertiary);
-}
-
 /* ── The token chip: 32 high, 0 10 0 5, the quiet rule, 13; transparent by
  * day, paper 2 at night; pressed (Vex open) takes the rule and the selection
  * fill ───────────────────────────────────────────────────────────────────── */
@@ -337,9 +474,6 @@
   font-size: 13px;
   font-weight: 400;
   white-space: nowrap;
-}
-[data-vex-theme="celeris"] .vex-tb-chip {
-  background: transparent;
 }
 .vex-tb-chip:hover {
   background: var(--vex-alias-interactive-hover);
@@ -368,12 +502,12 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* ── Popovers: paper, a 1.5px ink frame, no shadow ───────────────────────── */
+/* ── Popovers: paper, a 1px ink frame, no shadow ───────────────────────── */
 .vex-tb-pop {
   position: absolute;
   z-index: 40;
-  border: 1.5px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-overlay);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
   text-align: left;
@@ -382,15 +516,6 @@
   outline: none;
 }
 
-/* Needs you: 380 wide under its control, padding 6 0, a 12 / 500 muted head
- * and the shared list's rows with a quiet rule between each. */
-.vex-tb-pop--needs {
-  top: calc(100% + 2px);
-  right: 0;
-  width: 380px;
-  max-width: calc(100vw - 24px);
-  padding: 6px 0;
-}
 .vex-tb-pop__head {
   margin: 0;
   padding: 6px 14px 4px;
@@ -398,13 +523,6 @@
   font-weight: 500;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-tb-pop--needs [data-vex-needs-you-item] {
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-tb-pop--needs [data-vex-area="needs-you-list"] > :is(p, [role="status"]) {
-  padding: 6px 14px 4px;
-}
-
 /* Notices: 420 wide, 12 from the column's right edge and 6 under the row. */
 .vex-tb-pop--notices {
   top: 50px;
@@ -512,6 +630,92 @@
   color: var(--vex-alias-label-tertiary);
 }
 
+/* ── Popovers in the header (docs/design/H3-DESKTOP.md sections 1.3 and 4.8)
+ * Needs you and Notices open from their cells: each control's box stands the
+ * cell's full height in the title cell's cluster, so its popover hangs from
+ * the header's rule, one pixel under the row, its right edge on the
+ * control's. R3's anchors (Needs you 2 under its 32 high key; Notices 50
+ * under the 44 row's top and 12 from the column's edge) would open inside the
+ * 76 header now. The Lighter desk's title row keeps them as they were. */
+.vex-shell-head .vex-running-head__flank {
+  align-self: stretch;
+}
+.vex-shell-head .vex-tb-notices {
+  position: relative;
+  align-self: stretch;
+  align-items: center;
+}
+.vex-shell-head .vex-tb-pop--notices {
+  top: calc(100% + 1px);
+  right: 0;
+}
+
+/* THE STUDIO HOST CELL (our approved Studio plate, docs/design/H3-DESKTOP.md
+ * sections 4.8 and 4.9): a cell at the end of the title cell, the whole
+ * header's height behind a rule, its text 24 in: the status square (grey
+ * running and starting, ink locked, red unavailable; StudioHostStatusWord)
+ * and the state at 14 in caps, over the figure at 12 in caps, muted. It sits
+ * flush against the network cell's rule unless another cell (Notices)
+ * follows it in the cluster. */
+.vex-shell-head .vex-tb-host {
+  align-self: stretch;
+}
+.vex-shell-head .vex-running-head__flank:not(:has(.vex-tb-notices)) > .vex-tb-host {
+  margin-right: -16px;
+}
+.vex-tb-hostcell {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 24px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-tb-hostcell:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-hostcell[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-tb-hostcell:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-tb-hostcell__state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-tb-hostcell__figure {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-tb-hostcell {
+    transition: none;
+  }
+}
+/* The card hangs from the header's rule, its right edge on the cell's. */
+.vex-shell-head .vex-tb-host > .vex-tb-hostcard {
+  top: calc(100% + 1px);
+}
+
 /* The Studio host status card: 320 wide, padding 14 16. */
 .vex-tb-hostcard {
   position: absolute;
@@ -524,7 +728,317 @@
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-overlay);
   text-align: left;
+}
+
+/* ── The Vex key (docs/design/H3-DESKTOP.md sections 1.3 and 1.6; VexKey.tsx)
+ * One button across the Vex key's cell, in three cells divided by the rule:
+ * her portrait (76 square; the portrait glyph on the open ground while she
+ * is open), the state cell and the chevron (60, then the column's own rule).
+ * VEX Cloud's key (the H3 mockup's `.vk`): the state cell's text 20 in and
+ * 12 from its right, two lines 10 apart: the square and the word in caps at
+ * 13 in ink, the timer after it in the sans, muted; then the action in caps
+ * at 12 in ink and the keycaps. The state cell narrows with the column, so
+ * its word ends in an ellipsis before it pushes the chevron. The focus ring
+ * is the 2px ink ring inside the cell (section 2.4). ───────────────────── */
+.vex-key {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  text-align: left;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+/* HER PORTRAIT CELL (section 1.6; VEX Cloud's `.vk-face`): her face and the
+ * portrait glyph stand in it together and crossfade over 200ms, opacity
+ * only (MOTION-POLICY.md names the exception). Closed, her face; open, the
+ * glyph, 20 in ink 2 (ink under the pointer), on the open ground. The open
+ * ground fades with them, so a face that has not arrived yet leaves the
+ * header's own ground, never an empty plate. Reduced motion and Save-Data
+ * change it at once. */
+.vex-key__portrait {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 76px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+  transition: background-color 200ms var(--vex-ease-standard);
+}
+.vex-key__portrait[data-open] {
+  background: var(--vex-alias-cell-open);
+}
+.vex-key__portrait > .vex-key__chip {
+  position: absolute;
+  inset: 0;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+.vex-key__portrait[data-open] > .vex-key__chip {
+  opacity: 0;
+}
+.vex-key__pic {
+  position: relative;
+  opacity: 0;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+.vex-key__portrait[data-open] > .vex-key__pic {
+  opacity: 1;
+}
+.vex-key:hover .vex-key__pic {
+  color: var(--vex-alias-label-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key__portrait,
+  .vex-key__portrait > * {
+    transition: none;
+  }
+}
+html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *) {
+  transition: none;
+}
+.vex-key__state {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 12px 0 20px;
+}
+.vex-key__line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  white-space: nowrap;
+}
+.vex-key__status {
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1;
+}
+/* Her state's square, 6px (sections 1.6 and 2.2): the H3 state square
+ * (`StateSquare`, `.vex-sq` in ui-primitives/marks.css) with her state's own
+ * drawing (`VEX_STATE_SQUARE`, VEX Cloud's `MOOD_STATE`), as the console line
+ * and the waiting count draw it. */
+.vex-key__square {
+  flex: none;
+}
+.vex-key__word {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* The timer, a figure in the sans (Cloud's `.vk-timer`): muted, at 0.04em,
+ * the line's size. Tabular, so it holds still while it counts. Above
+ * `.vex-num`, which a caller may also give it, so the face is the key's. */
+.vex-key .vex-key__timer {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.vex-key__action {
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1;
+}
+.vex-key__name {
+  flex: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* Under 1024 the key carries the waiting count beside her state (VEX Cloud's
+ * `.vk-count`, section 1.10): the console's Needs you is a line away. */
+.vex-key__count {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 0;
+  font-size: 13px;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__count {
+  display: flex;
+}
+/* In the band's 288 the keycaps leave (the chord stays in the key's name and
+ * tooltip, as VEX Cloud's key keeps it under 1440) and the chevron cell is
+ * Cloud's 48, so her state word keeps its room. */
+.vex-shell-frame[data-vex-tier="band"] .vex-key .vex-keycaps {
+  display: none;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__chevron {
+  width: 48px;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__state {
+  padding-inline: 16px 12px;
+}
+.vex-key[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+/* Held (her band resting under 1024), the key keeps her face and her state
+ * and drops the action words and the chevron, so nothing reads as pressable
+ * that is not; a press says why (VEX Cloud's `.vx-vk[data-held]`). */
+.vex-key[data-vex-key-held] :is(.vex-key__action, .vex-key__chevron > svg) {
+  visibility: hidden;
+}
+/* The chevron cell, 60 then the column's rule (the head cell's own right
+ * edge): muted, ink under the pointer, as Cloud's `.vk-dir`. */
+.vex-key__chevron {
+  display: flex;
+  flex: none;
+  width: 60px;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-key:hover .vex-key__chevron {
+  color: var(--vex-alias-label-primary);
+}
+/* One up chevron, turned down while she is closed and up as she opens (VEX
+ * Cloud's `.vx-vk-dir > svg`, 300ms): it turns, never swaps; at once under
+ * reduced motion and the still frame (MOTION-POLICY.md names it). */
+.vex-key__chevron > svg {
+  transform: rotate(180deg);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
+}
+.vex-key__chevron[data-open] > svg {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key__chevron > svg {
+    transition: none;
+  }
+}
+html[data-still] .vex-key__chevron > svg {
+  transition: none;
+}
+/* The short word ("Waiting") waits for the narrow window (below). */
+.vex-key__short {
+  display: none;
+}
+/* THE WIDTH RULES (section 1.6; VEX Cloud's H3 mockup, app.css sections 15
+ * and 16), on the window's width, as Cloud's are:
+ *   - under 1440 the keycaps leave (the chord stays in the key's name,
+ *     `aria-keyshortcuts`, its tooltip and the first-close hint), the state
+ *     line is 12 at 0.06em with its parts 8 apart, the text 16 in and the
+ *     chevron cell 48;
+ *   - under 1280 the state line says the short word ("Waiting"), so it never
+ *     ends in an ellipsis;
+ *   - from 1920 the state line is 14 and the keycaps 20 high at 11. */
+@media (max-width: 1439px) {
+  .vex-key .vex-keycaps {
+    display: none;
+  }
+  .vex-key__state {
+    padding-left: 16px;
+  }
+  .vex-key__status {
+    gap: 8px;
+    font-size: 12px;
+  }
+  .vex-key__word {
+    letter-spacing: 0.06em;
+  }
+  .vex-key__chevron {
+    width: 48px;
+  }
+}
+@media (max-width: 1279px) {
+  .vex-key__word[data-short] > .vex-key__long {
+    display: none;
+  }
+  .vex-key__word[data-short] > .vex-key__short {
+    display: inline;
+  }
+}
+@media (min-width: 1920px) {
+  .vex-key__status {
+    font-size: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key {
+    transition: none;
+  }
+}
+
+/* ── Keycaps (docs/design/H3-DESKTOP.md section 2.4; `components/ui/keycaps.tsx`)
+ * A chord as its keys, VEX Cloud's keycaps beside a label (the H3 mockup's
+ * `.vk-keys kbd`, the kit's plain variant): each cap 18 high and at least 18
+ * wide, 5 in from each side, a 1px chosen-rule border, its letters in caps
+ * at 10 and 0.04em, muted; 3 apart. The macOS glyphs take the same box. The
+ * first-close hint (S4-15) draws them larger and in title case, as its plate
+ * does. ──────────────────────────────────────────────────────────────── */
+.vex-keycaps {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  font: inherit;
+}
+.vex-keycap {
+  display: inline-flex;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: none;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The macOS glyphs are symbols, not letters: no tracking spreads them out of
+ * their cap. */
+.vex-keycaps[data-platform="darwin"] > .vex-keycap {
+  letter-spacing: 0;
+}
+/* From 1920, 20 high with letters at 11 (Cloud's wide rule). */
+@media (min-width: 1920px) {
+  .vex-keycaps:not([data-variant="hint"]) > .vex-keycap {
+    min-width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+}
+.vex-keycaps[data-variant="hint"] {
+  gap: 4px;
+}
+.vex-keycaps[data-variant="hint"] > .vex-keycap {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
 }

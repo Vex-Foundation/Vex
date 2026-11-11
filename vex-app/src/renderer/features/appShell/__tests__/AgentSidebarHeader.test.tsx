@@ -1,7 +1,8 @@
 /**
- * THE LEFT SIDEBAR'S HEAD ROW (docs/design/R3-MINIMAL.md sections 2.2 and 4):
- * the vx wordmark at the left, the collapse key at the right, a window drag
- * region clear of the macOS traffic lights.
+ * THE LOGO CELL AND THE SIDEBAR KEY (docs/design/H3-DESKTOP.md section 1.3):
+ * the header's cells over the chats column, the vx mark alone in the logo
+ * cell and the sidebar key as its own cell, a window drag region clear of the
+ * macOS traffic lights.
  *
  * What moved out, pinned so it does not creep back: the `Agent | Studio`
  * capsule. The way into Studio is the sidebar nav's Studio row now, open and
@@ -35,7 +36,7 @@ describe("AgentSidebarHeader (the head row)", () => {
   it("collapses the sidebar from its key, which says the sidebar is open", () => {
     const onCollapse = vi.fn();
     render(<AgentSidebarHeader onCollapse={onCollapse} />);
-    const key = screen.getByRole("button", { name: "Collapse sessions sidebar" });
+    const key = screen.getByRole("button", { name: "Collapse sidebar" });
     expect(key.getAttribute("aria-expanded")).toBe("true");
     expect(key.querySelector("svg")).not.toBeNull();
     fireEvent.click(key);
@@ -48,17 +49,47 @@ describe("AgentSidebarHeader (the head row)", () => {
     expect(screen.queryByRole("radio", { name: "Studio" })).toBeNull();
   });
 
-  it("is the sidebar's head row: a drag region clear of the traffic lights", () => {
+  it("is the header's cells over the chats column: a drag region clear of the traffic lights", () => {
     const { container } = render(<AgentSidebarHeader onCollapse={vi.fn()} />);
-    const head = container.querySelector("header");
+    const head = container.querySelector("[data-vex-head-cell='chats']");
+    expect(head?.tagName).toBe("DIV");
     expect(head?.classList.contains("vex-drag")).toBe(true);
     expect(head?.classList.contains("vex-lights-start")).toBe(true);
     expect(head?.classList.contains("vex-ls-head")).toBe(true);
+    // The logo cell, then the sidebar key's.
+    const cells = Array.from(head?.children ?? []).map((el) => el.getAttribute("data-vex-head-cell"));
+    expect(cells).toEqual(["logo", "sidebar-key"]);
+  });
+
+  it("sets the mark alone at the logo cell's 34 x 27, and the key as the whole cell", () => {
+    // docs/design/H3-DESKTOP.md section 1.3 and Appendix A.1: the mark alone,
+    // where H3 writes "CLOUD" beside it.
+    const { container } = render(<AgentSidebarHeader onCollapse={vi.fn()} />);
+    const logo = container.querySelector("[data-vex-head-cell='logo']");
+    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("27");
+    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("width")).toBe("34");
+    expect(logo?.textContent).toBe("");
+    const key = container.querySelector("[data-vex-head-cell='sidebar-key'] button");
+    expect(key?.classList.contains("vex-ls-hkey")).toBe(true);
+  });
+
+  it("over the rail is the logo cell alone, the rail's Expand key the way back", () => {
+    const { container } = render(<AgentSidebarHeader rail onCollapse={vi.fn()} />);
+    const head = container.querySelector("[data-vex-head-cell='chats']");
+    expect(head?.hasAttribute("data-rail")).toBe(true);
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    expect(head?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("27");
+    expect(screen.queryByRole("button", { name: /Collapse/i })).toBeNull();
+  });
+
+  it("names Studio's sidebar on its key in Studio", () => {
+    render(<AgentSidebarHeader label="Collapse Studio sidebar" onCollapse={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Collapse Studio sidebar" })).not.toBeNull();
   });
 
   it("leaves search to the body: the head row holds the mark and one key", () => {
     render(<AgentSidebarHeader onCollapse={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: /Search sessions/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Search chats/i })).toBeNull();
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });

@@ -1,9 +1,13 @@
 /**
  * The parts every ledger row shares (docs/design/R3-MINIMAL.md section 9.2):
  * Agent Scan's two arms and the token history draw one grid, 112 | 1fr | 120
- * | 250, and end in the same place: a state word with its fill and, under it,
- * the consequence in muted type. The grid and its type live in
- * `styles/global-css/overlay.css` (`.vex-scan-*`).
+ * | 250, and end in the same place: the state word and, under it, the
+ * consequence in muted type. The word is H3's status mark
+ * (docs/design/H3-DESKTOP.md section 2.2, `StatusMark`): caps beside a
+ * square with its own drawing per status, so the colour never stands alone
+ * (solid, blink, cross, hatch, target, frame). The grid's R3 rules
+ * live in `styles/global-css/overlay.css` (`.vex-scan-*`); H3's rows are
+ * laid over them in `book.css`, under the page frame.
  *
  * THE WORD IS DATA. A row's outcome is decided by the arm's own reader (the
  * activity arm in `agent-scan-outcome.ts`, the token history in
@@ -14,7 +18,7 @@
  */
 
 import { Fragment, type JSX, type ReactNode } from "react";
-import { StateWord } from "../../../../components/ui/state-word.js";
+import { StatusMark, outcomeStatus } from "./StatusMark.js";
 import type { SwatchState } from "../../../../components/ui/swatch.js";
 
 /** One segment of the muted line under a state word. */
@@ -35,7 +39,7 @@ export interface ScanOutcome {
 export function ScanState({ outcome }: { readonly outcome: ScanOutcome }): JSX.Element {
   return (
     <span className="vex-scan-state" data-vex-scan-state={outcome.word}>
-      <StateWord state={outcome.state} word={outcome.word} />
+      <StatusMark status={outcomeStatus(outcome.state, outcome.word)} word={outcome.word} />
       {outcome.notes.length > 0 ? (
         <span className="vex-scan-sub">
           {outcome.notes.map((note, index) => (

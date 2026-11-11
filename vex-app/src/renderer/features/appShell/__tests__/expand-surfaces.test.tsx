@@ -79,7 +79,7 @@ describe("expand conformance (source gate)", () => {
 describe("expand conformance (render pins)", () => {
   it("ReasonedBlock: the trace body is the primitive and survives closing", () => {
     render(createElement(ReasonedBlock, { reasoning: "weighed the ledger" }));
-    const trigger = screen.getByRole("button", { name: /Reasoned/ });
+    const trigger = screen.getByRole("button", { name: /Thought/ });
     fireEvent.click(trigger);
     const body = document.getElementById(trigger.getAttribute("aria-controls")!);
     expect(body?.className).toContain("vex-expand");
@@ -121,7 +121,7 @@ describe("expand conformance (render pins)", () => {
 
   it("closing returns focus to the trigger rather than losing it to body", () => {
     render(createElement(ReasonedBlock, { reasoning: "trace" }));
-    const trigger = screen.getByRole("button", { name: /Reasoned/ });
+    const trigger = screen.getByRole("button", { name: /Thought/ });
     fireEvent.click(trigger);
     const body = document.getElementById(trigger.getAttribute("aria-controls")!);
     // Focus something inside, the way a reader tabbing into the trace would.

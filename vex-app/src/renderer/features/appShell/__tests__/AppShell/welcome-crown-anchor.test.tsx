@@ -11,11 +11,12 @@
  * resident composer seat, which stands centred in the centre column in the
  * hero phase (the R3 welcome, reference d2) - so the whole opening moves as
  * one unit and the composer's DOM node survives the move to the docked phase.
- * The anchoring invariant is unchanged and its mechanism is unchanged in kind:
- * the crown is never inside the box that grows, and the growing box has a
- * FIXED layout height so growth overflows DOWNWARD instead of re-centring the
- * stack above it. The owner of that fixed height is a phase-scoped rule on
- * `[data-vex-composer-dock]` in composer.css.
+ * The anchoring invariant is unchanged: the crown is never inside the box
+ * that grows. H3 changed its mechanism (docs/design/H3-DESKTOP.md section
+ * 1.7): the crown holds the column's top and the growing box stands on the
+ * column's foot, so growth RISES into the room between them instead of
+ * re-centring the stack. The owners are the opening's auto bottom margin and
+ * the phase-scoped rule on `[data-vex-composer-dock]` in composer.css.
  *
  * WHY STRUCTURE, NOT PIXELS: jsdom has no layout engine — every element
  * reports offsetTop 0 and the textarea's scrollHeight is 0, so a numeric
@@ -91,9 +92,18 @@ vi.mock("../../SessionContext.js", () => ({ SessionContext: () => null }));
 vi.mock("../../SessionTranscript.js", () => ({ SessionTranscript: () => null }));
 vi.mock("../../MissionControls.js", () => ({ MissionControls: () => null }));
 vi.mock("../../ApprovalsRegion.js", () => ({ ApprovalsRegion: () => null }));
-vi.mock("../../SessionWelcomeHero.js", () => ({
-  SessionWelcomeHero: () => <div data-vex-hero-stub />,
-}));
+// The stub keeps the real welcome's slot for the suggestions (D2, section
+// 6.6), so the grid the composer portals into it lands in the crown.
+vi.mock("../../SessionWelcomeHero.js", async () => {
+  const { setWelcomeStartersSlot } = await import("../../welcome-starters-slot.js");
+  return {
+    SessionWelcomeHero: () => (
+      <div data-vex-hero-stub>
+        <div ref={setWelcomeStartersSlot} data-vex-area="welcome-starters-slot" />
+      </div>
+    ),
+  };
+});
 
 const { SessionPanel } = await import("../../SessionPanel.js");
 const { QUICK_ACTIONS } = await import("../../composer-quick-actions.js");
@@ -169,12 +179,13 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(crown.parentElement).toBe(band.parentElement);
   expect(seat.contains(crown)).toBe(true);
   expect(seat.contains(band)).toBe(true);
-  // Crown DIRECTLY above the band in document order (growth expands
-  // downward, away from the crown - nothing re-centrable sits between).
+  // Crown DIRECTLY above the band in document order (the band stands on the
+  // column's foot and grows up into the room between them - nothing
+  // re-centrable sits between).
   expect(crown.nextElementSibling).toBe(band);
-  // The band is inside the scrollport the shell flex-centres in hero phase;
-  // the fixed height that keeps growth downward is asserted against the
-  // stylesheet below (it is a phase-scoped rule, not a class).
+  // The band is inside the scrollport the seat fills in hero phase; the
+  // margin and the foot that keep the crown still are asserted against the
+  // stylesheet below (phase-scoped rules, not classes).
   expect(
     container
       .querySelector("[data-vex-conversation-scroll]")
@@ -182,17 +193,41 @@ function expectAnchoredStructure(container: HTMLElement): void {
   ).toBe(true);
   // The growing instrument lives INSIDE the band; its field slot wears the
   // transitioned-height class.
-  const field = screen.getByLabelText("Session draft");
+  const field = screen.getByLabelText("Ask Vex");
   expect(band.contains(field)).toBe(true);
   const slot = container.querySelector(".vex-composer-grow");
   expect(slot).not.toBeNull();
   expect(slot?.contains(field)).toBe(true);
 }
 
-describe("SessionPanel welcome - crown anchored above a downward growth band", () => {
-  it("seats the crown zone as a sibling ABOVE the fixed-height composer band", () => {
+describe("SessionPanel welcome - crown anchored above a rising growth band", () => {
+  it("seats the crown zone as a sibling ABOVE the composer band", () => {
     const { container } = renderWelcome();
     expectAnchoredStructure(container);
+  });
+
+  it("stands the suggestions IN the crown, under the greeting's notes, not over the composer (D2)", () => {
+    // docs/design/H3-DESKTOP.md section 6.6: the greeting, its notes and the
+    // two-by-two grid are one group at the top of the reading column; the
+    // chat under them is empty down to the composer.
+    const { container } = renderWelcome();
+    const crown = crownOf(container);
+    const band = bandOf(container);
+    const grid = container.querySelector("[data-vex-composer-starters]");
+    expect(grid).not.toBeNull();
+    expect(crown.querySelector("[data-vex-area='welcome-starters-slot']")?.contains(grid)).toBe(true);
+    expect(band.contains(grid)).toBe(false);
+    expect(container.querySelectorAll("[data-vex-composer-starters]")).toHaveLength(1);
+    // Still before the field in reading and focus order.
+    const field = screen.getByLabelText("Ask Vex");
+    expect((grid as Element).compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And still the composer's: a pick seeds its draft.
+    fireEvent.click(screen.getByRole("button", { name: /check wallet balances/i }));
+    expect((field as HTMLTextAreaElement).value).toBe(
+      QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
+    );
+    // The welcome's draft outlives the render; leave it empty.
+    fireEvent.change(field, { target: { value: "" } });
   });
 
   it("keeps the anchor, on the same nodes, across empty → chip-seeded long draft → cleared draft", async () => {
@@ -208,7 +243,7 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
       screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
-      "Session draft",
+      "Ask Vex",
     ) as HTMLTextAreaElement;
     expect(field.value).toBe(
       QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
@@ -246,7 +281,7 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
       screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
-      "Session draft",
+      "Ask Vex",
     ) as HTMLTextAreaElement;
     expect(document.activeElement).toBe(field);
     expect(field.selectionStart).toBe(field.value.length);
@@ -266,26 +301,30 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     return GLOBALS_CSS.slice(start, end);
   }
 
-  it("pins the hero growth band's fixed height, so field growth overflows downward", () => {
-    // The invariant the structural cases above cannot express in jsdom: with
-    // a FIXED band height nothing below the band can reflow as the field
-    // grows, and the greeting above it never moves. 302px = the resting field
-    // (116) + the task rows' slot (186: 18 above four 42 high rows).
+  it("stands the growth band on the column's foot under the opening's auto margin, so growth rises", () => {
+    // The invariant the structural cases above cannot express in jsdom
+    // (docs/design/H3-DESKTOP.md section 1.7): the opening holds the column's
+    // top with an auto bottom margin and the band, the suggestions over the
+    // composer, stands on the seat's foot. A growing field takes room from
+    // the margin between them, so the greeting never moves and the field's
+    // foot never moves either. No fixed band height is left to drift from
+    // the content it would have to add up.
+    expect(blockFor(".vex-welcome")).toContain("margin-bottom: auto");
     const dock = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock]',
     );
-    expect(dock).toContain("height: 302px");
-    expect(dock).toContain("overflow: visible");
-    // The slot under the field holds the same 186 whether or not the rows show.
-    expect(blockFor(".vex-starters")).toContain("height: 186px");
+    expect(dock).toContain("width: 100%");
+    expect(dock).not.toMatch(/(?:^|[\s;{])height:/);
+    expect(blockFor(".vex-starters")).not.toMatch(/(?:^|[\s;{])height:/);
   });
 
   it("places the hero opening with FLEX, never a transform", () => {
     // A transform on the scroll body would make it the containing block for
     // every `position: fixed` descendant (menus, dialogs), silently shrinking
     // them to this column. Flex placement has no such side effect: the body
-    // stacks from the top and the seat's auto block margins centre it while
-    // there is room (and let a short window scroll to its head).
+    // stacks from the top and the seat grows to its whole height, the opening
+    // at its top and the composer at its foot (docs/design/H3-DESKTOP.md
+    // section 1.7), and a short window scrolls to its head.
     // Whitespace-tolerant: the selector spans two lines after formatting, so
     // this scans for the rule rather than an exact `selector {` prefix.
     const heroBody =
@@ -298,7 +337,7 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     const seat = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat]',
     );
-    expect(seat).toContain("margin-block: auto");
+    expect(seat).toContain("flex: 1 0 auto");
     expect(seat).not.toContain("transform");
   });
 

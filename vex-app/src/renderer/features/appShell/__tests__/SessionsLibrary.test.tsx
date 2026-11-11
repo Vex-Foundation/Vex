@@ -178,7 +178,7 @@ describe("SessionsLibrary search and filters", () => {
   it("groups the register by day under 12 point heads and says how the keys work", () => {
     render(<SessionsLibrary />);
 
-    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Earlier" })).toBeTruthy();
     expect(
       screen.getByText(/Double click a title to rename it\./),
     ).toBeTruthy();

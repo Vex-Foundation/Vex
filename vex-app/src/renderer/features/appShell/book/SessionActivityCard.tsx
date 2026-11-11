@@ -19,11 +19,16 @@
  * `agent_activity` row and a Lighter fill). It never filters or sorts a row
  * out itself.
  *
- * A ROW: the caps kind tag (11 / 600, `.08em`, ink 2; the tag's words are
- * `ActivityBadge`'s, repainted plain for the page), the legs `IN -> OUT`, the
- * figure, the chain and time (with the main-resolved explorer link when there
- * is one), and every row ENDS IN A WORD with its fill (section 1.6): Confirmed,
- * "Submitted, awaiting confirmation", Status unknown, Failed. The outcome word
+ * A ROW, in H3's row grammar (docs/design/H3-DESKTOP.md sections 2.2 and 2.3,
+ * A.3: the console's RECENT ACTIVITY rows): the kind tag in caps (13, muted;
+ * the tag's words are `ActivityBadge`'s, repainted plain for the page), the
+ * legs `IN -> OUT` (15, ink), the figure, the chain and time (with the
+ * main-resolved explorer link when there is one), and every row ENDS IN A
+ * WORD: caps beside H3's status square, each status its own drawing
+ * (`StatusMark`: solid green for Confirmed, the blinking hud for "Submitted,
+ * awaiting confirmation" and Pending, the refusal cross for Failed, the
+ * concerned hatch for Status unknown), desktop's words where H3 says FILLED,
+ * RUNNING and DID NOT EXECUTE. The rows sit in one framed cell. The outcome word
  * follows the plan's money-outcome rules: a pending row with a transaction on
  * chain is submitted and awaiting confirmation; a pending row whose tracking
  * has fallen behind or whose checks stalled, or whose nonce was taken, has an
@@ -45,7 +50,7 @@ import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-light
 import type { Result } from "@shared/ipc/result.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { LineExternal } from "../../../components/icons/line/index.js";
-import { StateWord } from "../../../components/ui/state-word.js";
+import { StatusMark, outcomeStatus } from "../screens/agent-scan/StatusMark.js";
 import type { SwatchState } from "../../../components/ui/swatch.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -278,12 +283,17 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
   }
 }
 
-/** The row's closing cell: the outcome word with its fill. */
+/**
+ * The row's closing cell: the outcome word in caps beside H3's status square
+ * (solid green confirmed, the blinking hud submitted or pending, the cross
+ * failed, the concerned hatch unknown; `StatusMark`). The word is
+ * `activityOutcome`'s, unchanged.
+ */
 function OutcomeCell({ entry }: { readonly entry: AgentScanEntry }): JSX.Element {
   const outcome = activityOutcome(entry);
   return (
     <td className="vex-pf-r vex-pf-outcome">
-      <StateWord state={outcome.state} word={outcome.word} />
+      <StatusMark status={outcomeStatus(outcome.state, outcome.word)} word={outcome.word} />
     </td>
   );
 }

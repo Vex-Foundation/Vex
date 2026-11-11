@@ -113,7 +113,11 @@ import { useTerminalInput } from "./useTerminalInput.js";
 import { useTerminalFileDrop } from "./useTerminalFileDrop.js";
 import { useTerminalLinkConsent } from "./useTerminalLinkConsent.js";
 import { TerminalContextMenu } from "./TerminalContextMenu.js";
-import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
+import {
+  terminalFacesReady,
+  terminalRegistry,
+  type TerminalRegistry,
+} from "./terminal-registry.js";
 
 /**
  * The intents an owner answers, resolved ONCE and LAZILY.
@@ -283,9 +287,11 @@ export function XtermHost({
     // to the document listener that owns the Studio table. See the module
     // header for why that path does not `preventDefault`.
     //
-    // The VEX TOGGLE (Cmd or Ctrl + Shift + Period) is refused the same way:
+    // The VEX TOGGLE (Cmd or Ctrl + Shift + B, and for one release its
+    // retiring alias Cmd or Ctrl + Shift + Period) is refused the same way:
     // it is not a Studio row but the app's own chord, and its listener is on
-    // the document too (`features/vex/vex-toggle-shortcut.ts`).
+    // the document too (`features/vex/vex-toggle-shortcut.ts`). Studio's own
+    // B row is Ctrl or Cmd + B with Shift up, so the two never meet.
     entry.terminal.attachCustomKeyEventHandler((event) => {
       const action = decideTerminalClipboardAction(event, {
         hasSelection: entry.terminal.hasSelection(),
@@ -392,6 +398,32 @@ export function XtermHost({
     if (!visible) setMenuAt(null);
   }, [pushSize, registry, terminalId, visible]);
 
+  // THE FACE, once its files are in (terminal-registry.ts): a terminal that
+  // measured its cell in a fallback measures it again, refits, and tells the
+  // host its size, so its rows land on the 20 pitch in Roboto Mono.
+  useEffect(() => {
+    let live = true;
+    void terminalFacesReady().then(() => {
+      if (live && registry.remeasureFace(terminalId)) pushSize(registry.refit(terminalId));
+    });
+    return () => {
+      live = false;
+    };
+  }, [pushSize, registry, terminalId]);
+
+  // THE RENDERER, once WebGL has attached (terminal-registry.ts,
+  // `rendererSettled`): its cell is not the DOM renderer's the first fit read,
+  // so the grid is fitted again and the host told its size.
+  useEffect(() => {
+    let live = true;
+    void registry.rendererSettled(terminalId).then((attached) => {
+      if (live && attached) pushSize(registry.refit(terminalId));
+    });
+    return () => {
+      live = false;
+    };
+  }, [pushSize, registry, terminalId]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (container === null || typeof ResizeObserver !== "function") return undefined;
@@ -435,14 +467,14 @@ export function XtermHost({
       }}
     >
       {/*
-        THE GRID'S INSET from the pane edge: 12 above and below and 16 at the
-        sides (docs/design/R3-MINIMAL.md section 9.5), so the text never
-        touches the pane's outline or its rule. Margin, not padding: the
-        registry's wrapper is `inset: 0` of this box, and an absolutely
-        positioned child fills its parent's padding box, so only a margin moves
-        the grid.
+        THE GRID'S INSET from the pane edge: 16 above and below and 24 at the
+        sides (our approved Studio plate, docs/design/H3-DESKTOP.md section
+        4.9: a cell's text sits 24 in), so the text never touches the pane's
+        rule. Margin, not padding: the registry's wrapper is `inset: 0` of
+        this box, and an absolutely positioned child fills its parent's
+        padding box, so only a margin moves the grid.
       */}
-      <div ref={containerRef} className="relative mx-4 mt-3 mb-3 min-h-0 flex-1" />
+      <div ref={containerRef} className="relative mx-6 my-4 min-h-0 flex-1" />
 
       {droppedRows > 0 ? (
         <div className="pointer-events-none absolute top-3 right-4 border border-rule bg-surface-field px-2 py-0.5 text-[12px] leading-4 text-ink-secondary">

@@ -1,31 +1,38 @@
 /**
- * What Vex shows on the pre-shell plate (`docs/design/R3-MINIMAL.md section 10.2`): one small
- * external store between the stage's plate (mounted once by `App`) and the screens that stand on
- * it (the gate, the unlock), so the picture never restarts while the screens change over it.
+ * What Vex shows on the pre-shell stage (`docs/design/H3-DESKTOP.md section 4.9`): one small
+ * external store between her column on the stage (mounted once by `App`, `StagePlate`) and the
+ * screens that stand beside it (the gate, the first run), so she never restarts while the screens
+ * change beside her. The Vex key over her column says the state's word; her section shows its mood.
+ * The unlock stands on no stage (section 4.13): it reads the same flags for her panel's mood
+ * (`stageVexLockMood`) and for which unlock it is (`launching`), and writes the concern and the
+ * unlock.
  *
- *   waking     the launch wake is playing, or the pipeline is still running: "Waking up"
- *   ready      she has woken and the desk is ready, or the vault just unlocked: "Ready"
- *   sleeping   the desk was locked: "Sleeping · Locked" (she wakes when the unlock succeeds)
- *   concerned  a wrong password, a throttle or the vault reset panel: "Concerned"
- *   a face     a first run screen (system check, local runtime, database) says what she
- *              shows for what it is doing: "Working" with a timer, "Ready", "Concerned", "Error"
+ *   waking     the launch pipeline is still running: "Waking up" (she rests)
+ *   ready      the desk is awake, or the vault just unlocked: "Ready" (she says hi)
+ *   sleeping   the desk was locked: "Sleeping" (she rests)
+ *   concerned  a wrong password, a throttle or the vault reset panel: "Concerned", with the
+ *              throttle's seconds
+ *   a face     a screen beside her says what she shows for what it is doing (the first run:
+ *              "Working" with a timer, "Ready", "Concerned", "Error"; the wizard: "Listening",
+ *              "Ready")
  *
- * `launching` is true from the start of the process until the plate leaves the launch (the shell,
- * or a first-run screen): only a launch plays the wake from the token. A plate that mounts later
- * (Lock Vex, then the unlock) starts with her asleep.
+ * `launching` is true from the start of the process until the stage leaves the launch (the first
+ * run, the wizard, the shell): a stage that stands after it (Lock Vex, then the unlock) starts with
+ * her asleep.
  *
- * The store holds no secret and no copy: flags only. `exit` is the stage to shell crossfade: the
- * plate lifts away (240 ms) when its owner (the gate or the page turn) says so.
+ * The store holds no secret and no copy: flags only. `exit` is the stage to shell crossfade: her
+ * stage lifts away (240 ms) when its owner (the gate or the page turn) says so.
  */
 
-import { useSyncExternalStore } from "react";
-import type { K2Emotion } from "../vex/k2/k2-emotion.js";
-import type { SwatchState } from "../ui/swatch.js";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { kimmMoodOf } from "../../features/vex/kimm-mood.js";
+import type { VexState } from "../../features/vex/vex-state.js";
+import type { KimmMood } from "../vex/kimm/kimm-assets.js";
 
 export interface StageVexState {
-  /** The launch wake is still the story (true until the plate leaves the launch). */
+  /** The launch is still the story (true until the stage leaves the launch). */
   readonly launching: boolean;
-  /** The wake episode has handed her over (or she was never asleep: the still frame). */
+  /** Her stage stands for the launch: she is awake beside the wake (`StagePlate`). */
   readonly woken: boolean;
   /** The launch pipeline has handed off, so the desk is awake. */
   readonly pipelineReady: boolean;
@@ -42,15 +49,20 @@ export interface StageVexState {
 }
 
 /**
- * What the plate shows from the state: her emotion. The swatch, the word and the figure name that
- * face for the screens and the tests; the plate draws none of them (the owner, 2026-10-18).
+ * What she shows from the state. On H3's stage (docs/design/H3-DESKTOP.md section 4.9) the Vex key
+ * over her column says her `state` and its `word` (the screen's own word; nothing stands under
+ * her), and her section shows her `mood`: `kimmMoodOf(state)`, the shell's own map
+ * (`features/vex/kimm-mood.ts`), unless the approved plate names the moment's own (`moodFace`,
+ * `FirstRunStage.tsx`; the wizard at rest, `WizardShell.tsx`).
  */
 export interface StageVexView {
-  readonly emotion: K2Emotion;
-  readonly swatch: SwatchState;
+  /** Her presence state, as the Vex key reads it. */
+  readonly state: VexState;
   readonly word: string;
-  /** "Locked" or a countdown, set in mono after the word. */
+  /** "Locked", a countdown or a timer, set as a figure after the word. */
   readonly note: string | null;
+  /** Her mood on her stage. */
+  readonly mood: KimmMood;
 }
 
 const INITIAL: StageVexState = {
@@ -75,27 +87,32 @@ export function formatCountdown(seconds: number): string {
 }
 
 /**
- * The view for a state. Pure. Concerned wins, then a screen's face (once the launch's wake has
- * handed her over), then an unlock, then the launch, else asleep.
+ * The view for a state. Pure. Concerned wins, then a screen's face (once her stage stands for the
+ * launch), then an unlock, then the launch, else asleep.
  */
 export function stageVexView(state: StageVexState): StageVexView {
   if (state.concerned) {
     return {
-      emotion: "concerned",
-      swatch: "concerned",
+      state: "concerned",
       word: "Concerned",
       note: state.countdown === null ? null : formatCountdown(state.countdown),
+      mood: kimmMoodOf("concerned"),
     };
   }
-  // A first run screen speaks for her, but the wake always finishes first: she never skips it.
+  // A screen speaks for her once her stage stands for the launch.
   if (state.face !== null && (!state.launching || state.woken)) return state.face;
-  const ready: StageVexView = { emotion: "idle", swatch: "done", word: "Ready", note: null };
+  // Ready: the desk is awake (the wake's last words before it hands off).
+  const ready: StageVexView = { state: "ready", word: "Ready", note: null, mood: kimmMoodOf("ready") };
   if (state.unlocked) return ready;
   if (state.launching) {
     if (state.woken && state.pipelineReady) return ready;
-    return { emotion: "idle", swatch: "listening", word: "Waking up", note: null };
+    // The wake: she rests while the desk starts (the plate `stage-wake`).
+    return { state: "waking", word: "Waking up", note: null, mood: kimmMoodOf("waking") };
   }
-  return { emotion: "sleeping", swatch: "sleeping", word: "Sleeping", note: "Locked" };
+  // After the launch, a stage that stands before the shell finds the desk asleep, and she rests,
+  // so the map's held for a locked vault (`kimmMoodOf`'s `locked`) is not asked for on the stage.
+  // The lock screen draws her in its own panel (`stageVexLockMood`).
+  return { state: "sleeping", word: "Sleeping", note: null, mood: kimmMoodOf("sleeping") };
 }
 
 let state: StageVexState = INITIAL;
@@ -148,9 +165,7 @@ export function stageVexConcerned(concerned: boolean, countdown: number | null =
 /** The same face, by value (the store holds a flag set, never a moving object). */
 function sameFace(a: StageVexView | null, b: StageVexView | null): boolean {
   if (a === null || b === null) return a === b;
-  return (
-    a.emotion === b.emotion && a.swatch === b.swatch && a.word === b.word && a.note === b.note
-  );
+  return a.state === b.state && a.word === b.word && a.note === b.note && a.mood === b.mood;
 }
 
 /** A first run screen says what she shows; null hands her back to the launch's own story. */
@@ -164,12 +179,55 @@ export function stageVexFaceClear(face: StageVexView): void {
   if (sameFace(state.face, face)) update({ face: null });
 }
 
-/** The stage to shell crossfade starts: the plate lifts away. */
+/**
+ * A screen says what she shows while it stands (the first run, the wizard): the face is set when
+ * it changes and cleared once, when the screen leaves, so a crossfade between two screens never
+ * flickers through the launch's own words.
+ */
+export function useStageFace(face: StageVexView): void {
+  const { state: vexState, word, note, mood } = face;
+  const mine = useRef<StageVexView | null>(null);
+  useEffect(() => {
+    const next: StageVexView = { state: vexState, word, note, mood };
+    mine.current = next;
+    stageVexFace(next);
+  }, [vexState, word, note, mood]);
+  useEffect(
+    () => () => {
+      if (mine.current !== null) stageVexFaceClear(mine.current);
+    },
+    [],
+  );
+}
+
+/**
+ * Her mood on the lock screen's own panel (`UnlockScreen.tsx`, docs/design/H3-DESKTOP.md section
+ * 4.13): the unlock stands on no stage and no Vex key speaks for her there, so the panel reads the
+ * same flags with a simpler clock. She rests while the screen waits for the password, is concerned
+ * (as the stage maps it, `kimmMoodOf("concerned")`) over a wrong password, a throttle or the vault
+ * reset panel, and says hi once the vault has opened.
+ */
+export function stageVexLockMood(state: StageVexState): KimmMood {
+  if (state.concerned) return kimmMoodOf("concerned");
+  if (state.unlocked) return kimmMoodOf("ready");
+  return kimmMoodOf("sleeping");
+}
+
+/** The stage to shell crossfade starts: her stage lifts away. */
 export function stageVexExit(): void {
   update({ exit: "reveal" });
 }
 
-/** The plate left the launch or the screens: the next plate starts from a locked desk. */
+/**
+ * Her stage has gone from the window without leaving the launch (the gate lifted away over the
+ * unlock, which stands on no stage): the crossfade is spent, so a stage that stands again starts
+ * whole, and the launch's own story is kept.
+ */
+export function stageVexSettle(): void {
+  update({ exit: "idle" });
+}
+
+/** The stage left the launch or the screens: the next stage starts from a locked desk. */
 export function stageVexEnd(): void {
   update(AFTER_LAUNCH);
 }

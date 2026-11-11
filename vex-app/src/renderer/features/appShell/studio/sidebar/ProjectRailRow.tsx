@@ -1,39 +1,44 @@
 /**
- * ONE project row in the Studio body of the left sidebar
- * (docs/design/R3-MINIMAL.md section 4, "Studio"): 34 high, padding 0 10, the
- * name in 14 and the outlined "Full access" tag at the right. The selected
- * project takes the selection wash with its name in blue at 500, the same
- * register as a selected nav or session row; no dot.
+ * ONE project row in the Studio sidebar, in H3 cells (our approved Studio
+ * plate, docs/design/H3-DESKTOP.md section 4.9): 36 high, the name at 15 in
+ * ink set 24 in, the open project on the selected row's fade, and at the
+ * right a status square and RUNNING while a shell of the project's is live
+ * (`workspace/project-live.ts`), as the chats list's tags are drawn
+ * (section 1.4).
+ *
+ * The plate draws no access tag on a row: the open project's access is the
+ * header's line ("Studio · Full access") and the console's This project, and
+ * every row keeps its permission sentence as its accessible description and
+ * its tooltip, so the standing authority is still said where it is asked.
  *
  * Drift is a state, so it is a fill with its words: the ink hatch swatch
  * (concerned) named by the drift sentence, the same sentence the row's
  * description, the welcome row and the explorer's file mark read.
  *
- * On the 56px rail the row is a 40 x 40 folder key with the name as its
- * accessible name and tooltip; the full access tag folds to a warning mark.
  * The action cluster (the sidebar's ellipsis menu) sits beside the select
  * control, never inside it, and shows on hover, focus, or while its menu is
- * open.
+ * open. The rail has no project rows: its Projects and files key opens these
+ * in a drawer (`StudioSidebar`).
  */
 
 import type { JSX, ReactNode } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
-import { LineFolder } from "../../../../components/icons/line/index.js";
+import { StateSquare } from "../../../../components/ui/state-square.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
 import { cn } from "../../../../lib/utils.js";
-import { ProjectPermissionState } from "../ProjectPermissionState.js";
 import {
   projectDriftLabel,
   projectPermissionDescription,
   STUDIO_DRIFT_SENTENCES,
+  STUDIO_PROJECT_RUNNING_LABEL,
 } from "../studio-copy.js";
+import { useProjectLive } from "../workspace/project-live.js";
 import { worstDriftState } from "./project-row-model.js";
 
 export interface ProjectRailRowProps {
   readonly project: ProjectDto;
   readonly selected: boolean;
-  readonly collapsed?: boolean;
   readonly onSelect: () => void;
   /** The row's action cluster (the sidebar's ellipsis menu); omitted elsewhere. */
   readonly actions?: ReactNode;
@@ -43,11 +48,11 @@ export interface ProjectRailRowProps {
 export function ProjectRailRow({
   project,
   selected,
-  collapsed = false,
   onSelect,
   actions,
   actionsPinned = false,
 }: ProjectRailRowProps): JSX.Element {
+  const running = useProjectLive(project.id);
   const drift = worstDriftState(project);
   const driftSentence = drift === null ? null : STUDIO_DRIFT_SENTENCES[drift];
   const driftDescription =
@@ -66,13 +71,12 @@ export function ProjectRailRow({
         <Swatch state="concerned" size={10} />
       </span>
     );
-  const hasActions = actions !== undefined && !collapsed;
 
   return (
     <div
       className="vex-st-proj"
       data-selected={selected || undefined}
-      data-rail={collapsed || undefined}
+      data-running={running || undefined}
       data-rail-row-pinned={actionsPinned || undefined}
     >
       <Tooltip label={description}>
@@ -80,37 +84,32 @@ export function ProjectRailRow({
           type="button"
           onClick={onSelect}
           aria-current={selected ? "true" : undefined}
-          aria-label={collapsed ? project.name : undefined}
           aria-description={description}
           className="vex-st-proj__select"
         >
-          {collapsed ? (
-            <span className="vex-st-proj__key">
-              <LineFolder className="vex-ls-nrow__i" />
-              <span className="vex-st-proj__overlay">
-                <ProjectPermissionState permission={project.permission} collapsed />
-                {driftMark}
+          <span className="vex-st-proj__t truncate">{project.name}</span>
+          {/* A space the flex row does not draw, so the name reads "vex-core
+            * Running" rather than one run-on word. */}
+          {" "}
+          <span className="vex-st-proj__state" data-rail-persistent-state>
+            {driftMark}
+            {running ? (
+              <span className="vex-st-proj__run" data-vex-project-running="">
+                <StateSquare state="ongoing" size={6} />
+                <span>{STUDIO_PROJECT_RUNNING_LABEL}</span>
               </span>
-            </span>
-          ) : (
-            <>
-              <span className="vex-st-proj__t truncate">{project.name}</span>
-              <span className="vex-st-proj__state" data-rail-persistent-state>
-                {driftMark}
-                <ProjectPermissionState permission={project.permission} />
-              </span>
-            </>
-          )}
+            ) : null}
+          </span>
         </button>
       </Tooltip>
-      {hasActions ? (
+      {actions === undefined ? null : (
         <div
           data-rail-actions
           className={cn("vex-st-proj__acts shrink-0", actionsPinned && "vex-st-proj__acts--pinned")}
         >
           {actions}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -19,6 +19,32 @@ import { defineConfig } from "@playwright/test";
 
 const isCI = process.env.CI === "true";
 
+/**
+ * The H3 shell harness server. It serves two specs: the H3 parity captures
+ * (`e2e/h3-parity.spec.ts`, opt-in evidence that skips itself unless
+ * VEX_H3_SHOTS=1) and the card proof (`e2e/h3-card-proof.spec.ts`, plan row
+ * S4-16), which is a CI gate: a waiting money card must never move while
+ * Kimm's section opens or closes. So the server starts on every run, like
+ * the board layout harness, and Playwright reuses an already-running one
+ * locally.
+ *
+ * VEX_H3_PORT moves it off 5274 for a local run beside another checkout's
+ * harness (each worktree serves its own tree, and a reused server on the
+ * default port could be someone else's); CI keeps the default.
+ */
+const H3_PORT = Number(process.env.VEX_H3_PORT ?? "5274");
+const H3_URL = `http://127.0.0.1:${String(H3_PORT)}/`;
+const h3ShellServer = [
+  {
+    command: `pnpm exec vite --config vite.h3-shell.config.ts --port ${String(H3_PORT)} --strictPort`,
+    url: H3_URL,
+    reuseExistingServer: !isCI,
+    timeout: 120_000,
+    stdout: "ignore" as const,
+    stderr: "pipe" as const,
+  },
+];
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
@@ -39,20 +65,24 @@ export default defineConfig({
   },
   // The board layout harness is a Vite dev server, not the Electron app, and
   // only the `board-layout` project uses it. Playwright starts it on demand
-  // and reuses an already-running one locally.
-  webServer: {
-    command: "pnpm exec vite --config vite.board-layout.config.ts",
-    url: "http://127.0.0.1:5273/",
-    reuseExistingServer: !isCI,
-    timeout: 120_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  // and reuses an already-running one locally. The H3 shell harness joins it
+  // only for an H3 capture run (above).
+  webServer: [
+    {
+      command: "pnpm exec vite --config vite.board-layout.config.ts",
+      url: "http://127.0.0.1:5273/",
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    ...h3ShellServer,
+  ],
   projects: [
     {
       name: "electron-smoke",
       testMatch: /.*\.spec\.ts$/,
-      testIgnore: /board-layout\.spec\.ts$/,
+      testIgnore: /(board-layout|h3-parity|h3-card-proof)\.spec\.ts$/,
     },
     /**
      * BOARD GEOMETRY, in a real engine at real widths.
@@ -70,6 +100,40 @@ export default defineConfig({
       use: {
         browserName: "chromium",
         baseURL: "http://127.0.0.1:5273/",
+      },
+    },
+    /**
+     * H3 PARITY CAPTURES, the real shell in fixed states at five window sizes.
+     *
+     * Chromium for the same reason as the board project: the states are
+     * unreachable from the Electron fixture, and what they show is decided by
+     * the renderer's own components over the production stylesheet, which
+     * `vite.h3-shell.config.ts` serves with only the preload bridge stood in
+     * for. Opt-in: the spec skips itself unless VEX_H3_SHOTS=1.
+     */
+    {
+      name: "h3-parity",
+      testMatch: /h3-parity\.spec\.ts$/,
+      timeout: 60_000,
+      use: {
+        browserName: "chromium",
+        baseURL: H3_URL,
+      },
+    },
+    /**
+     * THE CARD PROOF (docs/design/H3-DESKTOP.md section 3.6): the swap card's
+     * box with Kimm's section open, closed and on every frame of both wipes,
+     * at five widths, and its pixels open against closed. On the same harness
+     * and for the same reason as the parity captures, but with motion on and
+     * on every run: a card that moves fails the build.
+     */
+    {
+      name: "h3-card-proof",
+      testMatch: /h3-card-proof\.spec\.ts$/,
+      timeout: 120_000,
+      use: {
+        browserName: "chromium",
+        baseURL: H3_URL,
       },
     },
   ],

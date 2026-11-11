@@ -122,6 +122,10 @@ describe("TradingBottomPanel", () => {
     // The kit's ten cell meter: Math.round(0.33 * 10) = 3 cells are on.
     expect(meter.querySelectorAll("i")).toHaveLength(10);
     expect(meter.querySelectorAll("i[data-on]")).toHaveLength(3);
+    // VEX Cloud's meter: the last lit cell is its head (60%), and only it.
+    const head = meter.querySelectorAll("i[data-head]");
+    expect(head).toHaveLength(1);
+    expect(head[0]).toBe(meter.querySelectorAll("i")[2]);
     // The Unrealized PnL (with its ROE) is the one figure that takes the trading pair, by sign.
     expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("positive");
     expect(screen.getByText("Equity").nextElementSibling?.hasAttribute("data-tone")).toBe(false);
@@ -143,6 +147,7 @@ describe("TradingBottomPanel", () => {
     expect(meter.getAttribute("aria-valuenow")).toBe("92");
     expect(meter.querySelectorAll("i")).toHaveLength(10);
     expect(meter.querySelectorAll("i[data-on]")).toHaveLength(9);
+    expect(meter.querySelectorAll("i[data-head]")).toHaveLength(1);
     // A losing account reads down in the trading pair, by the same tone attribute.
     expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("negative");
   });
@@ -376,7 +381,8 @@ describe("TradingBottomPanel", () => {
     expect(table.textContent).toContain("3,200.5");
     expect(table.textContent).toContain("-12.5");
     // Sell and a realized loss are trading values: each carries its tone for the trading pair.
-    expect(within(table).getByText("Sell").getAttribute("data-tone")).toBe("negative");
+    expect(within(table).getByText("Sell").getAttribute("data-side")).toBe("sell");
+    expect(within(table).getByText("Sell").hasAttribute("data-tone")).toBe(false);
     expect(within(table).getByText("-12.5").getAttribute("data-tone")).toBe("negative");
     expect(screen.getByRole("note").textContent).toContain("older activity is not loaded");
 
@@ -441,9 +447,11 @@ describe("TradingBottomPanel", () => {
     renderPanel();
 
     expect(screen.getByRole("tab", { name: /^Positions ?1$/ })).toBeTruthy();
-    // The side word is its own element, the only part of the line in the trading pair.
+    // The side word is its own element, a word in ink, never the trading pair
+    // (VEX Cloud's DG5-07: red means refused).
     const sideWord = screen.getByText("Long");
-    expect(sideWord.getAttribute("data-trade")).toBe("up");
+    expect(sideWord.getAttribute("data-side")).toBe("long");
+    expect(sideWord.hasAttribute("data-trade")).toBe(false);
     expect(sideWord.closest("small")?.textContent).toBe("Long · 10x Cross");
     expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "Market", "Size", "Entry", "Mark", "Liq. price", "Margin", "uPnL (ROE)", "TP / SL", "Actions",
@@ -457,15 +465,19 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("+0.8%")).toBeTruthy();
     // The uPnL cell carries its sign as the tone the trading pair paints, figure and ROE together.
     expect(screen.getByText("+0.8%").closest('[role="cell"]')?.getAttribute("data-tone")).toBe("positive");
-    // A plain resting limit is not protection: TP / SL stay empty.
+    // A plain resting limit is not protection: TP / SL reads None, on one
+    // line (H3-DESKTOP.md section 4.9).
     const tpSl = screen.getAllByRole("cell")[7];
-    expect(tpSl?.querySelector("b")?.textContent).toBe("--");
-    expect(tpSl?.querySelector("small")?.textContent).toBe("--");
+    expect(tpSl?.querySelector("b")?.textContent).toBe("None");
+    expect(tpSl?.querySelector("small")).toBeNull();
     expect(tpSl?.querySelector("b")?.hasAttribute("data-empty")).toBe(true);
+    // The market's cell carries its mark beside the symbol.
+    expect(screen.getAllByRole("cell")[0]?.querySelector(".lit-market-symbol")).not.toBeNull();
 
-    // The key says "Ask Vex"; its accessible name still says what it asks about.
+    // Ask Vex is the vx mark; its accessible name still says what it asks about.
     const askKey = screen.getByRole("button", { name: "Review BTC position with Vex" });
-    expect(askKey.textContent).toBe("Ask Vex");
+    expect(askKey.getAttribute("title")).toBe("Ask Vex");
+    expect(askKey.querySelector("svg")).not.toBeNull();
     fireEvent.click(askKey);
     expect(mocks.actions.onReviewPosition).toHaveBeenCalledWith(account.positions[0]);
     // The row's one close key opens the card; it decides nothing by itself.
@@ -490,7 +502,8 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("Open")).toBeTruthy();
     expect(screen.getByText("GTC")).toBeTruthy();
     expect(screen.getByText("Filled 0.15 / 0.25")).toBeTruthy();
-    expect(screen.getByText("Sell").getAttribute("data-tone")).toBe("negative");
+    expect(screen.getByText("Sell").getAttribute("data-side")).toBe("sell");
+    expect(screen.getByText("Sell").hasAttribute("data-tone")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Cancel BTC order order-1" }));
     expect(mocks.actions.onCancelOrder).toHaveBeenCalledWith(account.openOrders[0]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel all" }));

@@ -50,7 +50,7 @@
  *   - composer + slash      → `SessionComposer`
  */
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
@@ -76,6 +76,7 @@ import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { ApprovalsRegion } from "./ApprovalsRegion.js";
+import { ApprovalDockProvider } from "./ApprovalCard/approval-dock.js";
 import { MissionControls } from "./MissionControls.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
@@ -95,11 +96,26 @@ export interface SessionPanelProps {
    * side-by-side workspace. The shell remains the default resident surface.
    */
   readonly surface?: "shell" | "embedded";
+  /**
+   * The waiting card's decision row docks at this panel's foot, in place of
+   * its composer (`ApprovalCard/approval-dock.tsx`): the shell's chat always,
+   * and the Lighter desk's chat, which stands in her column with its composer
+   * in the bottom row (H3-DESKTOP.md section 4.9). Defaults to the shell's.
+   */
+  readonly dockDecisions?: boolean;
+  /**
+   * Content that leads the conversation inside its scroll, above the head
+   * line and the transcript: the Lighter desk's scope chip and its prompts,
+   * which read with the conversation they start.
+   */
+  readonly contentLead?: ReactNode;
 }
 
 export function SessionPanel({
   headerTrailing,
   surface = "shell",
+  dockDecisions = surface === "shell",
+  contentLead = null,
 }: SessionPanelProps = {}): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
@@ -161,6 +177,9 @@ export function SessionPanel({
     !createSessionOpen;
 
   const scrollBodyRef = useRef<HTMLDivElement>(null);
+  // The decision dock's element, once mounted: the seat the waiting card's
+  // decision row is drawn in (`ApprovalCard/approval-dock.tsx`).
+  const [approvalDock, setApprovalDock] = useState<HTMLDivElement | null>(null);
   // macOS-style overlay bar on the conversation scrollport. The transcript
   // runs the same hook on its own element for the standalone mount; scroll
   // events do not bubble, so each scrolling box owns its own.
@@ -281,6 +300,7 @@ export function SessionPanel({
             // conversation is long (so the seat sticks).
             className="vex-session-enter flex w-full flex-[1_0_auto] flex-col pb-4 pt-[18px]"
           >
+            {contentLead}
             {/* The head lines keep the reading column; the transcript applies
                 the same column inside its own frame, so its scroller can span
                 the panel. */}
@@ -311,7 +331,13 @@ export function SessionPanel({
                 <SessionSleepBanner sessionId={activeSession.id} />
               ) : null}
               {activeSession !== null ? (
-                <ApprovalsRegion sessionId={activeSession.id} />
+                // The shell's chat and the desk chat hand their waiting card
+                // the bottom row's decision seat (the dock in the composer
+                // seat below); any other embedded chat keeps the card's own
+                // footer.
+                <ApprovalDockProvider value={dockDecisions ? approvalDock : null}>
+                  <ApprovalsRegion sessionId={activeSession.id} />
+                </ApprovalDockProvider>
               ) : null}
               {showMissionCard && activeSession !== null ? (
                 <MissionControls sessionId={activeSession.id} />
@@ -369,6 +395,17 @@ export function SessionPanel({
               pendingApproval={pendingApproval}
             />
           </div>
+          {/* THE DECISION DOCK (docs/design/H3-DESKTOP.md sections 1.8 and
+              4.3), last in the seat so it sits on the window's foot: empty
+              until a card waits in this chat, when the card renders its
+              reason field, Reject and its approve key here, as the bottom
+              row's chat cells. While it holds them the composer above gives
+              way (approval.css); it stays mounted, so its draft and caret
+              survive. After the band, so the welcome's crown keeps the band
+              directly under it. `ApprovalCard/approval-dock.tsx`. */}
+          {dockDecisions ? (
+            <div ref={setApprovalDock} data-vex-area="approval-dock" className="vex-appr-dock" />
+          ) : null}
         </div>
       </div>
     </div>

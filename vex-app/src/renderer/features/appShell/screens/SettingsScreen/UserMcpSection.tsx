@@ -8,9 +8,18 @@
  *
  * Every write is pessimistic: the section shows the list main answered with,
  * and a refusal shows its sentence under the control that caused it.
+ *
+ * THE LOOK IS VEX CLOUD'S BUILT MCP PAGE (owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9, look only; Cloud's `McpServerCard` and `McpToolRow`,
+ * W5 9b6ec94c and e1083f44): each server is a box on the card ground, its 44
+ * head the server's name with its state word at the right, the endpoint 13
+ * muted under a rule, then its keys, then a "Tools" head (11 caps muted) over
+ * the tool rows, 10 16 in, a rule between them. "Use in chats" and "Run
+ * without asking" are switches with their labels. The words, the keys and
+ * what each one does stay desktop's.
  */
 
-import { useState, type JSX } from "react";
+import { useId, useState, type JSX } from "react";
 import type { UserMcpServerDto, UserMcpToolDto } from "@shared/schemas/user-mcp.js";
 import { Button } from "../../../../components/ui/button.js";
 import { Input } from "../../../../components/ui/input.js";
@@ -25,6 +34,7 @@ import {
   userMcpErrorText,
   useUserMcpList,
 } from "../../../../lib/api/user-mcp.js";
+import { CoverRows, PageLoading } from "../PageLoading.js";
 
 export const USER_MCP_INTRO =
   "Their tools can look things up for your chats. They can never trade, move funds or sign. The arguments you approve are sent to that server.";
@@ -130,8 +140,10 @@ function ToolRow({
   const error = userMcpErrorText(setEnabled.data) ?? userMcpErrorText(setAutoRun.data) ?? userMcpErrorText(review.data);
   const busy = setEnabled.isPending || setAutoRun.isPending || review.isPending;
   const usable = tool.status === "active" && serverActive;
+  const enableId = useId();
+  const autoRunId = useId();
   return (
-    <li data-vex-user-mcp-tool={tool.remoteName} className="flex flex-col gap-2 border-t border-rule py-3">
+    <li data-vex-user-mcp-tool={tool.remoteName} className="vex-mcp-tool">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="font-mono text-[13px] text-ink-primary">{tool.remoteName}</span>
         {tool.readOnlyHint ? <span className="text-[12px] text-ink-tertiary">Read-only, says the server</span> : null}
@@ -156,28 +168,36 @@ function ToolRow({
           </Button>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <label className="inline-flex items-center gap-2 text-[14px] text-ink-primary">
-          <input
-            type="checkbox"
+      <div className="vex-mcp-tool__sw">
+        <span className="vex-mcp-sw">
+          <button
+            type="button"
+            role="switch"
+            id={enableId}
+            className="vex-switch"
+            aria-checked={tool.enabled}
+            aria-label={`Use in chats, ${tool.remoteName}`}
             data-vex-user-mcp-enable={tool.remoteName}
-            checked={tool.enabled}
             disabled={busy || (!tool.enabled && !usable)}
-            onChange={(e) => setEnabled.mutate({ toolId: tool.id, enabled: e.target.checked })}
+            onClick={() => setEnabled.mutate({ toolId: tool.id, enabled: !tool.enabled })}
           />
-          Use in chats
-        </label>
+          <label htmlFor={enableId}>Use in chats</label>
+        </span>
         {tool.readOnlyHint ? (
-          <label className="inline-flex items-center gap-2 text-[14px] text-ink-primary">
-            <input
-              type="checkbox"
+          <span className="vex-mcp-sw">
+            <button
+              type="button"
+              role="switch"
+              id={autoRunId}
+              className="vex-switch"
+              aria-checked={tool.autoRun}
+              aria-label={`Run without asking, ${tool.remoteName}`}
               data-vex-user-mcp-autorun={tool.remoteName}
-              checked={tool.autoRun}
               disabled={busy || !tool.enabled}
-              onChange={(e) => setAutoRun.mutate({ toolId: tool.id, autoRun: e.target.checked })}
+              onClick={() => setAutoRun.mutate({ toolId: tool.id, autoRun: !tool.autoRun })}
             />
-            Run without asking
-          </label>
+            <label htmlFor={autoRunId}>Run without asking</label>
+          </span>
         ) : null}
       </div>
       <details className="text-[13px] text-ink-secondary">
@@ -245,17 +265,18 @@ function ServerCard({ server }: { readonly server: UserMcpServerDto }): JSX.Elem
   const state = SERVER_STATE[server.status];
   const error = userMcpErrorText(recheck.data) ?? userMcpErrorText(remove.data);
   return (
-    <article aria-label={`MCP server ${server.name}`} data-vex-user-mcp-server={server.name} className="flex flex-col gap-3 border-t border-rule pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-[15px] font-medium text-ink-primary">{server.name}</span>
-          <span className="break-all font-mono text-[12px] text-ink-tertiary">{server.endpoint}</span>
-        </div>
-        <span className="inline-flex items-center gap-2 text-[13px] text-ink-primary" data-vex-user-mcp-state>
+    <article aria-label={`MCP server ${server.name}`} data-vex-user-mcp-server={server.name} className="vex-mcp-box">
+      <div className="vex-mcp-box__h">
+        <h3 className="vex-mcp-box__t">{server.name}</h3>
+        <span className="vex-mcp-box__state" data-vex-user-mcp-state>
           <Swatch state={state.swatch} />
           {state.word}
         </span>
       </div>
+      <p className="vex-mcp-box__meta">
+        <span className="vex-num">{server.endpoint}</span>
+      </p>
+      <div className="vex-mcp-box__body">
       <p className={noteClass}>
         {server.networkScope === "local" ? "On this computer. " : ""}
         {server.hasToken ? "Token saved in your vault." : "No token."}
@@ -289,14 +310,18 @@ function ServerCard({ server }: { readonly server: UserMcpServerDto }): JSX.Elem
           {error}
         </p>
       ) : null}
+      </div>
       {server.tools.length === 0 ? (
-        <p className={noteClass}>This server lists no tools.</p>
+        <p className="vex-mcp-box__none">This server lists no tools.</p>
       ) : (
-        <ul aria-label={`Tools on ${server.name}`} className="m-0 list-none p-0">
-          {server.tools.map((tool) => (
-            <ToolRow key={tool.id} tool={tool} serverId={server.id} serverActive={server.status === "active"} />
-          ))}
-        </ul>
+        <div className="vex-mcp-tools">
+          <h4 className="vex-mcp-tools__h">Tools</h4>
+          <ul aria-label={`Tools on ${server.name}`} className="vex-mcp-tools__list">
+            {server.tools.map((tool) => (
+              <ToolRow key={tool.id} tool={tool} serverId={server.id} serverActive={server.status === "active"} />
+            ))}
+          </ul>
+        </div>
       )}
     </article>
   );
@@ -317,10 +342,12 @@ export function UserMcpSection(): JSX.Element {
           {userMcpErrorText(list.data)}
         </p>
       ) : (
-        <p className={noteClass}>Loading</p>
+        <PageLoading label="Reading your servers…">
+          <CoverRows rows={2} />
+        </PageLoading>
       )}
       {data?.servers.map((server) => <ServerCard key={server.id} server={server} />)}
-      <div className="border-t border-rule pt-4">
+      <div className="vex-mcp-box vex-mcp-box--add">
         <AddServerForm atLimit={data !== null && data.servers.length >= data.maxServers} />
       </div>
     </section>

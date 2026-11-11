@@ -1,40 +1,42 @@
-/* Market | Limit (and a loaded protection mode): full-width tabs 32 high over
- * a quiet rule, 13.5 sans in ink 2; the chosen one is blue 500 with a 1.5px
- * blue underline (docs/design/R3-MINIMAL.md section 9.3). */
+/* MARKET | LIMIT (and a loaded protection mode): a row of cells across the
+ * ticket, 40 high over the rule, caps 13 in muted; the chosen one on the open ground
+ * in ink (docs/design/H3-DESKTOP.md section 4.9, the approved desk plate).
+ * The row stands with the account context, outside the order's scrolling
+ * fields. */
 .lit-order-type-controls {
   display: flex;
-  height: 32px;
+  height: 40px;
   min-width: 0;
   flex: 0 0 auto;
-  border-bottom: 1px solid var(--lit-line-quiet);
+  border-bottom: 1px solid var(--vex-alias-rule);
 }
 
 .lit-order-type-controls > button {
   min-width: 0;
   flex: 1 1 0;
   border: 0;
-  border-bottom: 1.5px solid transparent;
-  margin-bottom: -1px;
+  border-left: 1px solid var(--vex-alias-rule);
   background: transparent;
   padding: 0;
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-sans);
-  font-size: 13.5px;
-  letter-spacing: normal;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
   text-align: center;
+  text-transform: uppercase;
 }
 
-.lit-order-type-controls > button:hover { color: var(--lit-ink); }
+.lit-order-type-controls > button:first-child { border-left: 0; }
+.lit-order-type-controls > button:hover { background: var(--lit-hover); color: var(--lit-ink); }
 
 .lit-order-type-controls > button[aria-pressed="true"] {
-  border-bottom-color: var(--lit-positive);
-  color: var(--lit-positive);
-  font-weight: 500;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
 }
 
 .lit-order-type-controls > button:focus-visible {
   outline: 2px solid var(--lit-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 @media (hover: none) and (pointer: coarse) {

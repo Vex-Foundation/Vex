@@ -2,7 +2,8 @@
  *  THE TYPE REGISTER: labels, figures and the two prose voices  *
  * ============================================================ *
  *
- * docs/design/R3-MINIMAL.md section 1.3. globals.css imports this sheet in
+ * docs/design/H3-DESKTOP.md section 2.3 (R3-MINIMAL.md section 1.3 before
+ * it). globals.css imports this sheet in
  * the slot the retired landing motif sheet held, after book.css and before
  * motion-primitives.css, so every rule here keeps its place in the cascade:
  * it beats the sheets above it and loses to the screen sheets below it on
@@ -10,59 +11,70 @@
  * also beats Tailwind's `@layer utilities` at the call site. */
 
 /* -------------------------------------------------------------------------
- * THE TYPOGRAPHY REGISTER (R3, docs/design/R3-MINIMAL.md section 1)
+ * THE TYPOGRAPHY REGISTER (H3, docs/design/H3-DESKTOP.md section 2.3)
  *
- * Instrument Sans (--font-sans) is every UI word: reading 15, rows 14, meta
- * 13, small 12, labels and status words included, all in sentence case.
- * JetBrains Mono (--font-mono) is every figure, address, time and duration,
- * with `.vex-num` below. Instrument Serif (--font-serif) is display only.
- * Caps belong to tags alone (REAL FUNDS, HIGH RISK: 11px, 600), which own
- * their classes in ui-primitives/marks.css. The
- * classes below own family, scale, case and tracking at the CLASS level, so
- * their call sites change register in one edit: this sheet is unlayered, so
- * a call site's `uppercase`, `tracking-*` or `font-mono` utility loses to it.
+ * Be Vietnam Pro (--font-sans) is every word: sentences, names and values in
+ * sentence case, LABELS IN CAPS. Roboto Mono (--font-mono) is every figure,
+ * balance, address, time and duration, with `.vex-num` below, and the money
+ * card's field labels (`.vex-field-label`). Display type is the sans too
+ * (--font-serif names the sans for the call sites left).
+ *
+ * A label is written in sentence case in the source and uppercased by the
+ * class here, so a screen reader reads words, not letters. Every caps label
+ * is tracked 0.08em (--tracking-label), the sheet's own value, at VEX
+ * Cloud's sizes (the H3 mockup's `.cap` 11, `.head` 12 and `.key` 13): R3's
+ * steps sat 1px above them, which is what made the left column measure about
+ * 8% wide. Cloud tracks a few roles apart: field and check rows 0.06em
+ * (--tracking-field), times and counts 0.04em (--tracking-figure), the trace
+ * kind 0.1em (--tracking-kind). Weights are the two the face ships: 600 for
+ * section heads, 400 for everything else.
+ *
+ * The classes below own family, scale, case and tracking at the CLASS
+ * level, so their call sites change register in one edit: this sheet is
+ * unlayered, so a call site's `uppercase`, `tracking-*` or `font-mono`
+ * utility loses to it.
  * ------------------------------------------------------------------------- */
 
-/* Eyebrow: the section and field label (a form legend, a section head, a
- * dialog's small title). 13px Instrument Sans 500 in sentence case on the
- * second ink, the field label of the kit. */
+/* Eyebrow: the section head and the field label (a form legend, a section
+ * head, a dialog's small title): 12px caps, 600, tracked, in ink, as VEX
+ * Cloud sets NEEDS YOU, CHATS and RECENT ACTIVITY (the H3 mockup's `.head`). */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--color-ink-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-primary);
 }
 
-/* Micro: the caption register (group heads, stepper lines, trailing meta).
- * 12px Instrument Sans in sentence case, the kit's small step, everywhere:
- * the pre-shell and the shell read one size, so the old size and tracking
- * hooks are gone.
+/* Micro: the caption register (group heads such as TODAY, stepper lines,
+ * trailing meta). 11px caps, 400, tracked, VEX Cloud's small label step
+ * (`.cap`), everywhere: the pre-shell and the shell read one size.
  *
  * Sets NO color and no display: every call site owns its own text tier and
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 /* Micro-LABEL: THE app-wide label stamp (status words, version stamps,
  * dates, counts, inline tags).
  *
- * R3 sets it in Instrument Sans at the kit's small step:
+ * H3 sets it in the sans at the small label step:
  *
- *   font-size   12px      (labels are 12 or 13; this is the small one)
+ *   font-size   11px      (labels run 11 to 13; this is the small one,
+ *                          VEX Cloud's `.cap`)
  *   font-weight 400
- *   case        none      (sentence case: the class outranks a call site's
- *                          `uppercase`, so every label converts here)
- *   tracking    normal    (caps tracking belongs to tags alone)
+ *   case        uppercase (the source stays sentence case, so assistive
+ *                          tech reads words; the class paints the caps)
+ *   tracking    0.08em    (--tracking-label, every caps label's one value)
  *   tabular-nums          (a label that carries figures must not jitter a
  *                          column)
  *
@@ -77,20 +89,36 @@
  * NO BACKING CHIP: a label never carries its own plate. */
 .vex-micro-label {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
-/* The meta step: 13px, for the label that is a small key or a chip's word. */
+/* The meta step: 12px, for the label that is a small key, a status word or
+ * a chip's word (VEX Cloud's `.head` and `.vk-act` step). */
 .vex-micro-label--wide {
-  font-size: 13px;
+  font-size: 12px;
 }
 
-/* Figures: JetBrains Mono with tabular figures, so a column of numbers
- * holds still while it updates. Every figure, address, time and duration
- * carries it (with or without the `font-mono` utility beside it). */
+/* Field label: the money card's and the receipt's field labels (FROM,
+ * AMOUNT TO SWAP, QUOTED PRICE), which H3 sets in MONO caps, 12, 400,
+ * tracked at the field row's 0.06em (VEX Cloud's `.fr > dt`). The one
+ * register where the mono face takes caps; `shell-design-guard.test.ts`
+ * keeps mono caps to it and the tags. Sets no colour: the call site owns its
+ * ink tier. */
+.vex-field-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-field);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figures: Roboto Mono with tabular figures, so a column of numbers holds
+ * still while it updates. Every figure, address, time and duration carries
+ * it (with or without the `font-mono` utility beside it). */
 .vex-num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -99,14 +127,14 @@
 
 /* Chat prose: the READING register for message bodies.
  *
- * The register (V10):
- *   BODY      -> Instrument Sans 15.5px/1.65 (reading scale). The serif is
- *                a display face and never sets a paragraph.
- *   HEADINGS  -> Instrument Sans 600/700, set per-node in `MarkdownContent`.
- *   REASONING -> Instrument Sans 14px muted (`.vex-reasoning-prose` below),
- *                a quieter voice for a different kind of speech.
+ * The register (H3, docs/design/H3-DESKTOP.md section 2.3):
+ *   BODY      -> the sans (--font-sans, Be Vietnam Pro) 15.5px/1.65
+ *                (reading scale).
+ *   HEADINGS  -> the sans 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> the sans 14px muted (`.vex-reasoning-prose` below), a
+ *                quieter voice for a different kind of speech.
  *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON, and
- *                (--font-mono) for figures. */
+ *                Roboto Mono (--font-mono) for figures. */
 .vex-chat-prose {
   font-family: var(--font-sans);
   font-size: 15.5px;
@@ -128,9 +156,9 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
-/* The serif survivors inside chat prose are display-only (headings), and
- * Instrument Serif still ships static 400 + 400 italic with NO weight axis:
- * a `font-weight: 600` reaching them would be FAKED by the browser. */
+/* Headings inside chat prose, and any `font-serif` survivor (the sans
+ * since H3): the face ships static weights, so a weight it lacks must never
+ * be faked by the browser. */
 .vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
   font-synthesis-weight: none;
 }

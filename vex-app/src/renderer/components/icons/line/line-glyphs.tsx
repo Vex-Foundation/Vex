@@ -3,14 +3,16 @@
  * SVG markup of docs/design/R3-MINIMAL.md appendix A (the 16 x 16 grid, the
  * paint lives on the root in `LineSvg`), keyed by the name the app uses.
  *
- * `spec` is the row id in appendix A, or null for a drawing the appendix does
- * not list yet (none today). The mirrored chevrons, warning, question, user,
- * archive, branch and thumbs-down (the transcript's message keys) were derived
- * in the same grid and stroke and have their own rows.
+ * `spec` is the row id in appendix A. H3's nav names (`h3-`) are not
+ * drawn here: they draw VEX's filled glyphs (`H3_NAV_GLYPHS` below,
+ * docs/design/H3-DESKTOP.md section 4.6). The mirrored chevrons, warning,
+ * question, user, archive, branch and thumbs-down (the transcript's message
+ * keys) were derived in the same grid and stroke and have their own rows.
  * Several names may share one spec row (`send` is the `up` arrow).
  */
 
 import type { JSX } from "react";
+import type { GlyphName } from "../glyph/glyph-sprite-data.js";
 
 export interface LineGlyphDef {
   readonly spec: string | null;
@@ -697,6 +699,46 @@ export const LINE_GLYPHS = {
   },
 } satisfies Record<string, LineGlyphDef>;
 
-export type LineIconName = keyof typeof LINE_GLYPHS;
+/** A name drawn in this family's line (a row of `LINE_GLYPHS`). */
+export type LineDrawingName = keyof typeof LINE_GLYPHS;
 
-export const LINE_ICON_NAMES = Object.keys(LINE_GLYPHS) as readonly LineIconName[];
+/**
+ * H3's nav glyphs (docs/design/H3-DESKTOP.md sections 1.4 and 4.6). H3 draws
+ * its nav filled, and these names now draw VEX's own filled glyphs on the 24
+ * grid (`components/icons/glyph/`, VEX Cloud's DG-1 set, owner approval
+ * 2026-11-08) in place of the line redrawings they first had. The names and
+ * their components (`LineH3Chat` and the rest) stay, so the nav's call sites
+ * need no change. Search and the sidebar key keep this family's `search` and
+ * `panel-left`; desktop's own entries (Lighter, Studio, Board) keep their
+ * line drawings (section 4.6).
+ */
+export const H3_NAV_GLYPHS = {
+  /** New chat: the bubble with a plus cut in it. */
+  "h3-new-chat": "rail-plus",
+  /** Chat: the bubble, its tail at the lower left. */
+  "h3-chat": "rail-ask",
+  /** Missions: the cube, its three faces in three tones. */
+  "h3-missions": "cube",
+  /** Markets (the Watchlist): three bars rising to the right. */
+  "h3-markets": "rail-chart",
+  /** Portfolio: the vault, its round door at the centre. */
+  "h3-portfolio": "vault",
+  /** Activity (Agent Scan): the list with a tick. */
+  "h3-activity": "list",
+  /** Settings: the gear. */
+  "h3-settings": "gear",
+} as const satisfies Record<string, GlyphName>;
+
+export type H3NavGlyphName = keyof typeof H3_NAV_GLYPHS;
+
+export type LineIconName = LineDrawingName | H3NavGlyphName;
+
+export const LINE_ICON_NAMES = [
+  ...Object.keys(LINE_GLYPHS),
+  ...Object.keys(H3_NAV_GLYPHS),
+] as readonly LineIconName[];
+
+/** Whether a name draws one of H3's filled nav glyphs rather than a line. */
+export function isH3NavGlyph(name: LineIconName): name is H3NavGlyphName {
+  return Object.hasOwn(H3_NAV_GLYPHS, name);
+}

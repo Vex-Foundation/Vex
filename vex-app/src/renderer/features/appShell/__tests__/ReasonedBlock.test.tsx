@@ -3,7 +3,7 @@
  *
  * The load-bearing case is NULL vs PRESENT: until Lane ENGINE lands (and
  * forever, for legacy rows and providers that emit no reasoning) `reasoning`
- * is null, and the block must render NOTHING — an empty "Reasoned" affordance
+ * is null, and the block must render NOTHING — an empty "Thought" affordance
  * that opens onto nothing is a worse lie than an absent one.
  *
  * Also pins that the stamp matches the island's post-thinking stamp, and that
@@ -34,7 +34,7 @@ describe("ReasonedBlock", () => {
       }),
     );
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /Reasoned/ });
+    const btn = screen.getByRole("button", { name: /Thought/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     // Collapsed by default: the summary is the FIRST line and nothing more, so
     // a long trace still never buries the answer it produced.
@@ -48,7 +48,7 @@ describe("ReasonedBlock", () => {
     const { container } = render(
       createElement(ReasonedBlock, { reasoning: "weighed the **ledger**" }),
     );
-    const btn = screen.getByRole("button", { name: /Reasoned/ });
+    const btn = screen.getByRole("button", { name: /Thought/ });
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
     const body = document.getElementById(btn.getAttribute("aria-controls")!);
@@ -58,16 +58,45 @@ describe("ReasonedBlock", () => {
 
   it("omits a token count we do not have, and prints one we do", () => {
     const bare = render(createElement(ReasonedBlock, { reasoning: "t" }));
-    expect(screen.getByRole("button", { name: /Reasoned/ }).textContent).toBe(
-      "Reasoned",
+    expect(screen.getByRole("button", { name: /Thought/ }).textContent).toBe(
+      "Thought",
     );
     bare.unmount();
 
     render(createElement(ReasonedBlock, { reasoning: "t", tokens: 1234 }));
     // Identical grammar to the island's post-thinking stamp.
     expect(
-      screen.getByRole("button", { name: /Reasoned/ }).textContent,
-    ).toContain("Reasoned · 1.2K tokens");
+      screen.getByRole("button", { name: /Thought/ }).textContent,
+    ).toContain("Thought · 1.2K tokens");
+  });
+
+  it("is one step of the turn: it says no count and no time of the turn", () => {
+    // The turn's head (`SessionTranscript/TurnTrace.tsx`) says the steps and
+    // "Thought for Ns"; a thought row is one of those steps.
+    const { container } = render(createElement(ReasonedBlock, { reasoning: "t" }));
+    expect(screen.getByRole("button", { name: /Thought/ }).textContent).toBe("Thought");
+    expect(container.querySelector("[data-vex-turn-steps]")).toBeNull();
+    expect(container.querySelector("[data-vex-thinking-head]")).toBeNull();
+  });
+
+  it("is a MODEL step: the done node once settled, the running node while streaming, its name the label", () => {
+    const settled = render(createElement(ReasonedBlock, { reasoning: "t\nmore" }));
+    expect(
+      settled.container.querySelector('.vex-step-node[data-step-node="done"]'),
+    ).not.toBeNull();
+    const kind = settled.container.querySelector(".vex-step__kind");
+    expect(kind?.textContent).toBe("Model");
+    expect(kind?.getAttribute("aria-hidden")).toBe("true");
+    // The key's name stays the label alone; the summary sits beside it.
+    expect(screen.getByRole("button", { name: "Thought" })).toBeTruthy();
+    expect(settled.container.querySelector(".vex-step__grid")).not.toBeNull();
+    settled.unmount();
+    const running = render(
+      createElement(ReasonedBlock, { reasoning: "t", running: true }),
+    );
+    expect(
+      running.container.querySelector('.vex-step-node[data-step-node="running"]'),
+    ).not.toBeNull();
   });
 
   it("never renders markup from the trace (safe React elements only)", () => {
@@ -76,7 +105,7 @@ describe("ReasonedBlock", () => {
         reasoning: '<img src=x onerror="alert(1)">',
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Thought/ }));
     expect(container.querySelector("img")).toBeNull();
   });
 
@@ -88,7 +117,7 @@ describe("ReasonedBlock", () => {
       }),
     );
     expect(container.querySelector("[data-vex-reasoning-summary]")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Thought/ }));
     // Expanded, the full trace is in ordinary page flow - page reading must
     // never fight an internal follower.
     expect(container.querySelector("[data-vex-reasoning-summary]")).toBeNull();

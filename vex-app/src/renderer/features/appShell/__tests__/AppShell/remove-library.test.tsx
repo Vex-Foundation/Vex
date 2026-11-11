@@ -228,7 +228,7 @@ describe("AppShell", () => {
     // store drives the screen so the row-select contract stays isolated.
     useUiStore.getState().setShellRoute({ kind: "sessions", origin: null });
 
-    const overlay = await screen.findByRole("dialog", { name: "Sessions" });
+    const overlay = await screen.findByRole("region", { name: "Sessions" });
     const libraryRows = await within(overlay).findAllByText(
       "Arbitrum LP Rebalance",
     );

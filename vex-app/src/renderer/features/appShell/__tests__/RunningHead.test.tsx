@@ -2,14 +2,16 @@
  * The title bar's two cells, in every mode, and its place in the window
  * (docs/design/R3-MINIMAL.md section 3): a 44px drag row whose left cell says
  * where you are and whose right cluster holds the page keys, the Studio host
- * pill, Notices, "Needs you · N" and the token chip.
+ * pill and Notices; on the Lighter desk, Notices alone. Needs you has no
+ * header control (H3-DESKTOP.md section 4.8): the console carries it, and the
+ * header only says a rise, once, in every mode.
  *
  * The cells divide by WHOSE they are. `MissionRail`, `SessionExportControl`
  * and the session title are scoped to a session, and a session belongs to the
  * agent shell: `activeSessionId` survives a mode switch, so in Studio they
  * would otherwise paint a session's badge, key and name over a project
- * workspace that has nothing to do with them. Needs you is the opposite: one
- * app-wide list, visible in whichever mode the user is in. And the approvals
+ * workspace that has nothing to do with them. The Needs you announcer is the
+ * opposite: one app-wide list, said in whichever mode the user is in. And the approvals
  * sync is mounted once, outside the cluster, in every mode. These tests assert
  * all of it rather than trusting it.
  */
@@ -67,16 +69,6 @@ vi.mock("../NotificationCenter.js", () => ({
 }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovalsSync: () => <div data-testid="approvals-sync" />,
-}));
-vi.mock("../../vex/NeedsYouControl.js", () => ({
-  NeedsYouControl: () => <div data-testid="needs-you" />,
-}));
-vi.mock("../../vex/VexTokenChip.js", () => ({
-  VexTokenChip: ({ open, onToggle }: { open: boolean; onToggle: () => void }) => (
-    <button type="button" data-testid="token-chip" aria-pressed={open} onClick={onToggle}>
-      chip
-    </button>
-  ),
 }));
 vi.mock("../../vex/useVexPresence.js", () => ({
   useNeedsYou: () => ({
@@ -285,10 +277,10 @@ describe("the title cell's own boundary", () => {
       const head = renderHead("agent", SESSION);
       expect(head.querySelector("[data-vex-title-failed]")).not.toBeNull();
       expect(title()).toBeUndefined();
-      // Everything else keeps working: the approvals sync, Needs you, the chip.
+      // Everything else keeps working: the approvals sync, the Needs you
+      // announcer.
       expect(screen.getByTestId("approvals-sync")).toBeTruthy();
-      expect(screen.getByTestId("needs-you")).toBeTruthy();
-      expect(screen.getByTestId("token-chip")).toBeTruthy();
+      expect(head.querySelector("[data-vex-area='needs-you-announcer']")).not.toBeNull();
       expect(screen.getByTestId("mission-rail")).toBeTruthy();
     } finally {
       quiet.mockRestore();
@@ -325,12 +317,15 @@ describe("the page close key", () => {
   });
 });
 
-describe("the Studio host pill", () => {
+describe("the Studio host cell", () => {
   it("sits in the cluster in Studio, and nowhere else", () => {
     renderHead("studio");
-    expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
-      "Running · 2 connected",
-    );
+    const cell = screen.getByLabelText(/Vex Studio host status$/);
+    // Our approved Studio plate: the state over its figure, in two lines;
+    // the whole word stays the control's name.
+    expect(cell.getAttribute("aria-label")).toContain("Running · 2 connected");
+    expect(cell.querySelector(".vex-tb-hostcell__state")?.textContent).toBe("Running");
+    expect(cell.querySelector(".vex-tb-hostcell__figure")?.textContent).toBe("2 connected");
     cleanup();
     renderHead("agent", SESSION);
     expect(screen.queryByLabelText(/Vex Studio host status$/)).toBeNull();
@@ -383,7 +378,7 @@ describe("the Studio host pill", () => {
     useStudioHostStatusMock.mockReturnValue({ data: { ok: true, data: status } });
     renderHead("studio");
     const pill = screen.getByLabelText(/Vex Studio host status$/);
-    expect(pill.textContent).toContain(word);
+    expect(pill.getAttribute("aria-label")).toContain(word);
     if (cause !== null) {
       // The cause reaches BOTH audiences: assistive tech hears it from the
       // live region, a pointer or keyboard user reads it in the card. The head
@@ -422,24 +417,45 @@ describe("the Studio host pill", () => {
 });
 
 describe("the right cluster", () => {
-  it("keeps the spec's order: page keys, Notices, Needs you, the chip", () => {
+  it("keeps the spec's order: page keys, Notices; no Needs you control and no chip in the header", () => {
     const head = renderHead("agent", SESSION);
     const flank = head.querySelector(".vex-running-head__flank");
     const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
       el.getAttribute("data-testid"),
     );
-    expect(order).toEqual(["export-control", "notices", "needs-you", "token-chip"]);
+    expect(order).toEqual(["export-control", "notices"]);
+    // Needs you is the console's (H3-DESKTOP.md section 4.8): R3's
+    // "Needs you · N" control is gone from the title cell.
+    expect(head.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+    // The Vex key has the header's own cell over the Vex column
+    // (H3-DESKTOP.md section 1.3, `ShellHeader`): the running head draws the
+    // title cell alone, and no chip.
+    expect(document.querySelector("[data-vex-head-cell='vex-key']")).toBeNull();
   });
 
-  it("Needs you is present in EVERY mode, the welcome included", () => {
-    const agent = renderHead("agent", SESSION);
-    expect(agent.querySelector("[data-testid='needs-you']")).not.toBeNull();
-    cleanup();
-    const studio = renderHead("studio", SESSION);
-    expect(studio.querySelector("[data-testid='needs-you']")).not.toBeNull();
-    cleanup();
-    const welcome = renderHead("agent", null, { empty: true });
-    expect(welcome.querySelector("[data-testid='needs-you']")).not.toBeNull();
+  it("on the desk keeps only Notices in the cluster: Needs you is the console's, no export, no chip", () => {
+    renderHead("lighter", SESSION, { vex: { open: true, onToggle: () => undefined } });
+    const flank = document.querySelector(".vex-running-head__flank");
+    const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
+      el.getAttribute("data-testid"),
+    );
+    expect(order).toEqual(["notices"]);
+  });
+
+  it("says a Needs you rise in EVERY mode, the welcome and the desk included, once", () => {
+    for (const [mode, sessionId, extra] of [
+      ["agent", SESSION, {}],
+      ["studio", SESSION, {}],
+      ["lighter", SESSION, {}],
+      ["agent", null, { empty: true }],
+    ] as const) {
+      const head = renderHead(mode, sessionId, extra);
+      const regions = head.querySelectorAll("[data-vex-area='needs-you-announcer']");
+      expect(regions).toHaveLength(1);
+      expect(regions[0]?.getAttribute("role")).toBe("status");
+      expect(head.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+      cleanup();
+    }
   });
 
   it("the session-scoped parts render nothing without a session", () => {
@@ -455,8 +471,8 @@ describe("the right cluster", () => {
     renderHead("studio", SESSION);
     expect(screen.queryByTestId("mission-rail")).toBeNull();
     expect(screen.queryByTestId("export-control")).toBeNull();
-    // ... and the app-wide list is NOT gated with them.
-    expect(screen.getByTestId("needs-you")).not.toBeNull();
+    // ... and the app-wide list's voice is NOT gated with them.
+    expect(document.querySelector("[data-vex-area='needs-you-announcer']")).not.toBeNull();
   });
 
   it("mounts the approvals sync exactly once, outside the cluster, in every mode", () => {
@@ -470,37 +486,13 @@ describe("the right cluster", () => {
   });
 });
 
-describe("the token chip", () => {
-  it("toggles the column the frame solved", () => {
-    const onToggle = vi.fn();
-    renderHead("agent", SESSION, { vex: { open: false, onToggle } });
-    const chip = screen.getByTestId("token-chip");
-    expect(chip.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(chip);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-  });
-
-  it("is absent where there is no Vex column: the welcome, Zen", () => {
-    const welcome = renderHead("agent", null, { empty: true });
-    expect(welcome.querySelector("[data-testid='token-chip']")).toBeNull();
-    cleanup();
-    renderHead("lighter", SESSION, { vex: null });
-    expect(screen.queryByTestId("token-chip")).toBeNull();
-  });
-
-  it("without the frame's solve, reads and writes the stored choice", () => {
-    renderHead("agent", SESSION);
-    const chip = screen.getByTestId("token-chip");
-    expect(chip.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(chip);
-    expect(useUiStore.getState().vexOpenChat).toBe(false);
-  });
-});
-
 describe("the head row", () => {
-  it("is the window's drag region, one 44px row", () => {
+  it("is the header's title cell, a window drag region", () => {
+    // The header element itself is the frame's (`ShellHeader`), and so is
+    // the Vex key's cell; the running head draws the title cell inside it.
     const head = renderHead("agent", SESSION);
-    expect(head.tagName).toBe("HEADER");
+    expect(head.tagName).toBe("DIV");
+    expect(head.getAttribute("data-vex-head-cell")).toBe("title");
     expect(head.classList.contains("vex-running-head")).toBe(true);
     expect(head.classList.contains("vex-drag")).toBe(true);
   });
@@ -517,10 +509,23 @@ describe("the head row", () => {
     expect(head.querySelector("[data-vex-tape-state]")).toBeNull();
   });
 
-  it("collapses in Lighter, whose top bar is its title bar", () => {
-    const head = renderHead("lighter", SESSION, { empty: true });
-    expect(head.className).toBe("contents");
-    expect(head.hasAttribute("data-empty")).toBe(false);
-    expect(head.getAttribute("data-collapsed")).toBe("true");
+  it("is the desk's title cell on the Lighter desk, the desk's head first", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <RunningHead
+          runtimeMode="lighter"
+          activeSessionId={SESSION}
+          deskHead={<span data-testid="desk-head">Lighter</span>}
+        />
+      </QueryClientProvider>,
+    );
+    const head = view.container.querySelector<HTMLElement>("[data-vex-area='shell-status-strip']");
+    expect(head?.getAttribute("data-vex-head-cell")).toBe("title");
+    expect(head?.hasAttribute("data-vex-desk-head")).toBe(true);
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    expect(head?.querySelector(".vex-running-head__start > [data-testid='desk-head']")).not.toBeNull();
+    // The session's title is the desk's, not the chat's.
+    expect(head?.querySelector("[data-vex-area='title-bar-title']")).toBeNull();
   });
 });

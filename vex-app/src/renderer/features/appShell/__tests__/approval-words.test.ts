@@ -15,10 +15,21 @@
 import { describe, expect, it } from "vitest";
 import type { ApprovalPreview, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import {
+  APPROVAL_EYEBROW_FALLBACK,
+  APPROVAL_EYEBROW_WORDS,
+  CONSEQUENCE_PLACES_ORDER,
+  CONSEQUENCE_PLACES_RESTING_ORDER,
+  CONSEQUENCE_BRIDGE,
+  CONSEQUENCE_TRANSFER,
   actionKindWords,
   addressIn,
+  approvalConsequence,
+  approvalExpiryCountdown,
   approvalExpiryWords,
+  approvalEyebrowWord,
   approvalFamily,
+  approvalGateLine,
+  approvalPlace,
   approvalReviewWord,
   approvalSentence,
   approvalToolTitle,
@@ -211,6 +222,140 @@ describe("approvalFamily and approvalReviewWord", () => {
     const close = previewOf("close", { toolId: "lighter.position.close" }, "lighter");
     expect(approvalFamily(approvalFrom(withdraw))).toBe("transfer");
     expect(approvalFamily(approvalFrom(close))).toBe("order");
+  });
+});
+
+// -- The H3 frame: eyebrow and consequence ---------------------------------------
+
+describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.7)", () => {
+  const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
+  const RESTING_LINE = "This places a real order on mainnet.";
+  const TRANSFER_LINE = "This sends real funds on mainnet. A transfer cannot be reversed.";
+  const BRIDGE_LINE = "This moves real funds between chains. It cannot be undone.";
+  const LIGHTER_CANCEL = previewOf("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7" }, "lighter");
+  const LIGHTER_CLOSE = previewOf("position.close", { toolId: "lighter.position.close", symbol: "BTC" }, "lighter");
+  const LIGHTER_DEPOSIT = previewOf("deposit", { toolId: "lighter.deposit", summary: "Deposit 5 USDC" }, "lighter");
+  const LIGHTER_WITHDRAW = previewOf("withdraw", { toolId: "lighter.withdraw", summary: "Withdraw 5 USDC" }, "lighter");
+  const MCP = previewOf("deepwiki / read_wiki_structure", { server: "deepwiki", tool: "read_wiki_structure" }, "mcp");
+  const LAUNCH = previewOf("launch_execute", { toolId: "pools.launch_execute", name: "My Token" }, "pools");
+
+  const cases: readonly (readonly [string, ApprovalPreview, string, string | null])[] = [
+    ["bridge", BRIDGE, "Confirm this bridge", BRIDGE_LINE],
+    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", BRIDGE_LINE],
+    ["kyber swap", KYBER, "Confirm this swap", ORDER_LINE],
+    ["jupiter swap", JUPITER, "Confirm this swap", ORDER_LINE],
+    ["native send", SEND_NATIVE, "Confirm this transfer", TRANSFER_LINE],
+    ["token send", SEND_USDC, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter market order", LIGHTER_MARKET, "Confirm this order", ORDER_LINE],
+    ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", RESTING_LINE],
+    ["lighter position close", LIGHTER_CLOSE, "Confirm this order", ORDER_LINE],
+    ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
+    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter fee authorization", LIGHTER_FEES, "Lighter · Fees approve", null],
+    ["token launch", LAUNCH, "pools.fun · Launch", null],
+    ["generic signed transaction", GENERIC_TX, "Wallet evm transaction confirm", null],
+    ["the user's own MCP tool", MCP, "Deepwiki / read wiki structure", null],
+  ];
+
+  it.each(cases)("%s reads %s, with its consequence line", (_name, preview, eyebrow, consequence) => {
+    const approval = approvalFrom(preview);
+    expect(approvalEyebrowWord(approval)).toBe(eyebrow);
+    expect(approvalConsequence(approval)).toBe(consequence);
+  });
+
+  it("names every family once, from the same table as the approve key", () => {
+    for (const family of Object.keys(APPROVAL_EYEBROW_WORDS) as (keyof typeof APPROVAL_EYEBROW_WORDS)[]) {
+      expect(APPROVAL_EYEBROW_WORDS[family]).toMatch(/^Confirm this [a-z]+$/);
+    }
+    for (const [, preview] of cases) {
+      const approval = approvalFrom(preview);
+      const family = approvalFamily(approval);
+      if (family === "other") continue;
+      const noun = APPROVAL_ACTION_WORDS[family].replace(/^Approve ?/, "");
+      expect(approvalEyebrowWord(approval)).toBe(`Confirm this ${noun}`);
+    }
+  });
+
+  it("names a card outside the families by the tool's own title, as Cloud's generic card does", () => {
+    for (const [, preview] of cases) {
+      const approval = approvalFrom(preview);
+      if (approvalFamily(approval) !== "other") continue;
+      expect(approvalEyebrowWord(approval)).toBe(approvalToolTitle(approval));
+    }
+    // A card with no readable tool name keeps the one fallback.
+    expect(approvalEyebrowWord({ toolName: "", preview: null })).toBe(APPROVAL_EYEBROW_FALLBACK);
+  });
+
+  it("reads the order line from the tool names alone when the arguments carry no toolId", () => {
+    // With no terms to prove the order fills at once, only the shorter line is sure to be true.
+    expect(approvalConsequence({ toolName: "lighter:order.create", preview: null })).toBe(RESTING_LINE);
+    expect(approvalConsequence({ toolName: "lighter:position.close", preview: null })).toBe(ORDER_LINE);
+    expect(approvalConsequence({ toolName: "lighter:order.modify", preview: null })).toBeNull();
+    expect(approvalConsequence({ toolName: null, preview: null })).toBeNull();
+  });
+
+  describe("an order that can still be cancelled never says it cannot be undone", () => {
+    const create = (terms: Args): ApprovalSummaryDto =>
+      approvalFrom(previewOf("order.create", { ...LIGHTER_MARKET_ARGS, ...terms }, "lighter"));
+    const orders: readonly (readonly [string, Args, string])[] = [
+      ["a market order", { orderType: "market", timeInForce: "immediate-or-cancel" }, ORDER_LINE],
+      ["an immediate-or-cancel limit", { orderType: "limit", timeInForce: "immediate-or-cancel" }, ORDER_LINE],
+      ["a limit good till its time", { orderType: "limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      ["a post-only limit", { orderType: "limit", timeInForce: "post-only" }, RESTING_LINE],
+      ["a stop-loss", { orderType: "stop-loss", timeInForce: "immediate-or-cancel" }, RESTING_LINE],
+      ["a stop-loss limit", { orderType: "stop-loss-limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      ["a take-profit", { orderType: "take-profit", timeInForce: "immediate-or-cancel" }, RESTING_LINE],
+      ["a take-profit limit", { orderType: "take-profit-limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      [
+        "an OCO pair",
+        { orderType: "market", timeInForce: "immediate-or-cancel", groupingType: "one-cancels-the-other" },
+        RESTING_LINE,
+      ],
+      ["an order whose type is not bound", { orderType: null, timeInForce: null }, RESTING_LINE],
+    ];
+
+    it.each(orders)("%s", (_name, terms, line) => {
+      expect(approvalConsequence(create(terms))).toBe(line);
+    });
+
+    it("keeps the full line for swaps and position closes", () => {
+      expect(approvalConsequence(approvalFrom(KYBER))).toBe(ORDER_LINE);
+      expect(approvalConsequence(approvalFrom(LIGHTER_CLOSE))).toBe(ORDER_LINE);
+    });
+  });
+
+  it("writes each line in sentence case with no dash and no figure", () => {
+    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_TRANSFER, CONSEQUENCE_BRIDGE]) {
+      expect(line).not.toMatch(DASHES);
+      expect(line).not.toMatch(/\d/);
+      expect(line.startsWith("This ")).toBe(true);
+    }
+    expect(CONSEQUENCE_PLACES_ORDER.endsWith("It cannot be undone.")).toBe(true);
+    // Cloud's words (the money gaps sheet's realFundsCopy): a transfer cannot
+    // be reversed, a bridge cannot be undone.
+    expect(CONSEQUENCE_TRANSFER).toBe("This sends real funds on mainnet. A transfer cannot be reversed.");
+    expect(CONSEQUENCE_BRIDGE).toBe("This moves real funds between chains. It cannot be undone.");
+    expect(CONSEQUENCE_PLACES_RESTING_ORDER).not.toMatch(/undone/);
+    expect(CONSEQUENCE_PLACES_ORDER.startsWith(CONSEQUENCE_PLACES_RESTING_ORDER)).toBe(true);
+  });
+});
+
+describe("approvalGateLine (the decision row's middle cell, H3-DESKTOP.md Appendix A.7)", () => {
+  it("says the two presses and their window, read from the card's own reset", () => {
+    expect(approvalGateLine(true, 4_000)).toBe("Two presses decide: the first arms the key for 4 s.");
+    expect(approvalGateLine(true, 2_500)).toBe("Two presses decide: the first arms the key for 2.5 s.");
+  });
+
+  it("says nothing signs until you approve on a one-press card", () => {
+    expect(approvalGateLine(false, 4_000)).toBe("Nothing signs until you approve.");
+  });
+
+  it("names no key shortcut: desktop binds none to a card", () => {
+    for (const line of [approvalGateLine(true, 4_000), approvalGateLine(false, 4_000)]) {
+      expect(line).not.toMatch(/ctrl|enter|esc|tick/i);
+      expect(line).not.toMatch(DASHES);
+    }
   });
 });
 
@@ -425,6 +570,45 @@ describe("approvalSentence", () => {
   });
 });
 
+// -- Place ----------------------------------------------------------------------
+
+describe("approvalPlace", () => {
+  it("names a bridge's two ends, a swap's or a send's chain", () => {
+    expect(approvalPlace(approvalFrom(BRIDGE))).toBe("Base to Arbitrum");
+    expect(approvalPlace(approvalFrom(BRIDGE_NAMESPACED))).toBe("Base to Arbitrum");
+    expect(approvalPlace(approvalFrom(dropped(BRIDGE, "toChain")))).toBe("Base");
+    expect(approvalPlace(approvalFrom(dropped(BRIDGE, "fromChain")))).toBeNull();
+    expect(approvalPlace(approvalFrom(KYBER))).toBe("Base");
+    expect(approvalPlace(approvalFrom(JUPITER))).toBe("Solana");
+    expect(approvalPlace(approvalFrom(SEND_USDC))).toBe("Base");
+    expect(approvalPlace(approvalFrom(GENERIC_TX))).toBe("Base");
+  });
+
+  it("names the Lighter deployment a Lighter call binds, else Lighter", () => {
+    expect(approvalPlace(approvalFrom(LIGHTER_MARKET))).toBe("Lighter");
+    const core = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "core" }, "lighter");
+    const rhc = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "rhc" }, "lighter");
+    const unknown = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "elsewhere" }, "lighter");
+    expect(approvalPlace(approvalFrom(core))).toBe("Lighter Core");
+    expect(approvalPlace(approvalFrom(rhc))).toBe("Robinhood Chain");
+    expect(approvalPlace(approvalFrom(unknown))).toBe("Lighter");
+  });
+
+  it("says nothing when the arguments name no place", () => {
+    expect(approvalPlace(makeSummary())).toBeNull();
+    expect(approvalPlace(approvalFrom(dropped(KYBER, "chain")))).toBeNull();
+  });
+
+  it("never carries a figure or an absent value", () => {
+    for (const preview of ALL_PREVIEWS) {
+      const place = approvalPlace(approvalFrom(preview));
+      if (place === null) continue;
+      expect(place).not.toMatch(/\d/);
+      expect(place).not.toMatch(NOT_A_VALUE);
+    }
+  });
+});
+
 // -- Expiry -------------------------------------------------------------------
 
 describe("approvalExpiryWords", () => {
@@ -446,6 +630,45 @@ describe("approvalExpiryWords", () => {
   it("is null for an unreadable value", () => {
     expect(approvalExpiryWords("soon", now)).toBeNull();
     expect(approvalExpiryWords("", now)).toBeNull();
+  });
+});
+
+describe("approvalExpiryCountdown (Cloud's TakeoverTimer)", () => {
+  const now = Date.UTC(2026, 9, 17, 9);
+  const at = (ms: number): string => new Date(now + ms).toISOString();
+
+  it("counts whole minutes, rounded up, while an hour or less is left", () => {
+    expect(approvalExpiryCountdown(at(14 * 60_000), now)).toEqual({
+      text: "Expires in 14 min",
+      warn: false,
+      nextChangeMs: 60_000,
+    });
+    expect(approvalExpiryCountdown(at(13 * 60_000 + 1), now)?.text).toBe("Expires in 14 min");
+    expect(approvalExpiryCountdown(at(13 * 60_000 + 1), now)?.nextChangeMs).toBe(1);
+    expect(approvalExpiryCountdown(at(60 * 60_000), now)?.text).toBe("Expires in 60 min");
+  });
+
+  it("counts m:ss for the last two minutes, in ink for the last one", () => {
+    expect(approvalExpiryCountdown(at(120_000), now)).toEqual({ text: "Expires in 2:00", warn: false, nextChangeMs: 1000 });
+    expect(approvalExpiryCountdown(at(65_500), now)).toEqual({ text: "Expires in 1:06", warn: false, nextChangeMs: 500 });
+    expect(approvalExpiryCountdown(at(60_000), now)).toEqual({ text: "Expires in 1:00", warn: true, nextChangeMs: 1000 });
+    expect(approvalExpiryCountdown(at(5_000), now)).toEqual({ text: "Expires in 0:05", warn: true, nextChangeMs: 1000 });
+  });
+
+  it("says Expired at zero and stops counting", () => {
+    expect(approvalExpiryCountdown(at(0), now)).toEqual({ text: "Expired", warn: false, nextChangeMs: null });
+    expect(approvalExpiryCountdown(at(-5_000), now)?.text).toBe("Expired");
+  });
+
+  it("names the clock time further out than an hour, and wakes within a minute", () => {
+    const later = approvalExpiryCountdown("2026-10-17T15:30:00.000Z", now);
+    expect(later?.text).toBe("Expires at 15:30 UTC");
+    expect(later?.nextChangeMs).toBe(60_000);
+    expect(approvalExpiryCountdown(at(60 * 60_000 + 20_000), now)?.nextChangeMs).toBe(20_000);
+  });
+
+  it("is null for an unreadable value", () => {
+    expect(approvalExpiryCountdown("soon", now)).toBeNull();
   });
 });
 
@@ -612,8 +835,8 @@ function textsOf(rows: readonly MoneyLine[]): string[] {
 
 describe("approvalMoneyLines: bridge", () => {
   it("gives exactly the four labels", () => {
-    expect(labelsOf(lines(BRIDGE))).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
-    expect(labelsOf(lines(BRIDGE_NAMESPACED))).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(labelsOf(lines(BRIDGE))).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
+    expect(labelsOf(lines(BRIDGE_NAMESPACED))).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
   });
 
   it("reads the whole bridge card", () => {
@@ -628,15 +851,14 @@ describe("approvalMoneyLines: bridge", () => {
         parts: [{ kind: "missing" }, { kind: "note", text: "· slippage limit 0.5%" }],
       },
       {
-        label: "Costs",
+        label: "Fees",
         parts: [
           { kind: "text", text: "Vex fee" },
           { kind: "figure", text: "0.0025 USDC" },
           { kind: "note", text: "(0.25%)" },
-          { kind: "text", text: "· network fee" },
-          { kind: "missing" },
         ],
       },
+      { label: "Network fee", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -644,21 +866,23 @@ describe("approvalMoneyLines: bridge", () => {
     const rows = lines(BRIDGE);
     expect(lineNamed(rows, "You receive").parts[0]).toEqual({ kind: "missing" });
     expect(lineNamed(rows, "Minimum receipt").parts[0]).toEqual({ kind: "missing" });
-    expect(lineNamed(rows, "Costs").parts.at(-1)).toEqual({ kind: "missing" });
+    expect(lineNamed(rows, "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
-  it("carries the Vex fee figure and rate, and a missing network fee, on Costs", () => {
-    const costs = lineNamed(lines(BRIDGE), "Costs").parts;
-    expect(costs).toContainEqual({ kind: "figure", text: "0.0025 USDC" });
-    expect(costs).toContainEqual({ kind: "note", text: "(0.25%)" });
-    expect(costs.at(-1)).toEqual({ kind: "missing" });
+  it("carries the Vex fee figure and rate on Fees, and the network fee on its own row (DG5-06)", () => {
+    const fees = lineNamed(lines(BRIDGE), "Fees").parts;
+    expect(fees).toContainEqual({ kind: "figure", text: "0.0025 USDC" });
+    expect(fees).toContainEqual({ kind: "note", text: "(0.25%)" });
+    expect(fees).not.toContainEqual({ kind: "missing" });
+    expect(lineNamed(lines(BRIDGE), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
-  it("names the network fee alone when the Vex fee statement is unreadable or absent", () => {
-    const expected = [{ kind: "text", text: "Network fee" }, { kind: "missing" }];
-    expect(lineNamed(lines(dropped(BRIDGE, "vexFee")), "Costs").parts).toEqual(expected);
+  it("reads Fees as missing when the Vex fee statement is unreadable or absent", () => {
+    const expected = [{ kind: "missing" }];
+    expect(lineNamed(lines(dropped(BRIDGE, "vexFee")), "Fees").parts).toEqual(expected);
     const garbled = previewOf("BridgeExecute", { ...BRIDGE_ARGS, vexFee: "fee to be decided" });
-    expect(lineNamed(lines(garbled), "Costs").parts).toEqual(expected);
+    expect(lineNamed(lines(garbled), "Fees").parts).toEqual(expected);
+    expect(lineNamed(lines(garbled), "Network fee").parts).toEqual(expected);
   });
 
   it("says no Vex fee when the engine states none", () => {
@@ -666,11 +890,8 @@ describe("approvalMoneyLines: bridge", () => {
       ...BRIDGE_ARGS,
       vexFee: "Vex fee: none on this swap (below the minimum); the full 100 raw units are swapped.",
     });
-    expect(lineNamed(lines(none), "Costs").parts).toEqual([
-      { kind: "text", text: "No Vex fee" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
-    ]);
+    expect(lineNamed(lines(none), "Fees").parts).toEqual([{ kind: "text", text: "No Vex fee" }]);
+    expect(lineNamed(lines(none), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("leaves out the notes whose arguments are absent", () => {
@@ -679,7 +900,8 @@ describe("approvalMoneyLines: bridge", () => {
       { label: "You send", parts: [{ kind: "missing" }] },
       { label: "You receive", parts: [{ kind: "missing" }] },
       { label: "Minimum receipt", parts: [{ kind: "missing" }] },
-      { label: "Costs", parts: [{ kind: "text", text: "Network fee" }, { kind: "missing" }] },
+      { label: "Fees", parts: [{ kind: "missing" }] },
+      { label: "Network fee", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -697,7 +919,7 @@ describe("approvalMoneyLines: bridge", () => {
 describe("approvalMoneyLines: swap", () => {
   it("reads the Kyber quote as You receive and Minimum receipt", () => {
     const rows = lines(KYBER);
-    expect(labelsOf(rows)).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(labelsOf(rows)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
     expect(lineNamed(rows, "You send").parts).toEqual([
       { kind: "figure", text: "1.5 ETH" },
       { kind: "note", text: "· on Base" },
@@ -710,7 +932,8 @@ describe("approvalMoneyLines: swap", () => {
       { kind: "figure", text: "2.4 USDC" },
       { kind: "note", text: "· slippage limit 4%" },
     ]);
-    expect(lineNamed(rows, "Costs").parts).toEqual([{ kind: "text", text: "Network fee" }, { kind: "missing" }]);
+    expect(lineNamed(rows, "Fees").parts).toEqual([{ kind: "missing" }]);
+    expect(lineNamed(rows, "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("reads both receive lines as missing when the lane binds no quote", () => {
@@ -742,26 +965,22 @@ describe("approvalMoneyLines: swap", () => {
     expect(lineNamed(lines(garbled), "Minimum receipt").parts[0]).toEqual({ kind: "missing" });
   });
 
-  it("carries the Vex fee on Costs, or says there is none", () => {
+  it("carries the Vex fee on Fees, or says there is none", () => {
     const fee = "Vex fee 0.25% (25 bps): 0.00375 ETH | 3750000000000000 raw units | 18 decimals, taken on the input token.";
     const rated = previewOf("kyberswap.swap.execute", { ...KYBER_ARGS, vexFee: fee }, "kyberswap");
-    expect(lineNamed(lines(rated), "Costs").parts).toEqual([
+    expect(lineNamed(lines(rated), "Fees").parts).toEqual([
       { kind: "text", text: "Vex fee" },
       { kind: "figure", text: "0.00375 ETH" },
       { kind: "note", text: "(0.25%)" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
     ]);
+    expect(lineNamed(lines(rated), "Network fee").parts).toEqual([{ kind: "missing" }]);
     const none = previewOf(
       "solana.swap.execute",
       { ...JUPITER_ARGS, vexFee: "Vex fee: none on this swap (below the minimum); the full 100 raw units are swapped." },
       "solana",
     );
-    expect(lineNamed(lines(none), "Costs").parts).toEqual([
-      { kind: "text", text: "No Vex fee" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
-    ]);
+    expect(lineNamed(lines(none), "Fees").parts).toEqual([{ kind: "text", text: "No Vex fee" }]);
+    expect(lineNamed(lines(none), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("cuts an address input token short and sends nothing when there is no amount", () => {
@@ -778,9 +997,16 @@ describe("approvalMoneyLines: swap", () => {
 });
 
 describe("approvalMoneyLines: wallet send", () => {
-  it("gives You send, To, Costs", () => {
-    expect(labelsOf(lines(SEND_NATIVE))).toEqual(["You send", "To", "Costs"]);
-    expect(labelsOf(lines(SEND_USDC))).toEqual(["You send", "To", "Costs"]);
+  it("gives You send, To, Fees: a transfer's Fees is its network fee (DG5-06)", () => {
+    expect(labelsOf(lines(SEND_NATIVE))).toEqual(["You send", "To", "Fees"]);
+    expect(labelsOf(lines(SEND_USDC))).toEqual(["You send", "To", "Fees"]);
+  });
+
+  it("takes the swap's two fee rows only if a transfer ever states a Vex fee", () => {
+    const fee = "Vex fee 0.25% (25 bps): 0.00125 USDC | 1250 raw units | 6 decimals.";
+    const rows = lines(previewOf("WalletSendConfirm", { ...SEND_USDC.criticalArgs, vexFee: fee }));
+    expect(labelsOf(rows)).toEqual(["You send", "To", "Fees", "Network fee"]);
+    expect(lineNamed(rows, "Fees").parts[1]).toEqual({ kind: "figure", text: "0.00125 USDC" });
   });
 
   it("marks a send with no token as the native token", () => {
@@ -790,7 +1016,7 @@ describe("approvalMoneyLines: wallet send", () => {
         parts: [{ kind: "figure", text: "0.5" }, { kind: "note", text: "· native token, on Base" }],
       },
       { label: "To", parts: [{ kind: "figure", text: DESTINATION }] },
-      { label: "Costs", parts: [{ kind: "text", text: "Network fee" }, { kind: "missing" }] },
+      { label: "Fees", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -804,7 +1030,7 @@ describe("approvalMoneyLines: wallet send", () => {
   });
 
   it("drops the To line when there is no recipient, and reads the aliases", () => {
-    expect(labelsOf(lines(dropped(SEND_USDC, "to")))).toEqual(["You send", "Costs"]);
+    expect(labelsOf(lines(dropped(SEND_USDC, "to")))).toEqual(["You send", "Fees"]);
     const alias = previewOf("WalletSendConfirm", { chain: "ethereum", asset: "ETH", amount: "0.5", recipient: "0xabc" });
     const rows = lines(alias);
     expect(lineNamed(rows, "You send").parts[0]).toEqual({ kind: "figure", text: "0.5 ETH" });
@@ -898,7 +1124,9 @@ describe("approvalMoneyLines: nothing is invented", () => {
     for (const preview of MONEY_PREVIEWS) {
       const rows = lines(preview) ?? [];
       expect(labelsOf(rows)).not.toContain("Total debit");
-      expect(lineNamed(rows, "Costs").parts.at(-1)).toEqual({ kind: "missing" });
+      // The network fee is unknown on every lane: its row (a transfer's Fees) reads missing.
+      const network = rows.find((row) => row.label === "Network fee") ?? lineNamed(rows, "Fees");
+      expect(network.parts).toEqual([{ kind: "missing" }]);
     }
   });
 });

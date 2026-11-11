@@ -58,79 +58,101 @@
   overflow: hidden;
 }
 
-/* THE WORKSPACE CHROME (docs/design/R3-MINIMAL.md section 9.5). The strip, the
- * pane head and the panes carry no box: the strip and the head sit on the
- * paper under a quiet rule each, the panes are the field, and nothing frames
- * the workspace. Radius 0, no shadow, tokens only. Named rules rather than
- * utilities where one wrapper owns the paint of several children, and where an
- * unlayered rule has to beat a shared primitive's utility.
- *
- *   .vex-ws-strip              the strip wrapper; draws the quiet rule under
- *                              the strip from beneath the scroller
- *   .vex-terminal-tab-strip    the scroller (the shared tablist)
- *   .vex-tab-shell             one tab: trigger, Keep and close in one box
- *   .vex-ws-cap                the overflow caps at the strip's two ends
- *   .vex-ws-head               the pane head
- *   .vex-ws-picker             the shell picker key
- *   .vex-ws-panes, .vex-ws-pane  the split container and one pane */
 
-/* The strip is 40 high. Its quiet rule is drawn by the wrapper UNDER the
- * scroller, because a scroller clips to its padding box: a tab that sat 1px
- * low over a border would lose that pixel and its underline would thin to
- * half a pixel. The scroller paints above the rule, so the active tab's
- * 1.5px blue underline covers it and the rule shows between and after tabs. */
+/* THE WORKSPACE CHROME IN H3 CELLS (our approved Studio plate,
+ * docs/design/H3-DESKTOP.md section 4.9). Square cells divided by the quiet
+ * rule, radius 0, no shadow, tokens only, and no blue: the active tab and the
+ * active pane's head take the raised fill, a hover the cell hover, a focus
+ * the 2px ring drawn inside the cell. Named rules rather than utilities where
+ * one wrapper owns the paint of several children, and where an unlayered rule
+ * has to beat a shared primitive's utility.
+ *
+ *   .vex-ws-strip              the tabs row, 56 high, its rule under it
+ *   .vex-ws-tabs               the tabs' box: the scroller and its caps
+ *   .vex-terminal-tab-strip    the scroller (the shared tablist)
+ *   .vex-tab-shell             one tab cell: trigger, Keep and close in one box
+ *   .vex-ws-cap                the overflow caps at the tabs' two ends
+ *   .vex-ws-plus               the + key cell, a new terminal
+ *   .vex-ws-picker             the shell picker cell, pinned at the right
+ *   .vex-ws-head               the panel header, 56 high
+ *   .vex-ws-panes, .vex-ws-pane  the split container and one pane
+ *   .vex-ws-pane__head         a split pane's 36 head */
+
 .vex-ws-strip {
-  position: relative;
+  display: flex;
   flex: none;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
 
-.vex-ws-strip::after {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  height: 1px;
-  background: var(--vex-alias-rule-quiet);
-  pointer-events: none;
+/* The tabs take the room they need and give it back before the + cell and
+ * the picker do: the scroller scrolls, the caps mark an end it can still
+ * scroll to. */
+.vex-ws-tabs {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .vex-terminal-tab-strip {
   position: relative;
   z-index: 1;
   box-sizing: border-box;
-  height: 40px;
-  padding: 0 14px;
-  gap: 2px;
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  gap: 0;
   align-items: stretch;
   border-bottom: 0;
 }
 
-/* A tab is a clear shell at rest: padding 0 12, a 1.5px transparent underline
- * on its bottom edge. The active tab is ink with a blue underline (its weight
- * and ink come from the trigger inside it). A hovered inactive tab previews
- * activation with the quiet hover wash and never takes the underline. */
+/* A TAB is a cell: its text 24 in, 20 from its right rule; a terminal's
+ * square and its name in caps at 13, tracked; a file's glyph and its name in
+ * mono at 13, italic while it is the preview (TerminalTabs.tsx). The active
+ * tab is ink on the raised fill with its close key; another is ink 2, and a
+ * hover previews it with the cell hover. */
 .vex-tab-shell {
   box-sizing: border-box;
-  padding-left: 12px;
-  border-bottom: 1.5px solid transparent;
+  padding: 0 20px 0 24px;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
   transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 
 .vex-tab-shell[data-active] {
-  border-bottom-color: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-interactive-active);
 }
 
 .vex-terminal-tab-strip .vex-tab-shell:not([data-active]):hover {
   background: var(--vex-alias-interactive-hover);
 }
 
-/* The overflow caps: a flat paper block, 12 wide, with a quiet rule on its
- * inner edge. They stop 1px short of the bottom so the strip's rule runs on.
- * The strip's wrapper puts the scroller at z 1; the caps sit above it. */
+.vex-tab-trigger {
+  font-size: 13px;
+}
+
+.vex-tab-trigger--terminal .vex-tab-title {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.vex-tab-trigger--file {
+  gap: 10px;
+}
+
+.vex-tab-trigger--file .vex-tab-title {
+  font-family: var(--font-mono);
+}
+
+/* The overflow caps: a flat ground block, 12 wide, with the quiet rule on
+ * its inner edge. The tabs' box puts the scroller at z 1; the caps sit above
+ * it. */
 .vex-ws-cap {
   position: absolute;
   top: 0;
-  bottom: 1px;
+  bottom: 0;
   z-index: 2;
   width: 12px;
   background: var(--vex-alias-bg-base);
@@ -147,75 +169,224 @@
   border-left: 1px solid var(--vex-alias-rule-quiet);
 }
 
-/* THE PANE HEAD: 50 high on the paper, a quiet rule under it, padding
- * 0 14 0 18, gap 12: the disc, the name over the shell and directory line,
- * then the icon keys and the shell picker at the right. */
-.vex-ws-head {
+/* THE + KEY CELL, 56 wide behind its rule, the plus in ink. */
+.vex-ws-plus {
   display: flex;
   flex: none;
+  width: 56px;
   align-items: center;
-  gap: 12px;
-  box-sizing: border-box;
-  height: 50px;
-  padding: 0 14px 0 18px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-
-.vex-ws-head__keys {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
-
-/* The shell picker key: 32 high, about 170 wide, a 1px rule frame on the
- * field, padding 0 12, gap 9; the label is mono 13 ink, the chevron muted at
- * the right. */
-.vex-ws-picker {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 9px;
-  box-sizing: border-box;
-  width: 170px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-field);
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
   color: var(--vex-alias-label-primary);
-  font-size: 13px;
-  text-align: left;
   transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 
-.vex-ws-picker:hover {
+.vex-ws-plus:hover {
   background: var(--vex-alias-interactive-hover);
 }
 
-.vex-ws-picker:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 3px;
+.vex-ws-fill {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-/* THE PANES: JetBrains Mono 12 / 19 inside a 12 16 inset (the inset is the
- * terminal container's margin, because the registry's wrapper is absolute and
- * fills its container's box), on the field, and a quiet rule between split
- * panes. The focused pane of a split is outlined 1.5px in the blue, INSIDE its
- * own box, so the outline never grows the layout. */
-.vex-ws-pane[data-active] {
-  outline: 1.5px solid var(--vex-alias-accent-primary);
-  outline-offset: -1.5px;
+/* THE SHELL PICKER CELL, pinned at the right behind its rule: SHELL in caps,
+ * muted, the shell in mono 13 ink, the chevron muted. Its list hangs from the
+ * row's rule, its right edge on the cell's. */
+.vex-ws-shell {
+  position: relative;
+  display: flex;
+  flex: none;
 }
 
-/* The seam at rest. The hover and the drag keep the primitive's blue. */
+.vex-ws-picker {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-ws-picker:hover,
+.vex-ws-picker[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-hover);
+}
+
+.vex-ws-picker__word {
+  color: var(--vex-alias-label-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.vex-ws-picker__value {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+}
+
+/* THE PANEL HEADER, 56 high: the name at 15 over the process and directory
+ * in mono 12, muted, 24 in; then the state cell (the square and the word in
+ * caps at 13) and the four 56 key cells, each behind a rule. */
+.vex-ws-head {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+
+.vex-ws-head__id {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 16px 0 24px;
+}
+
+.vex-ws-head__name {
+  margin: 0;
+  overflow: hidden;
+  color: var(--vex-alias-label-primary);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vex-ws-head__where {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.vex-ws-head__state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vex-ws-head__key {
+  display: flex;
+  flex: none;
+  width: 56px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-ws-head__key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+
+/* THE PANES: the terminal's text on the ground. A split lays its panes on
+ * the quiet 1px rule (the chosen rule while it is hovered or dragged), each
+ * under a 36 head with its square, its process in mono 12 and a 36 close
+ * key; the active pane's head takes the raised fill and ink, the others stay
+ * on the ground, muted. */
+.vex-ws-pane {
+  background: var(--vex-alias-bg-base);
+}
+
+.vex-ws-pane__head {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding-left: 24px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.vex-ws-pane[data-active] > .vex-ws-pane__head {
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-ws-pane__name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vex-ws-pane__close {
+  display: flex;
+  width: 36px;
+  height: 100%;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-ws-pane__close:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
 .vex-ws-panes [role="separator"]:not(:hover):not([data-dragging]) {
   background: var(--vex-alias-rule-quiet);
 }
 
+.vex-ws-panes [role="separator"]:is(:hover, [data-dragging]) {
+  background: var(--vex-alias-rule-chosen);
+}
+
+/* Focus: the 2px ring drawn inside the cell (section 2.4). */
+:is(.vex-ws-plus, .vex-ws-picker, .vex-ws-head__key, .vex-ws-pane__close):focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vex-tab-shell,
-  .vex-ws-picker {
+  .vex-ws-plus,
+  .vex-ws-picker,
+  .vex-ws-head__key {
     transition: none;
   }
 }

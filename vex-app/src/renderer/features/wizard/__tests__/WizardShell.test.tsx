@@ -14,6 +14,12 @@ import {
 } from "@tanstack/react-query";
 import type { JSX } from "react";
 import type { Result } from "@shared/ipc/result.js";
+import {
+  getStageVex,
+  resetStageVex,
+  stageVexEnd,
+  stageVexView,
+} from "../../../components/onboarding/stage-vex.js";
 import type { WizardState } from "@shared/schemas/wizard.js";
 
 const mockUseWizardState = vi.fn();
@@ -192,6 +198,9 @@ beforeEach(() => {
   // tour), which pins the wizard to its persisted step and disables the
   // routing under test here. These suites pin the NON-tour baseline.
   vi.stubEnv("VITE_VEX_SETUP_TOUR", "0");
+  // The launch is over by the wizard: what it says she shows is hers at once.
+  resetStageVex();
+  stageVexEnd();
   mockUseWizardState.mockReset();
   mockSetCurrentView.mockReset();
   mockOpenUnlock.mockReset();
@@ -264,7 +273,10 @@ describe("WizardShell Back (steps 2 to 7)", () => {
     expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
       "keystore",
     );
-    expect(paneOf(container, "keystore")?.textContent).toContain("Step 1 of 7 · Master password");
+    expect(container.querySelector(".vex-pre__title")?.textContent).toContain(
+      "Master password",
+    );
+    expect(container.querySelector(".vex-pre__sub")?.textContent).toBe("Setup · Step 1 of 7");
     // the key that moved the view hid with its step: focus lands in the shown step
     expect(paneOf(container, "keystore")?.contains(document.activeElement)).toBe(true);
     // Back persists nothing: the shell never wrote the wizard state
@@ -314,17 +326,17 @@ describe("WizardShell Back (steps 2 to 7)", () => {
   });
 });
 
-describe("WizardShell frame (R3)", () => {
-  it("draws the named stepper and the step line above the title", async () => {
+describe("WizardShell frame (H3 stage)", () => {
+  it("draws the seven steps in the left column and the step in the title cell", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult(stepState("wallets", ["keystore"])),
     );
-    const { findByTestId, getByRole } = renderWithQuery(<WizardShell />);
-    const step = await findByTestId("wallets-step");
-    const stepper = getByRole("list", { name: "Wizard progress" });
+    const { container, findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("wallets-step");
+    const stepper = getByRole("navigation", { name: "Setup" });
     const rows = stepper.querySelectorAll("li[data-vex-wizard-step]");
     expect(rows).toHaveLength(7);
-    expect([...rows].map((row) => row.textContent)).toEqual([
+    expect([...rows].map((row) => row.querySelector(".vex-pre__step-name")?.textContent)).toEqual([
       "Master password",
       "Wallets",
       "API keys",
@@ -335,46 +347,55 @@ describe("WizardShell frame (R3)", () => {
     ]);
     const current = stepper.querySelector('[aria-current="step"]');
     expect(current?.getAttribute("data-vex-wizard-step")).toBe("wallets");
-    expect(
-      stepper.querySelector('[data-vex-wizard-step="keystore"]')?.getAttribute("data-status"),
-    ).toBe("completed");
+    const keystore = stepper.querySelector('[data-vex-wizard-step="keystore"]');
+    expect(keystore?.getAttribute("data-status")).toBe("completed");
+    expect(keystore?.textContent).toContain("Done");
     expect(
       stepper.querySelector('[data-vex-wizard-step="review"]')?.getAttribute("data-status"),
     ).toBe("pending");
-    expect(step.textContent).toContain("Step 2 of 7 · Wallets");
+    expect(container.querySelector(".vex-pre__count")?.textContent).toBe("2/7");
+    // The title cell: the step over "Setup · Step 2 of 7"; no step line above the title.
+    expect(container.querySelector(".vex-pre__title")?.textContent).toContain("Wallets");
+    expect(container.querySelector(".vex-pre__sub")?.textContent).toBe("Setup · Step 2 of 7");
+    expect(container.textContent).not.toContain("Step 2 of 7 · Wallets");
+    // The privacy link stands in the bottom-left cell, where the version stands elsewhere.
+    const foot = container.querySelector(".vex-pre__foot");
+    expect(foot?.querySelector("a")?.textContent).toContain("Your data stays yours");
+    expect(foot?.querySelector("[data-vex-version-stamp]")).toBeNull();
   });
 
-  it("draws no state word under Vex on the plate or beside the small mark; her mood still follows focus", async () => {
+  it("reads a step continued past without saving as done", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("apiKeys", ["keystore"])));
+    const { findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("apikeys-step");
+    const stepper = getByRole("navigation", { name: "Setup" });
+    expect(
+      stepper.querySelector('[data-vex-wizard-step="wallets"]')?.getAttribute("data-status"),
+    ).toBe("completed");
+  });
+
+  it("draws no K2 and no print; her state reaches the stage, following focus", async () => {
     mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
     const { findByTestId, container, getByLabelText, getByRole } = renderWithQuery(
       <WizardShell />,
     );
     await findByTestId("keystore-step");
-    const plate = container.querySelector(".vex-wz__plate");
-    expect(plate).not.toBeNull();
-    // Owner: no "Ready" or "Listening" under Vex.
-    expect(plate?.querySelector(".vex-state-word")).toBeNull();
-    expect(plate?.textContent).toBe("");
-    // The small mark under 1180 carries no word either (the owner,
-    // 2026-10-18: no state word under Vex on any stage).
-    const mini = container.querySelector("[data-vex-wizard-mini]");
-    expect(mini).not.toBeNull();
-    expect(mini?.querySelector(".vex-state-word")).toBeNull();
-    expect(mini?.textContent).toBe("");
-    // the mark is 40 where the plate goes (spec 10.1)
-    expect(mini?.querySelector("svg")?.getAttribute("width")).toBe("40");
-    expect(container.querySelector(".vex-state-word")).toBeNull();
-    // The mood (her face on the plate) still follows focus.
+    // H3: no R3 plate, print or small mark; Kimm stands in the stage's own column.
+    expect(container.querySelector(".vex-wz__plate")).toBeNull();
+    expect(container.querySelector("[data-vex-k2]")).toBeNull();
+    expect(container.querySelector("[data-vex-wizard-mini]")).toBeNull();
+    // What she shows follows focus: Listening (hi) in a text field, Ready (at rest) else.
     const mood = (): string | null | undefined =>
       container.querySelector("[data-vex-wizard-mood]")?.getAttribute("data-vex-wizard-mood");
-    expect(mood()).toBe("idle");
+    expect(mood()).toBe("ready");
+    expect(stageVexView(getStageVex())).toMatchObject({ word: "Ready", mood: "rest" });
     fireEvent.focus(getByLabelText("Master password"));
     expect(mood()).toBe("listening");
-    expect(container.querySelector(".vex-state-word")).toBeNull();
+    expect(stageVexView(getStageVex())).toMatchObject({ word: "Listening", mood: "hi" });
     fireEvent.blur(getByLabelText("Master password"), {
       relatedTarget: getByRole("button", { name: "Save and continue" }),
     });
-    expect(mood()).toBe("idle");
+    expect(mood()).toBe("ready");
   });
 
   it("carries the gate scope on the document while it stands", async () => {

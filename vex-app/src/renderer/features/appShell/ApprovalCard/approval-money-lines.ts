@@ -1,6 +1,6 @@
 /**
  * THE MONEY LINES of an approval card (docs/design/R3-MINIMAL.md section 8.1,
- * item 4): You send, You receive, Minimum receipt and Costs.
+ * item 4): You send, You receive, Minimum receipt, Fees and Network fee.
  *
  * Each line reads its own bound key when the approval carries it. A line the
  * tool did not quote reads "Not available" in muted type. Nothing is computed
@@ -21,6 +21,23 @@
  *   - a wrap: `youSend`, `youReceive`.
  * Lighter cards keep their own fact rows (`lighter-order-facts.ts` and the
  * curated rows in `ApprovalDetails`); they carry no money lines here.
+ *
+ * IN H3'S TABLE (docs/design/H3-DESKTOP.md Appendix A.7) these lines are the
+ * card's field rows, their labels set in mono caps by the field-label
+ * register; the labels stay sentence case here. Where H3's rows differ:
+ * "You send" is H3's AMOUNT TO SWAP as signed, never an editable field;
+ * "Minimum receipt" carries the slippage limit in its note in place of
+ * H3's SLIPPAGE LIMIT; and H3's FROM wallet, QUOTED PRICE and limits line
+ * have no line here at all, because the approval binds none of them (section
+ * 4.1). The look changed in the H3 slice; what a line reads did not.
+ *
+ * THE FEE ROWS ARE CLOUD'S (the money gaps sheet, DG5-06). A swap and a
+ * bridge carry two: "Fees", Vex's fee as the engine states it, and "Network
+ * fee", which no lane binds, so it reads "Not available". A transfer has no
+ * Vex fee, so its one "Fees" row IS the network fee and reads "Not
+ * available"; a second row would say the same unknown twice. Should a
+ * transfer ever state a Vex fee, it takes the swap's two rows rather than
+ * calling that fee a network fee.
  *
  * Pure: no React, no IO.
  */
@@ -107,23 +124,35 @@ function slippageNote(args: Args): MoneyPart | null {
   return percent === null ? null : note(`· slippage limit ${percent}`);
 }
 
-function costsLine(args: Args): MoneyLine {
+/** The two fee rows' labels, Cloud's words ("Network fee" is DRAFT there, G6). */
+export const FEES_LABEL = "Fees";
+export const NETWORK_FEE_LABEL = "Network fee";
+
+/** "Fees": Vex's fee as the engine states it, or "Not available" where it states none readable. */
+function vexFeeLine(fee: VexFee | null): MoneyLine {
+  if (fee === null) return { label: FEES_LABEL, parts: [MISSING] };
+  if (fee.none) return { label: FEES_LABEL, parts: [text("No Vex fee")] };
+  const parts: MoneyPart[] = [text("Vex fee"), fee.amount === null ? MISSING : figure(fee.amount)];
+  if (fee.percent !== null) parts.push(note(`(${fee.percent})`));
+  return { label: FEES_LABEL, parts };
+}
+
+/** "Network fee": no money lane on this card binds a network fee estimate. */
+const NETWORK_FEE_LINE: MoneyLine = { label: NETWORK_FEE_LABEL, parts: [MISSING] };
+
+/** A swap's and a bridge's fee rows: Vex's fee, then the network fee. */
+function feeLines(args: Args): MoneyLine[] {
+  return [vexFeeLine(parseVexFee(argText(args, "vexFee"))), NETWORK_FEE_LINE];
+}
+
+/**
+ * A transfer's fee row: its "Fees" is the network fee, which no lane binds
+ * (DG5-06). A transfer that states a Vex fee takes the swap's two rows.
+ */
+function transferFeeLines(args: Args): MoneyLine[] {
   const fee = parseVexFee(argText(args, "vexFee"));
-  const parts: MoneyPart[] = [];
-  if (fee !== null) {
-    if (fee.none) parts.push(text("No Vex fee"));
-    else {
-      parts.push(text("Vex fee"));
-      parts.push(fee.amount === null ? MISSING : figure(fee.amount));
-      if (fee.percent !== null) parts.push(note(`(${fee.percent})`));
-    }
-    parts.push(text("· network fee"));
-  } else {
-    parts.push(text("Network fee"));
-  }
-  // No money lane on this card binds a network fee estimate.
-  parts.push(MISSING);
-  return { label: "Costs", parts };
+  if (fee !== null) return [vexFeeLine(fee), NETWORK_FEE_LINE];
+  return [{ label: FEES_LABEL, parts: [MISSING] }];
 }
 
 function withNote(parts: MoneyPart[], extra: MoneyPart | null): MoneyPart[] {
@@ -146,7 +175,7 @@ function bridgeLines(args: Args): MoneyLine[] {
     },
     { label: "You receive", parts: withNote([MISSING], receiveNote.length > 0 ? note(`· ${receiveNote}`) : null) },
     { label: "Minimum receipt", parts: withNote([MISSING], slippageNote(args)) },
-    costsLine(args),
+    ...feeLines(args),
   ];
 }
 
@@ -169,7 +198,7 @@ function swapLines(args: Args): MoneyLine[] {
       label: "Minimum receipt",
       parts: withNote([quote === null || quote.minimum === null ? MISSING : figure(quote.minimum)], slippageNote(args)),
     },
-    costsLine(args),
+    ...feeLines(args),
   ];
 }
 
@@ -189,7 +218,7 @@ function transferLines(args: Args): MoneyLine[] {
     },
   ];
   if (to !== null) lines.push({ label: "To", parts: [figure(to)] });
-  lines.push(costsLine(args));
+  lines.push(...transferFeeLines(args));
   return lines;
 }
 

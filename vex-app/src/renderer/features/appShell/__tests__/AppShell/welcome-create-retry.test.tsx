@@ -302,7 +302,7 @@ describe("AppShell", () => {
     });
     renderShell();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "first message" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });
@@ -352,7 +352,7 @@ describe("AppShell", () => {
     });
     renderShellStrict();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "first message" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });

@@ -13,7 +13,9 @@ import {
   stageVexExit,
   stageVexFace,
   stageVexFaceClear,
+  stageVexLockMood,
   stageVexPipelineReady,
+  stageVexSettle,
   stageVexUnlocked,
   stageVexView,
   stageVexWoken,
@@ -24,22 +26,22 @@ afterEach(() => {
 });
 
 describe("stageVexView", () => {
-  it("wakes on a launch: the dot screen and 'Waking up' until she has woken and the desk is ready", () => {
+  it("wakes on a launch: 'Waking up' and rest until she has woken and the desk is ready, then hi", () => {
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "idle",
-      swatch: "listening",
+      state: "waking",
       word: "Waking up",
       note: null,
+      mood: "rest",
     });
     stageVexWoken();
     // Woken but the pipeline is still running: the desk is not ready yet.
     expect(stageVexView(getStageVex()).word).toBe("Waking up");
     stageVexPipelineReady();
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "idle",
-      swatch: "done",
+      state: "ready",
       word: "Ready",
       note: null,
+      mood: "hi",
     });
   });
 
@@ -48,36 +50,57 @@ describe("stageVexView", () => {
     expect(stageVexView(getStageVex()).word).toBe("Waking up");
   });
 
-  it("sleeps on a locked desk, with 'Locked' set beside the word", () => {
+  it("sleeps and rests on a locked desk; the lock is the title cell's word, not hers", () => {
     stageVexEnd();
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "sleeping",
-      swatch: "sleeping",
+      state: "sleeping",
       word: "Sleeping",
-      note: "Locked",
+      note: null,
+      mood: "rest",
     });
   });
 
   it("wakes the locked desk and looks at you once the vault unlocks", () => {
     stageVexEnd();
     stageVexUnlocked();
-    expect(stageVexView(getStageVex())).toMatchObject({ emotion: "idle", word: "Ready" });
+    expect(stageVexView(getStageVex())).toMatchObject({ state: "ready", word: "Ready", mood: "hi" });
   });
 
   it("is concerned over everything else, with the throttle's seconds beside it", () => {
     stageVexEnd();
     stageVexConcerned(true);
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "concerned",
-      swatch: "concerned",
+      state: "concerned",
       word: "Concerned",
       note: null,
+      mood: "rest",
     });
     stageVexConcerned(true, 28);
     expect(stageVexView(getStageVex()).note).toBe("0:28");
     stageVexConcerned(false);
     expect(getStageVex().countdown).toBeNull();
     expect(stageVexView(getStageVex()).word).toBe("Sleeping");
+  });
+});
+
+describe("stageVexLockMood", () => {
+  it("rests while the lock screen waits, after a launch and after Lock Vex alike", () => {
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+    stageVexWoken();
+    stageVexPipelineReady();
+    // The stage says hi beside a ready desk; her lock screen panel rests until the vault opens.
+    expect(stageVexView(getStageVex()).mood).toBe("hi");
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+    stageVexEnd();
+    expect(stageVexLockMood(getStageVex())).toBe("rest");
+  });
+
+  it("is concerned as the stage maps it, and says hi once the vault opens", () => {
+    stageVexConcerned(true, 28);
+    expect(stageVexLockMood(getStageVex())).toBe(stageVexView(getStageVex()).mood);
+    stageVexConcerned(false);
+    stageVexUnlocked();
+    expect(stageVexLockMood(getStageVex())).toBe("hi");
   });
 });
 
@@ -111,6 +134,15 @@ describe("the stage store", () => {
     });
   });
 
+  it("settles a spent crossfade without ending the launch", () => {
+    stageVexWoken();
+    stageVexExit();
+    stageVexSettle();
+    expect(getStageVex().exit).toBe("idle");
+    expect(getStageVex().launching).toBe(true);
+    expect(getStageVex().woken).toBe(true);
+  });
+
   it("keeps one state object while nothing changes", () => {
     const before = getStageVex();
     stageVexConcerned(false);
@@ -119,8 +151,18 @@ describe("the stage store", () => {
 });
 
 describe("a first run screen's face", () => {
-  const working = { emotion: "working", swatch: "done", word: "Working", note: "0:14" } as const;
-  const ready = { emotion: "idle", swatch: "idle", word: "Ready", note: null } as const;
+  const working = {
+    state: "working",
+    word: "Working",
+    note: "0:14",
+    mood: "think",
+  } as const;
+  const ready = {
+    state: "ready",
+    word: "Ready",
+    note: null,
+    mood: "hi",
+  } as const;
 
   it("waits for the launch's wake: she never skips it", () => {
     stageVexFace(working);

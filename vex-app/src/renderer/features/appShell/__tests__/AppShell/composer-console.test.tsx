@@ -1,16 +1,19 @@
 /**
- * Composer field contract (UIUX rebrand F3, drawn for R3 - docs/design/
- * R3-MINIMAL.md section 7, references d2, d3 and d5). Mounts the real
+ * Composer field contract (UIUX rebrand F3, drawn for H3 - docs/design/
+ * H3-DESKTOP.md sections 1.8 and 6.5 and Appendix A.5). Mounts the real
  * `SessionComposer` with the lib/api hooks mocked and pins:
  *
- *  - the field chrome (a square white field on the rule, NO focus treatment -
- *    the CSS pins scan the raw stylesheet, the jsdom pins the classNames);
- *  - the 36px square send key, and the named stop key that replaces it;
+ *  - the shell's box (owner decision 2026-11-10): the field on top, then one
+ *    row of the model cell, the strip's cells and SEND; its frame the only
+ *    focus treatment, no ring on the field (the CSS pins scan the raw
+ *    stylesheet, the jsdom pins the classNames); the Lighter desk's own
+ *    composer row (the model cell, the field cell and the send cell) and its
+ *    strip over it;
+ *  - the blue send cell, and the stop that replaces it, named by its target;
  *  - the approval echo (the ink frame + the "Waiting for approval" tag behind
  *    the target swatch);
- *  - the rotating faux-placeholder overlay;
- *  - the welcome's task rows (visible on welcome, gone while typing, fixed
- *    slot);
+ *  - the faux-placeholder overlay, resting on "Ask Vex...";
+ *  - the welcome's suggestions (visible on welcome, gone while typing);
  *  - the slash-command combobox (opens on "/", keyboard drive with focus
  *    held in the textarea, command execution -> toast/draft effects);
  *  - the submission policy (Enter vs Cmd/Ctrl+Enter via the persisted
@@ -42,6 +45,7 @@ import {
   setSubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
 import { notifications } from "../../../../lib/notifications/index.js";
+import { COMPOSER_COMMANDS } from "../../commands/directory.js";
 
 /**
  * The transient toast is a notification-model entry since B2.2: the store that
@@ -118,6 +122,7 @@ vi.mock("../../../wizard/steps/provider/ModelBrandIcon.js", () => ({
 }));
 
 const { SessionComposer } = await import("../../SessionComposer.js");
+const { COMPOSER_REST_PLACEHOLDER } = await import("../../SessionComposer.js");
 const { APPROVAL_WAIT_PLACEHOLDER, LIGHTER_DESK_PLACEHOLDER, PLACEHOLDER_ROTATE_MS, WELCOME_PLACEHOLDERS } =
   await import("../../composer-placeholders.js");
 
@@ -182,7 +187,7 @@ beforeEach(() => {
 });
 
 function draftField(): HTMLTextAreaElement {
-  return screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+  return screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
 }
 
 /** Type into the field with the caret reported at the end (onSelect). */
@@ -194,7 +199,7 @@ function typeDraft(value: string): void {
 }
 
 describe("composer capsule - chrome", () => {
-  it("wraps the composer in the square field card that follows the page column", () => {
+  it("wraps the composer in the card that follows the chat column", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
@@ -207,25 +212,120 @@ describe("composer capsule - chrome", () => {
     expect(form?.getAttribute("data-vex-composer-state")).toBe("input");
   });
 
-  it("the textarea caps at the 336px catalog height, carries the accent caret, and wears NO focus ring", () => {
+  it("is one framed box in the shell: the field on top, then one row of the model cell, the strip's cells and SEND", () => {
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    const form = container.querySelector('[data-vex-area="chat-composer"]') as HTMLElement;
+    expect(form.className).toContain("vex-composer-box");
+    // The field's cell first, then the row (docs/design/H3-DESKTOP.md
+    // section 6.5): no status strip of its own over the field any more.
+    const parts = Array.from(form.children);
+    expect(parts.map((el) => el.className)).toEqual(["vex-composer-field", "vex-composer-row"]);
+    expect(parts[0]?.contains(draftField())).toBe(true);
+    const row = parts[1] as HTMLElement;
+    expect(row.getAttribute("data-vex-area")).toBe("composer-row");
+    const cells = Array.from(row.children);
+    expect(cells).toHaveLength(3);
+    expect(cells[0]?.getAttribute("data-vex-area")).toBe("composer-model-group");
+    expect(cells[0]?.querySelector(".vex-composer-model")).not.toBeNull();
+    // The status strip's cells stand in the row, nothing of them lost.
+    expect(cells[1]?.getAttribute("data-vex-area")).toBe("composer-strip");
+    expect(cells[1]?.textContent).toContain("AI permission");
+    expect(cells[1]?.textContent).toContain("Funds require approval");
+    expect(cells[2]?.getAttribute("aria-label")).toBe("Send message");
+    // No image key: attachments are not supported (section 4.1).
+    expect(
+      Array.from(row.querySelectorAll("button")).map((button) => button.getAttribute("aria-label") ?? ""),
+    ).not.toContainEqual(expect.stringMatching(/image|attach/i));
+    expect(row.textContent).not.toMatch(/image|attach/i);
+  });
+
+  it("keeps the Lighter desk's composer: the strip over the row, the mark-only model cell, the field and the send cell", () => {
+    useUiStore.setState({ runtimeMode: "lighter" });
+    try {
+      const { container } = render(
+        <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+      );
+      const form = container.querySelector('[data-vex-area="chat-composer"]') as HTMLElement;
+      expect(form.className).not.toContain("vex-composer-box");
+      const parts = Array.from(form.children);
+      expect(parts.map((el) => el.getAttribute("data-vex-area"))).toEqual(["composer-strip", "composer-row"]);
+      expect(parts[0]?.className).toContain("@container");
+      const row = parts[1] as HTMLElement;
+      expect(row.className).toBe("vex-composer-row");
+      const cells = Array.from(row.children);
+      expect(cells).toHaveLength(3);
+      expect(cells[0]?.matches(".vex-composer-model")).toBe(true);
+      expect(cells[1]?.className).toBe("vex-composer-field");
+      expect(cells[1]?.contains(draftField())).toBe(true);
+      expect(cells[2]?.getAttribute("aria-label")).toBe("Send message");
+    } finally {
+      useUiStore.setState({ runtimeMode: "agent" });
+    }
+  });
+
+  it("raw-CSS contract: the box is the card ground in the chosen rule, the field 16 20 in, the row 56 under the 7% rule", () => {
+    const css = CONSOLE_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(
+      /\.vex-composer-box \{\s*border: 1px solid var\(--vex-alias-rule-chosen\);\s*background: var\(--vex-alias-card\);\s*\}/,
+    );
+    expect(css).toMatch(
+      /\.vex-composer-box > \.vex-composer-field \{\s*min-height: 0;\s*padding: 16px 20px;\s*border-top: 0;\s*\}/,
+    );
+    expect(css).toMatch(
+      /\.vex-composer-box > \.vex-composer-row \{\s*align-items: stretch;\s*height: 56px;\s*border-top: 1px solid var\(--vex-alias-rule\);\s*\}/,
+    );
+    // Its resting words in ink 2, not muted.
+    expect(css).toMatch(
+      /\.vex-composer-box \[data-vex-composer-placeholder\] \{\s*color: var\(--vex-alias-label-secondary\);\s*\}/,
+    );
+    // The row is the query container its steps answer to; the strip is none.
+    expect(css).toMatch(/\.vex-composer-row \{[^}]*container: composer-row \/ inline-size;/);
+    expect(css).toMatch(/\.vex-composer-box \.vex-composer-row > \.vex-composer-strip \{[^}]*container-type: normal;/);
+  });
+
+  it("raw-CSS contract: the row is 72 under its rule, bottom aligned, so a growing field rises", () => {
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-row \{[^}]*align-items: flex-end;/);
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-model \{[^}]*width: 75px;[^}]*height: calc\(var\(--vex-h3-bottom-h\) \+ 1px\);[^}]*border-top: 1px solid var\(--vex-alias-rule\);[^}]*border-right: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-bg-layer-3\);/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-field \{[^}]*min-height: calc\(var\(--vex-h3-bottom-h\) \+ 1px\);[^}]*padding: 24px;[^}]*border-top: 1px solid var\(--vex-alias-rule\);/,
+    );
+    const tokens = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
+      "utf8",
+    );
+    expect(tokens).toContain("--vex-h3-bottom-h: 72px;");
+  });
+
+  it("the textarea rests on one line, caps at the 336px catalog height, carries the accent caret, and wears NO focus ring", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const field = draftField();
+    expect(field.className).toContain("min-h-6");
+    expect(field.className).not.toContain("min-h-12");
     expect(field.className).toContain("max-h-[336px]");
     expect(field.className).toContain("caret-accent-primary");
     expect(field.className).not.toMatch(/focus-visible|ring/);
   });
 
-  it("raw-CSS contract: a square card on the input border with no shadow, and NO focus treatment anywhere in the chrome", () => {
+  it("raw-CSS contract: square cells on the rule with no shadow; the field draws no ring, the box's frame is its focus", () => {
     expect(CONSOLE_CSS).toContain("border-radius: 0");
     expect(CONSOLE_CSS).not.toMatch(/border-radius:\s*(?!0\b)\d/);
-    expect(CONSOLE_CSS).toContain("var(--vex-alias-border-input)");
+    expect(CONSOLE_CSS).toContain("var(--vex-alias-rule)");
     expect(CONSOLE_CSS).not.toMatch(/box-shadow|--shadow-lv/);
-    // The catalog capsule has no focus ring and no focus border step: no
-    // rule block selects on focus (a prose mention in a comment is fine).
-    expect(CONSOLE_CSS).not.toContain(":focus-within");
-    expect(CONSOLE_CSS).not.toMatch(/:focus[^)]*\{/);
+    // One focus treatment in the chrome (docs/design/H3-DESKTOP.md section
+    // 6.5): while the field holds the focus the box's frame turns the kit's
+    // white focus rule. No ring on the field, no focus-within anywhere.
+    const css = CONSOLE_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).not.toContain(":focus-within");
+    expect(css.match(/:focus\b/g)).toHaveLength(1);
+    expect(css).toMatch(
+      /\.vex-composer-box:has\(> \.vex-composer-field \[data-vex-composer-field\]:focus\) \{\s*border-color: var\(--vex-alias-focus\);\s*\}/,
+    );
   });
 
   it("raw-CSS contract: the field runs no motion of its own - the shared swatch is the one state motion", () => {
@@ -244,13 +344,25 @@ describe("composer capsule - chrome", () => {
     );
     const form = container.querySelector('[data-vex-area="chat-composer"]');
     expect(form?.getAttribute("data-vex-composer-state")).toBe("approval");
-    const tag = screen.getByText("Waiting for approval");
-    expect(tag).toBeTruthy();
-    // The tag sits on the FIELD's top edge, so it rides inside the card.
+    const words = screen.getByText("Waiting for approval");
+    const tag = words.closest('[data-vex-console-status="approval"]') as HTMLElement;
+    expect(tag.className).toBe("vex-composer-tag");
+    // The tag stands in the status strip's state cell, H3's empty cell over
+    // the row, so it rides inside the card; the strip says it holds a state.
     expect(form?.contains(tag)).toBe(true);
+    expect(tag.parentElement?.className).toContain("vex-composer-strip__state");
+    expect(tag.closest('[data-vex-strip-state="approval"]')).not.toBeNull();
     expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
+    // Its words truncate before they push a neighbour out.
+    expect(words.className).toContain("truncate");
+    // The ink frame is drawn inside the composer's box, so nothing moves;
+    // 1px, as every rule is (H3-DESKTOP.md section 2.4).
     expect(CONSOLE_CSS).toMatch(
-      /\[data-vex-composer-state="approval"\]\s*\{[^}]*border-width:\s*1\.5px;[^}]*var\(--vex-alias-rule-ink\)/,
+      /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1px;/,
+    );
+    // The box draws it as its own frame instead of the outline.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-box\[data-vex-composer-state="approval"\] \{\s*border-color: var\(--vex-alias-rule-ink\);\s*outline: 0;\s*\}/,
     );
   });
 });
@@ -285,7 +397,7 @@ describe("composer capsule - a pending approval in an agent chat", () => {
     }
   });
 
-  it("without a pending approval the agent chat keeps the plain field and the rotating prompts", () => {
+  it("without a pending approval the agent chat keeps the plain field and rests on Ask Vex", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
@@ -293,38 +405,94 @@ describe("composer capsule - a pending approval in an agent chat", () => {
     expect(form?.getAttribute("data-vex-composer-state")).toBe("input");
     expect(screen.queryByText("Waiting for approval")).toBeNull();
     expect(container.querySelector("[data-vex-composer-placeholder]")?.textContent).toBe(
-      WELCOME_PLACEHOLDERS[0],
+      "Ask Vex…",
     );
   });
 });
 
-describe("composer capsule - send key", () => {
-  it("the send key is the 36px square blue key: a dotted outline while empty, filled once typed", () => {
+describe("composer capsule - send cell", () => {
+  it("the send cell is the blue key with the dot glyph and SEND, held while there is nothing to send", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const send = screen.getByRole("button", {
       name: "Send message",
     }) as HTMLButtonElement;
-    expect(send.className).toContain("h-9");
-    expect(send.className).toContain("w-9");
-    expect(send.className).not.toMatch(/rounded/);
+    expect(send.className).toContain("vex-composer-key");
     expect(send.className).toContain("vex-composer-send");
-    expect(send.disabled).toBe(true);
-    typeDraft("buy the dip");
+    expect(send.className).not.toMatch(/rounded/);
+    expect(send.getAttribute("type")).toBe("submit");
+    // The word in sentence case (the sheet sets the caps) beside the
+    // three-by-three dot glyph, 20 square, which is decoration.
+    expect(send.querySelector(".vex-composer-key__word")?.textContent).toBe("Send");
+    const glyph = send.querySelector("svg");
+    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph?.getAttribute("width")).toBe("20");
+    expect(glyph?.querySelectorAll("circle")).toHaveLength(9);
+    // Held, not disabled (VEX Cloud's SubmitButton, dock contract section
+    // 3): the key keeps its place in the tab order and focus through a send.
     expect(send.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-disabled")).toBe(false);
   });
 
-  it("raw-CSS contract: the send key fills blue with text and waits on a dotted blue outline", () => {
+  it("a held SEND keeps focus, says why it is held, and its press sends nothing", () => {
+    render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
+    send.focus();
+    expect(document.activeElement).toBe(send);
+    expect(send.tabIndex).toBe(0);
+    const reason = document.getElementById(send.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe("Write a message to send");
+    expect(send.getAttribute("aria-keyshortcuts")).toBe("Enter");
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    send.form?.addEventListener("submit", submitted);
+    fireEvent.click(send);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(send);
+    typeDraft("buy the dip");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("raw-CSS contract: the send cell is 138 wide and the row's 72, the one blue fill, white caps 13", () => {
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send \{[^}]*background: var\(--vex-alias-button-accent-fill\);/,
+      /\.vex-composer-key \{[^}]*width: 138px;[^}]*height: calc\(var\(--vex-h3-bottom-h\) \+ 1px\);[^}]*padding: 0 30px 0 32px;[^}]*font-size: 13px;[^}]*letter-spacing: var\(--tracking-label\);[^}]*text-transform: uppercase;/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-send:disabled \{[^}]*border: 1px dotted var\(--vex-alias-accent-primary\);[^}]*background: transparent;/,
+      /\.vex-composer-send,\s*\.vex-composer-stop \{[^}]*background-color: var\(--vex-alias-button-accent-fill\);[^}]*color: var\(--vex-alias-button-accent-ink\);/,
+    );
+    // The blue hover rises from the key's foot (VEX Cloud's
+    // --vx-blue-fill-hover): a layer scaled up from 0, never a swap of the
+    // key's own fill.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send::before,\s*\.vex-composer-stop::before \{[^}]*background: var\(--vex-alias-button-accent-hover\);[^}]*transform: scaleY\(0\);[^}]*transform-origin: bottom;[^}]*transition: transform var\(--vex-duration-key-fill\)/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:hover:not\(:disabled, \[aria-disabled="true"\]\)::before,\s*\.vex-composer-stop:hover:not\(:disabled\)::before \{\s*transform: scaleY\(1\);/,
+    );
+    expect(CONSOLE_CSS).not.toMatch(
+      /\.vex-composer-send:hover:not\(:disabled\),\s*\.vex-composer-stop:hover:not\(:disabled\) \{[^}]*background-color/,
+    );
+    // EC-04: an empty draft holds SEND. The held look is the cell fill with a
+    // muted word, never the blue: a blue key that does nothing is a trust
+    // regression. No dotted outline, no transparent key.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:is\(:disabled, \[aria-disabled="true"\]\),\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
+    );
+    expect(CONSOLE_CSS).not.toMatch(/dotted/);
+    // The dots are faint at rest and white under the pointer.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-label-faint\);/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-key:hover:not\(:disabled, \[aria-disabled="true"\]\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
   });
 
-  it("a turn in flight swaps Send for the NAMED ink stop key, with no second state mark beside it", () => {
+  it("a turn in flight swaps Send for STOP in the same cell, named by what it stops, with no second state mark beside it", () => {
     mockSubmitChat.isPending = true;
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -334,24 +502,50 @@ describe("composer capsule - send key", () => {
     expect(container.querySelector("[data-vex-composer-pending]")).toBeNull();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
     const stop = screen.getByRole("button", { name: "Stop agent" });
-    expect(stop.textContent).toBe("Stop agent");
+    expect(stop.textContent).toBe("Stop");
+    expect(stop.className).toContain("vex-composer-key");
     expect(stop.className).toContain("vex-composer-stop");
     expect(stop.querySelector(".vex-composer-stop__mark")).not.toBeNull();
+    // STOP's square is 14 (VEX Cloud's `.vx-cmp-stop`).
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-stop__mark \{[^}]*width: 14px;[^}]*height: 14px;/);
+    // A stop being acknowledged is the disabled key: the cell fill, muted.
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-stop \{[^}]*height: 36px;[^}]*background: var\(--vex-alias-rule-ink\);/,
+      /\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
     );
   });
 });
 
+describe("composer capsule - the status strip's cells", () => {
+  it("raw-CSS contract: a cell's words 24 in and 16 from its rule; the context key 16 in, 24 from the edge, reaching 12 up", () => {
+    // VEX Cloud's `.vx-cmp-cell` (0 16 0 24), its budget cell at the strip's
+    // end (0 24 0 16), and a key cell's 44 target on the 32 strip.
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-strip__cell \{[^}]*padding: 0 16px 0 24px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context \{[^}]*position: relative;[^}]*padding: 0 24px 0 16px;/);
+    expect(CONSOLE_CSS).toMatch(/\.vex-composer-context::before \{[^}]*position: absolute;[^}]*inset: -12px 0 0;/);
+  });
+});
+
 describe("composer capsule - placeholder + starter chips", () => {
-  it("opens on the first rotating welcome prompt as an aria-hidden overlay - no native placeholder", () => {
-    const { container } = render(
-      <SessionComposer activeSession={null} activeSessionId={null} />,
-    );
-    expect(draftField().getAttribute("placeholder")).toBeNull();
-    const overlay = container.querySelector("[data-vex-composer-placeholder]");
-    expect(overlay?.getAttribute("aria-hidden")).toBe("true");
-    expect(overlay?.textContent).toBe(WELCOME_PLACEHOLDERS[0]);
+  it("rests on H3's Ask Vex as an aria-hidden overlay - no native placeholder, no rotating orders", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <SessionComposer activeSession={null} activeSessionId={null} />,
+      );
+      expect(draftField().getAttribute("placeholder")).toBeNull();
+      const overlay = (): Element | null =>
+        container.querySelector("[data-vex-composer-placeholder]");
+      expect(overlay()?.getAttribute("aria-hidden")).toBe("true");
+      expect(overlay()?.textContent).toBe("Ask Vex…");
+      expect(COMPOSER_REST_PLACEHOLDER).toBe("Ask Vex…");
+      act(() => {
+        vi.advanceTimersByTime(PLACEHOLDER_ROTATE_MS * 3);
+      });
+      expect(overlay()?.textContent).toBe("Ask Vex…");
+      expect(WELCOME_PLACEHOLDERS).not.toContain(overlay()?.textContent);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rests on the desk phrase in Lighter mode instead of the swap and bridge orders", () => {
@@ -377,7 +571,7 @@ describe("composer capsule - placeholder + starter chips", () => {
     ).toBeNull();
   });
 
-  it("task rows greet the welcome stage inside a fixed-height slot that survives typing", () => {
+  it("the suggestions greet the welcome stage over the field, in a slot that survives typing", () => {
     const { container } = render(
       <SessionComposer activeSession={null} activeSessionId={null} />,
     );
@@ -385,8 +579,40 @@ describe("composer capsule - placeholder + starter chips", () => {
     expect(slot).not.toBeNull();
     expect(slot?.className).toContain("vex-starters");
     expect(screen.getByRole("button", { name: "Check wallet balances" })).toBeTruthy();
+    // Over the composer (docs/design/H3-DESKTOP.md section 1.7), so they come
+    // before the field in reading and focus order too.
+    const field = screen.getByLabelText("Ask Vex");
+    expect(
+      slot !== null && slot.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     typeDraft("typing now");
     expect(container.querySelector("[data-vex-composer-starters]")).not.toBeNull();
+  });
+
+  it("stands the suggestions in the welcome's slot when the welcome stands (D2), and back over the field without it", async () => {
+    const { setWelcomeStartersSlot } = await import("../../welcome-starters-slot.js");
+    const view = render(
+      <>
+        <div ref={setWelcomeStartersSlot} data-testid="welcome-slot" />
+        <SessionComposer activeSession={null} activeSessionId={null} />
+      </>,
+    );
+    const slot = screen.getByTestId("welcome-slot");
+    const grid = (): Element | null => view.container.querySelector("[data-vex-composer-starters]");
+    expect(slot.contains(grid())).toBe(true);
+    expect(view.container.querySelectorAll("[data-vex-composer-starters]")).toHaveLength(1);
+    // Everything the grid does stays the composer's: it conceals in place
+    // while the draft has text (keeping its box) and comes back when it empties.
+    typeDraft("typing now");
+    const list = slot.querySelector('[data-vex-area="composer-starters"]');
+    expect(list?.hasAttribute("data-concealed")).toBe(true);
+    expect(list?.getAttribute("aria-hidden")).toBe("true");
+    typeDraft("");
+    expect(slot.querySelector('[data-vex-area="composer-starters"]')?.hasAttribute("data-concealed")).toBe(false);
+    // With no welcome, over the field again.
+    view.rerender(<SessionComposer activeSession={null} activeSessionId={null} />);
+    expect(grid()).not.toBeNull();
+    expect(grid()?.closest("[data-testid='welcome-slot']")).toBeNull();
   });
 });
 
@@ -399,8 +625,37 @@ describe("composer capsule - slash commands (combobox)", () => {
     field.focus();
     typeDraft("/");
     const listbox = screen.getByRole("listbox", { name: "Composer commands" });
-    expect(listbox.querySelectorAll('[role="option"]').length).toBe(5);
+    // Four since /theme retired with the light room (the app is dark only).
+    expect(listbox.querySelectorAll('[role="option"]').length).toBe(COMPOSER_COMMANDS.length);
+    expect(COMPOSER_COMMANDS).toHaveLength(4);
     expect(document.activeElement).toBe(field);
+  });
+
+  it("draws Cloud's / menu: the box's width on the box's top, the Commands head, the 148 grid", () => {
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    typeDraft("/");
+    const menu = container.querySelector("[data-vex-composer-command-menu]");
+    expect(menu?.className).toBe("vex-slash");
+    expect(menu?.querySelector(".vex-slash__head")?.textContent).toBe("Commands");
+    expect(menu?.querySelector(".vex-slash__head")?.getAttribute("aria-hidden")).toBe("true");
+    const option = screen.getAllByRole("option")[0];
+    expect(option?.className).toBe("vex-slash__row");
+    expect(option?.querySelector(".vex-slash__name")?.textContent).toBe(COMPOSER_COMMANDS[0]?.label);
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-slash \{[^}]*right: 0;[^}]*bottom: 100%;[^}]*left: 0;[^}]*border-top: 1px solid var\(--vex-alias-rule-chosen\);[^}]*background: var\(--vex-alias-card\);/);
+    // On the box it is the box's width, its frame continuing the box's, its
+    // foot on the box's top rule (section 6.5).
+    expect(css).toMatch(
+      /\.vex-composer-box > \.vex-slash \{\s*right: -1px;\s*bottom: calc\(100% \+ 1px\);\s*left: -1px;\s*border-inline: 1px solid var\(--vex-alias-rule-chosen\);\s*\}/,
+    );
+    expect(menu?.parentElement?.className).toContain("vex-composer-box");
+    expect(css).toMatch(/\.vex-slash__head \{[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-slash__row \{[^}]*grid-template-columns: 148px minmax\(0, 1fr\);/);
   });
 
   it("ArrowDown moves the highlight via aria-activedescendant - the options never take focus", () => {
@@ -565,7 +820,7 @@ describe("composer capsule - seats", () => {
       '[data-vex-area="composer-context-ring"]',
     );
     expect(ring?.getAttribute("aria-label")).toBe("Context 45% used");
-    expect(ring?.textContent).toBe("Context 45%");
+    expect(ring?.textContent).toBe("Context45%");
   });
 
   it("no limit reported → no ring; no fabricated denominator", () => {

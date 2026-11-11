@@ -1,0 +1,316 @@
+/**
+ * THE TURN'S TRACE CARD (docs/design/H3-DESKTOP.md section 1.7; VEX Cloud's
+ * built trace, `components/chat/trace/TraceCard.tsx`): one head per turn over
+ * every step of the turn, on the card ground in the 1px rule.
+ *
+ *   div.vex-trace[data-vex-trace-group][data-shut]?   one group of steps: a card at its place in the turn
+ *   ├─ TraceHead                                       only on the turn's first group
+ *   └─ div[data-vex-trace-body]                        hidden="until-found" while the turn is folded
+ *      └─ ol.vex-trace-steps                           the steps, one li each, on the rail at x 19
+ *
+ * THE STEPS (VEX Cloud's `.vx-trace-steps` and `.vx-trace-step`): one list
+ * per group, no rule between steps, a 1px rail through the nodes. Each step
+ * is a grid of the node (12), its kind in caps 10 (MODEL, TOOL; 64), its
+ * text, its time or word, and the chevron (16). A step's key keeps its own
+ * accessible name: the kind column is a drawing (`aria-hidden`).
+ *
+ * A turn's steps sit in several rows (a thought, a call, a fold of calls,
+ * each persisted on its own); each row's step parts are a group, and the head
+ * stands over the first. The fold hides every group of the turn at once: the
+ * steps go, the answer, a receipt, a mission's result and an analysis stay.
+ *
+ * Fold. `turnFold.ts` decides open or shut. A shut group is
+ * `hidden="until-found"`, set imperatively (React writes `hidden` as a
+ * boolean), so find in page still reaches its steps and `beforematch` opens
+ * the turn. A fold never hides focus: a group holding focus as it would hide
+ * opens the turn instead. Nothing slides: the chevron turns, the body goes
+ * at once.
+ *
+ * The head. While the turn runs: the running node, "Working" (muted), the
+ * steps so far; the live frame at the transcript's tail keeps the clock, so
+ * the turn never shows two. Settled: H3's dot grid, "Thought for 2.8s" only
+ * after a turn watched live (`TurnIsland/turnClock.ts`), else "Thought", and
+ * "{n} steps". A stopped or failed turn's head is a label ("Stopped",
+ * "Failed"): no key, no chevron, its steps stay in view. The head carries no
+ * summary of the trace.
+ *
+ * Silent: no live region; the live frame announces the run.
+ */
+
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type JSX,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { LineChevronDown } from "../../../components/icons/line/index.js";
+import { stepsLabel } from "../reasoning-stamp.js";
+import { formatToolDuration } from "../ToolLedger/toolDuration.js";
+import { useTurnFoldView } from "./turnFold.js";
+import type { TurnOutcome } from "./turnSteps.js";
+
+/** What the head of a turn says, as primitives (the rows' memo holds). */
+export interface TraceHeadFacts {
+  readonly steps: number;
+  readonly outcome: TurnOutcome;
+  /** The live turn clock's reading, after a turn watched live. */
+  readonly thoughtMs: number | null;
+}
+
+/**
+ * The head's 3x3 cells (VEX Cloud's `TraceCells`, `.vx-trace-cells`): 3px
+ * cells 2 apart in ink. Resting at 18% with the centre at 50%; done at 30%
+ * with the centre lit; stopped at 30%; while the turn runs the light steps
+ * round the ring into the centre (1100 ms, 120 ms a cell), held still under
+ * reduced motion and Save-Data. A failed turn draws the 9px ink cross.
+ */
+function TraceCells({ tone }: { readonly tone: "run" | "done" | "stopped" }): JSX.Element {
+  return (
+    <span aria-hidden="true" data-tone={tone} data-vex-trace-cells="" className="vex-trace-cells">
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+function TraceHead({
+  anchorId,
+  facts,
+  open,
+  running,
+  onToggle,
+}: {
+  readonly anchorId: number;
+  readonly facts: TraceHeadFacts;
+  readonly open: boolean;
+  readonly running: boolean;
+  readonly onToggle: (anchorId: number) => void;
+}): JSX.Element {
+  const count = stepsLabel(facts.steps);
+  const time = formatToolDuration(facts.thoughtMs);
+  const tone = running
+    ? "run"
+    : facts.outcome === "completed"
+      ? "done"
+      : facts.outcome;
+  const glyph =
+    tone === "failed" ? (
+      <span aria-hidden="true" data-vex-trace-cross="" className="vex-trace-cross" />
+    ) : (
+      <TraceCells tone={tone} />
+    );
+  const label =
+    tone === "run" ? (
+      "Working"
+    ) : tone === "stopped" ? (
+      "Stopped"
+    ) : tone === "failed" ? (
+      "Failed"
+    ) : time === null ? (
+      "Thought"
+    ) : (
+      <>
+        Thought for <span className="vex-reasoned__figure">{time}</span>
+      </>
+    );
+  // A label head adds the turn's time after its count, where one was measured.
+  const total = (tone === "stopped" || tone === "failed") && time !== null ? time : null;
+  const end = (
+    <span data-vex-turn-steps="" className="vex-trace-head__end">
+      {count}
+      {total === null ? null : (
+        <>
+          {count === null ? null : <span aria-hidden="true"> · </span>}
+          <span data-vex-trace-total="">{total}</span>
+        </>
+      )}
+    </span>
+  );
+  // The key's name, said as one phrase: "Thought for 2.8s, 5 steps".
+  const name = [
+    tone === "run" ? "Working" : time === null ? "Thought" : `Thought for ${time}`,
+    count,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
+  const parts = (
+    <>
+      <span aria-hidden className="vex-step__fill">
+        {glyph}
+      </span>
+      <span data-vex-trace-label="" className="vex-trace-head__label">
+        {label}
+      </span>
+      {end}
+    </>
+  );
+  if (tone === "stopped" || tone === "failed") {
+    return (
+      <div data-vex-trace-head="" data-vex-thinking-head="" data-tone={tone} className="vex-trace-head">
+        {parts}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-vex-trace-head=""
+      data-vex-thinking-head=""
+      data-tone={tone}
+      aria-expanded={open}
+      aria-label={name}
+      onClick={(event) => {
+        event.currentTarget.focus();
+        onToggle(anchorId);
+      }}
+      className="vex-trace-head"
+    >
+      {parts}
+      <LineChevronDown size={16} className="vex-trace-head__chev" />
+    </button>
+  );
+}
+
+/**
+ * Hides the body while the turn is folded (see the header). A body holding
+ * focus asks to open instead; `beforematch` (find in page) opens it.
+ */
+function useFoldHide(
+  body: RefObject<HTMLDivElement | null>,
+  hidden: boolean,
+  onReveal: () => void,
+): void {
+  const revealRef = useRef(onReveal);
+  revealRef.current = onReveal;
+  useLayoutEffect(() => {
+    const element = body.current;
+    if (element === null) return;
+    if (!hidden) {
+      element.removeAttribute("hidden");
+      return;
+    }
+    if (element.contains(element.ownerDocument.activeElement)) {
+      revealRef.current();
+      return;
+    }
+    element.setAttribute("hidden", "until-found");
+  }, [body, hidden]);
+  useEffect(() => {
+    const element = body.current;
+    if (element === null) return;
+    const reveal = (): void => revealRef.current();
+    element.addEventListener("beforematch", reveal);
+    return () => element.removeEventListener("beforematch", reveal);
+  }, [body]);
+}
+
+/**
+ * One group of a turn's steps. Outside a whole turn (no `anchorId`, or a row
+ * drawn with no transcript around it) it is its children alone.
+ */
+export function TraceGroup({
+  anchorId,
+  head = null,
+  children,
+}: {
+  readonly anchorId: number | undefined;
+  /** Set on the turn's first group only. */
+  readonly head?: TraceHeadFacts | null;
+  /** The steps, each an `li` (`TraceStepItem`). */
+  readonly children: ReactNode;
+}): JSX.Element {
+  const fold = useTurnFoldView();
+  if (fold === null || anchorId === undefined) {
+    // Outside a whole turn: the same card and list, never folded.
+    return (
+      <div data-vex-trace-group="" className="vex-trace">
+        <div data-vex-trace-body="">
+          <ol className="vex-trace-steps">{children}</ol>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <FoldedGroup
+      anchorId={anchorId}
+      head={head}
+      shut={fold.shut.has(anchorId)}
+      running={fold.runningAnchorId === anchorId}
+      onToggle={fold.toggle}
+      onReveal={fold.reveal}
+    >
+      {children}
+    </FoldedGroup>
+  );
+}
+
+/** One step of a group's list. */
+export function TraceStepItem({
+  kind,
+  children,
+}: {
+  /** Who acts in the step: the model thinking, or a tool. */
+  readonly kind: "model" | "tool";
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <li data-vex-trace-kind={kind} className="vex-trace-step">
+      {children}
+    </li>
+  );
+}
+
+/** The kind column's word, a drawing: the step's key names the step. */
+export function TraceKind({ kind }: { readonly kind: "model" | "tool" }): JSX.Element {
+  return (
+    <span aria-hidden="true" className="vex-step__kind">
+      {kind === "model" ? "Model" : "Tool"}
+    </span>
+  );
+}
+
+function FoldedGroup({
+  anchorId,
+  head,
+  shut,
+  running,
+  onToggle,
+  onReveal,
+  children,
+}: {
+  readonly anchorId: number;
+  readonly head: TraceHeadFacts | null;
+  readonly shut: boolean;
+  readonly running: boolean;
+  readonly onToggle: (anchorId: number) => void;
+  readonly onReveal: (anchorId: number) => void;
+  readonly children: ReactNode;
+}): JSX.Element {
+  const body = useRef<HTMLDivElement>(null);
+  useFoldHide(body, shut, () => onReveal(anchorId));
+  return (
+    <div data-vex-trace-group="" data-shut={shut ? "" : undefined} className="vex-trace">
+      {head === null ? null : (
+        <TraceHead
+          anchorId={anchorId}
+          facts={head}
+          open={!shut}
+          running={running}
+          onToggle={onToggle}
+        />
+      )}
+      <div ref={body} data-vex-trace-body="">
+        <ol className="vex-trace-steps">{children}</ol>
+      </div>
+    </div>
+  );
+}

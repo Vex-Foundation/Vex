@@ -1,6 +1,7 @@
 /**
- * M5: the composer strip and the title bar's token chip must NEVER disagree
- * about what an autonomous agent session is doing.
+ * M5: the composer strip and Vex's state row (D2's column, docs/design/
+ * H3-DESKTOP.md section 6.3; the token chip's heir) must NEVER disagree about
+ * what an autonomous agent session is doing.
  *
  * This is the regression the activity projection exists for. The two surfaces
  * used to answer the question from different inputs (the head word from "is
@@ -8,7 +9,7 @@
  * full-autonomy agent session, which has no run row at all, read RUNNING on
  * neither and "Idle" in the head while it was mid-slice or parked on a wake.
  * Both now read `RuntimeStateDto.activity` through the one selector
- * (`readSessionActivityReadout`; the chip through `useVexPresence`), and this
+ * (`readSessionActivityReadout`; the state row through `useVexPresence`), and this
  * test drives BOTH real components over the same DTO to prove it.
  *
  * Deliberately NOT a unit test of the selector: that function agreeing with
@@ -61,7 +62,14 @@ vi.mock("../../../stores/uiStore.js", () => ({
     select({ activeSessionId: SESSION, runtimeMode: "agent" }),
 }));
 
-const { VexTokenChip } = await import("../../vex/VexTokenChip.js");
+const { useVexPresence } = await import("../../vex/useVexPresence.js");
+const { VexStateRow } = await import("../../vex/VexColumn.js");
+
+/** Vex's state row, as her column draws it from the presence. */
+function StateRow(): ReactElement {
+  const presence = useVexPresence();
+  return <VexStateRow state={presence.state} word={presence.word} timerStartedAt={presence.timerStartedAt} />;
+}
 const { ComposerMissionStrip } = await import(
   "../SessionComposer/ComposerMissionStrip.js"
 );
@@ -95,14 +103,14 @@ function renderBoth(strip: ReactElement): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <VexTokenChip open onToggle={() => undefined} />
+      <StateRow />
       {strip}
     </QueryClientProvider>,
   );
 }
 
 function chip(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']");
+  return document.querySelector<HTMLElement>("[data-vex-area='vex-state-row']");
 }
 
 afterEach(() => {
@@ -110,7 +118,7 @@ afterEach(() => {
   runtimeData.current = null;
 });
 
-describe("strip and chip agree about session activity", () => {
+describe("strip and state row agree about session activity", () => {
   it.each([
     ["running", { kind: "running" } as RuntimeActivity, "working", "Working", "RUNNING"],
     [

@@ -21,7 +21,7 @@
  * R3 Minimal (docs/design/R3-MINIMAL.md sections 1 and 12): a panel over the
  * window, not a blocker (`backdrop="none"`). Fields and labels draw from
  * `SessionCreator/dialog-fields.ts`; the Category cards are square with a
- * 1px rule (the chosen one a 1.5px blue frame and a solid swatch), Severity
+ * 1px rule (the chosen one a 1px blue frame and a solid swatch), Severity
  * is a framed segmented choice over native radios, and the submit feedback is
  * a flat swatch + word row.
  */
@@ -358,10 +358,10 @@ function CategoryRadio({
       className={cn(
         "flex cursor-pointer flex-col gap-1 border",
         "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
-        // The chosen card is a 1.5px blue frame; the padding gives back the
-        // half pixel so the card does not jump when the choice moves.
+        // The chosen card is a 1px blue frame (1px rules only, H3 2.4), the
+        // rest's own width, so the card does not jump when the choice moves.
         checked
-          ? "border-[1.5px] border-accent-primary px-[15.5px] py-[13.5px]"
+          ? "border-accent-primary px-4 py-3.5"
           : "border-rule px-4 py-3.5 hover:bg-interactive-hover",
       )}
     >

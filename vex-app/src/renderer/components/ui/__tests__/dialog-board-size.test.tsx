@@ -2,7 +2,7 @@
  * THE DIALOG'S SIZES AND BACKDROPS.
  *
  * The board size gives the wide surface its own bounded scroll region; every
- * 380px consumer renders one exact class string (the R3 chrome: a 1.5px ink
+ * 380px consumer renders one exact class string (the R3 chrome: a 1px ink
  * frame on the paper); the sheet size drops the centring and the caps; the
  * backdrop is the flat scrim unless a dialog asks for none.
  */
@@ -36,13 +36,14 @@ function renderDialog(size?: "default" | "board" | "sheet"): HTMLDialogElement {
 }
 
 describe("Dialog size variants", () => {
-  it("the default renders the exact R3 prompt column class string", () => {
+  it("the default renders the exact H3 dialog class string: 560, the card ground, the chosen rule", () => {
     const dialog = renderDialog();
     expect(dialog.className).toBe(
-      "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden " +
-        "vex-dialog border-[1.5px] border-rule-ink bg-surface-2 p-0 " +
+      "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[560px] overflow-hidden " +
+        "vex-dialog border border-rule-chosen bg-surface-card p-0 " +
         "text-ink-primary open:flex open:flex-col",
     );
+    expect(dialog.getAttribute("data-vex-dialog-size")).toBe("default");
     expect(dialog.className).not.toMatch(/rounded|shadow|blur/);
   });
 

@@ -350,11 +350,21 @@ describe("SystemCheck", () => {
     });
   });
 
-  it("stands at the right of the stage plate with its crumb and the version stamp", () => {
+  it("stands on H3's stage frame: the title cell, the lead row, Continue at the right, the logs beside the version", () => {
     const { container, getByRole } = render(<SystemCheck />);
     const root = container.querySelector('[data-vex-screen="systemCheck"]');
-    expect(root?.querySelector(".vex-stage-side")).not.toBeNull();
-    expect(root?.querySelector("[data-vex-version-stamp]")).not.toBeNull();
+    expect(root?.classList.contains("vex-pre")).toBe(true);
+    expect(root?.querySelector(".vex-pre__title h1")?.textContent).toBe("System check");
+    expect(root?.querySelector(".vex-pre__sub")?.textContent).toBe("First run · Step 1 of 4");
+    expect(root?.querySelector(".vex-pre-row--first")?.textContent).toBe(
+      "Six quick checks before setup begins.",
+    );
+    // Continue is the bottom row's blue key; the logs folder the bottom-left cell's link.
+    const acts = root?.querySelector(".vex-pre-acts");
+    expect(acts?.querySelector(".vex-pre-primary")?.getAttribute("aria-label")).toBe("Continue setup");
+    const foot = root?.querySelector(".vex-pre__foot");
+    expect(foot?.querySelector("[data-vex-open-logs]")).not.toBeNull();
+    expect(foot?.querySelector("[data-vex-version-stamp]")).not.toBeNull();
     const crumb = getByRole("navigation", { name: "First run" });
     const steps = Array.from(crumb.querySelectorAll("li")).map((li) => li.textContent);
     expect(steps).toEqual([
@@ -390,6 +400,18 @@ describe("SystemCheck", () => {
     });
     render(<SystemCheck />);
     expect(stageVexView(getStageVex()).word).toBe("Error");
+    // Her section stands beside the stage, so it reads Cloud's chat seat: a
+    // failed probe is no money call, and she rests (H3-DESKTOP section 1.6).
+    expect(stageVexView(getStageVex()).mood).toBe("rest");
+  });
+
+  it("offers the way on while the disk holds Continue: the word Error, the red step, her open palm", () => {
+    mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck(NO_SPACE));
+    const { getByRole } = render(<SystemCheck />);
+    expect(getByRole("button", { name: /continue/i }).hasAttribute("disabled")).toBe(true);
+    expect(stageVexView(getStageVex())).toMatchObject({ word: "Error", mood: "offer" });
+    const now = getByRole("navigation", { name: "First run" }).querySelector('[aria-current="step"]');
+    expect(now?.querySelector(".vex-pre-sq")?.getAttribute("data-sq")).toBe("failed");
   });
 
   it("does not let the local runtime's rows set the face on an e2e door run", () => {

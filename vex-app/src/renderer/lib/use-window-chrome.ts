@@ -1,8 +1,11 @@
 /**
  * Window chrome hook: stamps `data-os` / `data-chrome` on <html> for the CSS
- * in styles/global-css/window-chrome.css and, on Windows and Linux, recolours
- * the native overlay whenever the resolved theme changes
- * (vex.system.setTitleBarOverlay). Mounted once at the app root.
+ * in styles/global-css/window-chrome.css and, on Windows and Linux, paints
+ * the native overlay in the room's colours (vex.system.setTitleBarOverlay).
+ * The app is dark only, so the room never changes after the first call; the
+ * call still runs once at mount so a window the main process opened before
+ * the renderer loaded is painted by the renderer's own word. Mounted once at
+ * the app root.
  */
 
 import { useEffect } from "react";

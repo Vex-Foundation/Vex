@@ -1,9 +1,10 @@
 /**
- * The permission as its promise (docs/design/R3-MINIMAL.md section 7): the
- * session's grant, seated in the composer's TRAILING cluster beside the
- * context label, as the words it means for the user, "Funds require approval"
- * (Restricted) or "Full access", 13 / 500 blue with its icon; the tooltip
- * explains the grant (`.vex-composer-promise`, console.css).
+ * The permission as its promise (docs/design/H3-DESKTOP.md section 1.8 and
+ * Appendix A.5): the status strip's second cell, the session's grant as the
+ * words it means for the user, FUNDS REQUIRE APPROVAL in Restricted and FULL
+ * ACCESS in Full access, sans 13 caps; the tooltip explains the grant
+ * (`.vex-composer-promise`, console.css). The words are written in sentence
+ * case and set in caps by the sheet.
  *
  * DISPLAY-ONLY, and deliberately so. Permission is locked at session creation
  * and belongs to the approval boundary; the renderer names it, it never grants
@@ -11,13 +12,13 @@
  * the new session form's own preselect (Restricted); the form is where the
  * grant is chosen.
  *
- * Concession contract (the toolbar's shrink chain):
- *  - the icon is fixed (`shrink-0`) and never disappears;
- *  - the label truncates first (`min-w-0 truncate` inside a `min-w-0` seat);
- *  - below the row container's 460px threshold the label collapses away
- *    entirely and the icon carries the seat. The ACCESSIBLE NAME lives on the
- *    seat element, not on the label span, so collapsing the text can never
- *    remove the name.
+ * Concession contract (the strip's shrink chain): H3 draws the words alone,
+ * so while the strip has room the seat is its words and no icon; below the
+ * strip container's 600px threshold (the chat with the chats column open at 1024) the words
+ * collapse away and the grant's icon carries the seat, fixed (`shrink-0`).
+ * The words truncate before that (`min-w-0 truncate` inside a `min-w-0`
+ * seat). The ACCESSIBLE NAME lives on the seat element, not on the label
+ * span, so collapsing the text can never remove the name.
  */
 
 import type { JSX } from "react";
@@ -30,11 +31,12 @@ import {
 import { Tooltip } from "../../../components/ui/tooltip.js";
 
 /**
- * Container width at which the label collapses to the icon. Shared with the
- * toolbar row, which declares `@container` in `SessionComposer`. Matches the
- * reference threshold (`PermissionSelect.module.css`, `max-width: 460px`).
+ * Strip width at which the words collapse to the icon. Shared with the status
+ * strip, which declares `@container` in `SessionComposer`: under 600 the four
+ * cells (the model and its effort, the promise, the state, the context) no
+ * longer hold the promise's 22 caps beside the rest.
  */
-export const PERMISSION_COLLAPSE_CONTAINER_PX = 460;
+export const PERMISSION_COLLAPSE_CONTAINER_PX = 600;
 
 /** The grant's name, for the accessible name (unchanged since V10). */
 const PERMISSION_NAME: Readonly<Record<SessionPermission, string>> = {
@@ -80,11 +82,12 @@ export function ComposerPermissionSeat({
         // static - permission is locked at creation and never toggles here.
         tabIndex={0}
       >
-        {/* Icons are `aria-hidden` by their own contract. */}
-        <Icon size={16} className="shrink-0" />
+        {/* Icons are `aria-hidden` by their own contract. Only when the
+            words have collapsed. */}
+        <Icon size={16} className="hidden shrink-0 @max-[600px]:block" />
         <span
           data-vex-permission-label
-          className="min-w-0 truncate @max-[460px]:hidden"
+          className="min-w-0 truncate @max-[600px]:hidden"
         >
           {PERMISSION_PROMISE[permission]}
         </span>

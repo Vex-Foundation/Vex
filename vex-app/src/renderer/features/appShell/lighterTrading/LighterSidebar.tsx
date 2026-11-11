@@ -1,46 +1,37 @@
 /**
- * THE LIGHTER TITLE ROW (docs/design/R3-MINIMAL.md sections 3 and 9.3): the
- * centre column's 44px head row on the desk, and the window's drag region.
+ * THE LIGHTER TITLE ROW IN H3's HEADER CELLS (docs/design/H3-DESKTOP.md
+ * sections 1.3 and 4.9; the owner-approved `lighter-desk` plate, plan row
+ * S8-07): the desk's part of the shell's one header row, drawn in the
+ * header's title cell (`ShellHeader` hands it to the running head as the
+ * desk's head), between the logo cell over the rail and the Mainnet cell.
  *
- *   - the LEFT cell says where you are: the Zen key, "Lighter", then the
- *     desk's section and network in muted ("Perps · Robinhood Chain"); in
- *     Zen, the market and interval the chart shows; while a page stands over
- *     the desk (Settings from the rail, Portfolio, a register), the page's own
- *     title as the title bar draws it (`OpenPageTitle`, R3-MINIMAL.md
- *     section 3);
- *   - the MIDDLE cluster (gap 8), centred in the row: Markets & sessions,
- *     New session (Ask Vex in Zen), Core | RHC, then the title bar's own
- *     cluster (export, Notices, Needs you, the token chip), portalled in from
- *     `RunningHead` through `shellStripSlot.ts`. The slot stays mounted in
- *     every state, so the cluster never remounts when Zen folds the row;
- *   - the CORNER, on its own at the right end: the way out. Exit Lighter
- *     returns to the mode the desk was entered from; in Zen it is Exit Zen,
- *     beside the key that hides the Zen controls, and it keeps the corner
- *     while the row is folded, so the way out is never hidden.
+ *   - WHERE YOU ARE, 24 in from the cell's left edge: "Lighter" (sans 15)
+ *     over the desk's section and deployment in muted caps ("Perps · Lighter
+ *     Core"), as a chat's title carries its kind and access. While a page
+ *     stands over the desk (Settings from the rail, Portfolio, a register),
+ *     the page's own title as the title bar draws it (`OpenPageTitle`).
+ *   - THE DESK'S THREE KEYS at the cell's right end, each a 76-wide icon
+ *     cell behind a 1px rule, as the sidebar key is one: Markets and
+ *     sessions (the desk's drawer), New desk session, and Zen. Under 1024 New
+ *     desk session moves into the drawer, at the head of its sessions.
  *
- * The left cell and the corner share the row's spare width equally, which
- * is what holds the middle cluster at the centre.
+ * The row draws no way out: Exit Lighter left it, and the nav on the rail is
+ * the way out. Needs you is the console's (her column), never a header
+ * control, and the Vex key stands over her column at the header's right end.
+ * Core and RHC are the market bar's.
  *
- * Navigation, Settings and the account live in the left rail, which the desk
- * always uses; Markets & sessions opens the drawer (a paper sheet hung from
- * the row's rule: the watchlist and the desk's sessions).
+ * THE DRAWER, Markets and sessions: a flat panel hung from the header's
+ * rule under the title cell (the watchlist and the desk's sessions), a
+ * 1px chosen rule, never a shadow. Escape or a press outside closes it.
  *
- * Zen keeps the chart in the whole window: the row folds to a small handle
- * and Exit Zen, and comes back as an overlay without moving the chart.
+ * ZEN is the third key: the chart in the whole window under Zen's own row,
+ * the chart's toolbar (`ZenRow.tsx`). The header does not stand in Zen.
  */
 
 import { useEffect, useId, useMemo, useRef, type JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
 import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
-import {
-  LineChevronDown,
-  LineChevronUp,
-  LineClose,
-  LinePanelLeft,
-  LinePlus,
-  LineZen,
-} from "../../../components/icons/line/index.js";
-import { VexMark } from "../../../components/common/VexMark.js";
+import { LineMarkets, LinePlus, LineZen } from "../../../components/icons/line/index.js";
 import { useLighterTradingMarkets } from "../../../lib/api/lighter-trading.js";
 import { useSessionsList } from "../../../lib/api/sessions.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
@@ -56,48 +47,44 @@ import {
 } from "../SessionRows.js";
 import { filterSessionsByWorkspace, groupSessions } from "../sessionListModel.js";
 import { useSessionRowActions } from "../useSessionRowActions.js";
-import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { NO_VALUE, formatNumber, formatPrice } from "./format.js";
 import { classifyLighterMarket, type LighterMarketSection } from "./market-classification.js";
 import { marketIdentity } from "./market-selection.js";
-import { setShellStripSlot } from "./shellStripSlot.js";
 
-/** The section words of the market bar's Perps | Stocks | Spot control. */
+/** The section words: the market picker's Perps, Stocks and Spot. */
 const SECTION_WORDS: Readonly<Record<LighterMarketSection, string>> = {
   perp: "Perps",
   stocks: "Stocks",
   spot: "Spot",
 };
 
+/** The three keys' names, which are also their tooltips. */
+export const DESK_HEAD_KEYS = {
+  drawer: "Markets and sessions",
+  session: "New desk session",
+  zen: "Enter Zen Mode",
+} as const;
+
 export function LighterSidebar({
   collapsed,
   onToggleSidebar,
-  zenMode,
-  zenAssistantOpen,
-  zenControlsOpen,
-  onToggleZen,
-  onToggleZenControls,
-  onToggleZenAssistant,
+  band = false,
+  onEnterZen,
 }: {
+  /** The drawer (Markets and sessions) is closed. */
   readonly collapsed: boolean;
+  /** Open or close the drawer. */
   readonly onToggleSidebar: () => void;
-  readonly zenMode: boolean;
-  readonly zenAssistantOpen: boolean;
-  readonly zenControlsOpen: boolean;
-  readonly onToggleZen: () => void;
-  readonly onToggleZenControls: () => void;
-  readonly onToggleZenAssistant: () => void;
+  /** Under 1024: New desk session moves into the drawer. */
+  readonly band?: boolean;
+  /** The Zen key: the chart in the whole window. */
+  readonly onEnterZen: () => void;
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
-  const returnMode = useUiStore((s) => s.lighterReturn?.mode ?? "agent");
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
-  const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const marketId = useLighterAnalysisStore((s) => s.desk.marketId);
-  const resolution = useLighterAnalysisStore((s) => s.desk.resolution);
-  const saveDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const marketsQuery = useLighterTradingMarkets(environment, true);
   const activeMarket = marketsQuery.data?.ok === true
     ? marketsQuery.data.data.markets.find((market) => market.marketId === marketId) ?? null
@@ -134,163 +121,73 @@ export function LighterSidebar({
     };
   }, [collapsed, onToggleSidebar]);
 
-  // The left cell's muted words: the section and the network; in Zen, the
-  // chart's market and interval instead.
+  // The muted line: the section and the deployment.
   const section = activeMarket === null ? null : classifyLighterMarket(environment, activeMarket).section;
   const place = [section === null ? null : SECTION_WORDS[section], LIGHTER_ENVIRONMENT_NAMES[environment]]
     .filter((part): part is string => part !== null)
     .join(" · ");
-  const zenFolded = zenMode && !zenControlsOpen;
-  // A page over the desk is named in this row, the desk's title bar.
+  // A page over the desk is named in this cell, the desk's title bar.
   const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
+
+  const newSession = (): void => {
+    if (!collapsed) onToggleSidebar();
+    openCreateSession();
+  };
 
   return (
     <aside
       ref={rootRef}
-      className="lit-chat-frame lit-desk-topbar"
+      className="lit-desk-head"
       data-vex-area="lighter-sidebar"
       data-vex-sidebar-open={collapsed ? "false" : "true"}
-      data-lighter-theme={theme}
       data-lighter-environment={environment}
-      data-lighter-zen={zenMode ? "true" : undefined}
-      data-zen-controls={zenMode ? zenControlsOpen ? "open" : "closed" : undefined}
       aria-label="Lighter navigation"
     >
-      <header className="lit-desk-topbar-header vex-drag">
-        {zenFolded ? (
+      {/* Where you are: the desk, or the page over it. */}
+      <span className="lit-desk-head__title">
+        {pageOpen ? (
+          <OpenPageTitle />
+        ) : (
+          <>
+            <span className="lit-desk-head__name">Lighter</span>
+            <span className="lit-desk-head__sub">{place}</span>
+          </>
+        )}
+      </span>
+      {/* The desk's three keys, 76-wide icon cells at the cell's end. */}
+      <span className="lit-desk-head__keys">
+        <button
+          type="button"
+          className="lit-desk-head__key"
+          aria-label={DESK_HEAD_KEYS.drawer}
+          title={DESK_HEAD_KEYS.drawer}
+          aria-expanded={!collapsed}
+          aria-controls={collapsed ? undefined : drawerId}
+          onClick={onToggleSidebar}
+        >
+          <LineMarkets size={16} />
+        </button>
+        {band ? null : (
           <button
             type="button"
-            className="lit-zen-controls-reveal"
-            aria-label="Show Zen controls"
-            aria-expanded="false"
-            title="Show Zen controls"
-            onClick={onToggleZenControls}
+            className="lit-desk-head__key"
+            aria-label={DESK_HEAD_KEYS.session}
+            title={DESK_HEAD_KEYS.session}
+            onClick={newSession}
           >
-            <LineChevronDown size={16} />
+            <LinePlus size={16} />
           </button>
-        ) : null}
-        {/* The left cell: where you are. */}
-        <div className="lit-topbar-start">
-          {zenFolded ? null : (
-            <>
-              {zenMode ? null : (
-                <button
-                  type="button"
-                  className="lit-topbar-key lit-zen-toggle"
-                  aria-label="Enter Zen Mode"
-                  title="Zen Mode: a distraction-free chart"
-                  onClick={onToggleZen}
-                >
-                  <LineZen size={16} />
-                </button>
-              )}
-              {pageOpen ? (
-                <OpenPageTitle />
-              ) : (
-                <span className="vex-tb-title lit-topbar-title">
-                  <span className="vex-tb-title__name">Lighter</span>
-                  {zenMode && activeMarket !== null ? (
-                    <span
-                      className="vex-tb-title__sub lit-topbar-zen-market"
-                      aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
-                    >
-                      {activeMarket.symbol} · {resolution}
-                    </span>
-                  ) : (
-                    <span className="vex-tb-title__sub">{place}</span>
-                  )}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        {/* The middle: the desk's keys, then the title bar's cluster. */}
-        <div className="lit-topbar-keys">
-          {zenFolded ? null : (
-            <>
-              <button
-                type="button"
-                className="lit-topbar-pill lit-topbar-distraction"
-                aria-expanded={!collapsed}
-                aria-controls={drawerId}
-                onClick={onToggleSidebar}
-              >
-                <LinePanelLeft size={16} />
-                <span className="lit-topbar-button-label">Markets & sessions</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => openCreateSession()}
-                className="lit-topbar-pill lit-topbar-distraction"
-              >
-                <LinePlus size={16} />
-                <span className="lit-topbar-button-label">New session</span>
-              </button>
-              {zenMode ? (
-                <button
-                  type="button"
-                  className="lit-topbar-pill lit-topbar-ask"
-                  aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-                  aria-pressed={zenAssistantOpen}
-                  title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
-                  onClick={onToggleZenAssistant}
-                >
-                  <VexMark size={16} />
-                  <span className="lit-topbar-button-label">{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
-                </button>
-              ) : null}
-              <EnvironmentSwitch
-                environment={environment}
-                onSelect={(next) => saveDesk({ environment: next, marketId: null })}
-              />
-            </>
-          )}
-          {/* The title bar's cluster lands here (see shellStripSlot.ts). The
-            * slot keeps its place in the row in every state, so a folded Zen
-            * row hides the cluster without remounting it. */}
-          <div className="lit-desk-top-shell" ref={setShellStripSlot} hidden={zenFolded} />
-        </div>
-        {/* The corner: the way out of the desk, or out of Zen. */}
-        <div className="lit-topbar-end">
-          {zenMode ? (
-            <>
-              {zenFolded ? null : (
-                <button
-                  type="button"
-                  className="lit-topbar-key lit-zen-controls-hide"
-                  aria-label="Hide Zen controls"
-                  aria-expanded="true"
-                  title="Hide Zen controls"
-                  onClick={onToggleZenControls}
-                >
-                  <LineChevronUp size={16} />
-                </button>
-              )}
-              <button
-                type="button"
-                className="lit-topbar-pill lit-topbar-exit lit-zen-exit"
-                aria-label="Exit Zen Mode"
-                title="Exit Zen Mode · Esc"
-                onClick={onToggleZen}
-              >
-                <LineClose size={16} />
-                <span className="lit-topbar-exit-label">Exit Zen</span>
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="lit-topbar-pill lit-topbar-exit"
-              aria-label="Exit Lighter"
-              title={`Exit Lighter, back to ${returnMode === "studio" ? "Studio" : "Agent"}`}
-              onClick={() => setRuntimeMode(returnMode)}
-            >
-              <LineClose size={16} />
-              <span className="lit-topbar-exit-label">Exit Lighter</span>
-            </button>
-          )}
-        </div>
-      </header>
+        )}
+        <button
+          type="button"
+          className="lit-desk-head__key lit-zen-toggle"
+          aria-label={DESK_HEAD_KEYS.zen}
+          title="Zen: the chart in the whole window"
+          onClick={onEnterZen}
+        >
+          <LineZen size={16} />
+        </button>
+      </span>
 
       {!collapsed ? (
         <div id={drawerId} className="lit-desk-nav-drawer">
@@ -300,12 +197,18 @@ export function LighterSidebar({
           >
             <Watchlist environment={environment} onSelect={onToggleSidebar} />
             <RailHeading>Sessions</RailHeading>
+            {band ? (
+              <button type="button" className="lit-desk-nav-new" onClick={newSession}>
+                <LinePlus size={16} />
+                <span>{DESK_HEAD_KEYS.session}</span>
+              </button>
+            ) : null}
             {query.isLoading ? (
               <SessionsLoadingPlaceholder sidebarOpen />
             ) : query.data && query.data.ok === false ? (
-              <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
+              <SessionsErrorPlaceholder sidebarOpen />
             ) : query.isError ? (
-              <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
+              <SessionsErrorPlaceholder sidebarOpen />
             ) : query.data && query.data.ok ? (
               groups.length === 0 ? (
                 <SessionsEmptyPlaceholder sidebarOpen />
@@ -340,7 +243,7 @@ export function LighterSidebar({
   );
 }
 
-/** A group head of the drawer: 12 / 500 muted, sentence case. */
+/** A group head of the drawer: muted caps, the console's register. */
 function RailHeading({ children }: { readonly children: string }): JSX.Element {
   return <h2 className="lit-desk-nav-heading">{children}</h2>;
 }

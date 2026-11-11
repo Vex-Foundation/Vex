@@ -1,77 +1,60 @@
 /**
- * VEX LOADER: the quiet loading line (docs/design/R3-MINIMAL.md sections 11
- * and 12). A word and a quiet line, never a skeleton of fake numbers and
- * never a spinner: a 2px track in the quiet rule with one blue segment that
- * steps along it. The pattern lives in `ui-primitives/marks.css`. The visible
- * word belongs to the caller (a swatch and a word beside the line); this
- * primitive announces its label once and draws the line.
+ * VEX LOADER: the loading hatch (docs/design/H3-DESKTOP.md sections 5.6 and
+ * 5.9; VEX Cloud's `.vx-stripes`, "the stepping hatch beside a loading word,
+ * the loader gate's cell"). A 14 square of 135 degree strokes that blinks on
+ * two steps once every 1200ms: never a spinner, never a sweep, never a
+ * skeleton of fake numbers. It replaces R3's quiet loading line (the 2px
+ * track and its stepping blue segment). The visible word belongs to the
+ * caller; this primitive announces its label once and draws the hatch.
  *
- * Motion contract: the segment loops ONLY while mounted, and consumers mount
- * it only for real in-flight work (probes, the runtime start, migrate), never
- * decoratively. `prefers-reduced-motion` and `data-still` rest it in place via
- * CSS; no JS branch is needed.
+ * Motion contract: the hatch loops ONLY while mounted, and consumers mount it
+ * only for real in-flight work (probes, the runtime start, migrate), never
+ * decoratively. Reduced motion and `data-still` hold it still in CSS
+ * (`ui-primitives/marks.css`); no JS branch is needed.
  *
- * `size` is the line's length in px (120 by default, the R3 loading line) and
- * `stroke` its thickness (2 by default). The V10 centre slot is gone: a line
- * has no centre, and no caller filled it.
+ * `tone`: `ink` (default) draws the hatch in ink 2 on the shell; `paper` in
+ * ink on the dark pre-shell plate. `size` and `stroke` were the R3 line's
+ * length and thickness; a hatch is always 14, so they are accepted for the
+ * call sites that still pass them and draw nothing.
  *
  * A11y: `role="status"` + visually-hidden label announce the work once; the
- * line itself is decorative.
+ * hatch itself is decorative.
  */
 
-import type { CSSProperties, JSX } from "react";
+import type { JSX } from "react";
 import { cn } from "../../lib/utils.js";
+import { LoadingHatch } from "./cover.js";
 
 export type VexLoaderTone = "ink" | "paper";
 
 export interface VexLoaderProps {
-  /** Length of the line in px. */
+  /** @deprecated The R3 line's length: a hatch is always 14. Accepted, unused. */
   readonly size?: number;
-  /** Ink family: `ink` = the theme's accent on the shell canvas (default);
-   * `paper` = paper on the dark pre-shell plate. Every `tone="paper"` call
-   * site is a pre-shell surface. */
+  /** Ink family: `ink` = ink 2 on the shell (default); `paper` = ink on the
+   * dark pre-shell plate. Every `tone="paper"` call site is a pre-shell
+   * surface. */
   readonly tone?: VexLoaderTone;
   /** Announced once via role="status"; never rendered visually. */
   readonly label: string;
-  /** Thickness of the line in px (defaults to 2 via CSS). */
+  /** @deprecated The R3 line's thickness. Accepted, unused. */
   readonly stroke?: number;
   readonly className?: string;
 }
 
-/** The R3 loading line's length. */
-const LINE_LENGTH_PX = 120;
-
-export function VexLoader({
-  size = LINE_LENGTH_PX,
-  tone = "ink",
-  label,
-  stroke,
-  className,
-}: VexLoaderProps): JSX.Element {
+export function VexLoader({ tone = "ink", label, className }: VexLoaderProps): JSX.Element {
   return (
     <div
       role="status"
       aria-live="polite"
       data-vex-loader={tone}
       className={cn(
-        "vex-loader",
-        tone === "paper" ? "vex-loader--paper" : "vex-loader--ink",
+        "vex-loader-hatch",
+        tone === "paper" ? "vex-loader-hatch--paper" : "vex-loader-hatch--ink",
         className,
       )}
-      style={
-        {
-          width: size,
-          ...(stroke !== undefined
-            ? { "--vex-loader-stroke": `${stroke}px` }
-            : {}),
-          // Custom-property inline style: a CSSOM property write, CSP-safe
-          // (MOTION-POLICY.md).
-        } as CSSProperties
-      }
     >
       <span className="sr-only">{label}</span>
-      {/* Empty, so assistive technology has nothing to read in it. */}
-      <i className="vex-loader__segment" />
+      <LoadingHatch />
     </div>
   );
 }

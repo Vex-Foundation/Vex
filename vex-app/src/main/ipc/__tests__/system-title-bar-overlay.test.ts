@@ -79,24 +79,26 @@ describe("system.setTitleBarOverlay IPC", () => {
   it("recolours the sender's window with the main-owned colours", async () => {
     const win = fakeWindow();
     mocks.fromWebContents.mockReturnValue(win);
-    const result = await invoke({ theme: "celeris" });
+    const result = await invoke({ theme: "chronos" });
     expect(result).toEqual({ ok: true, data: { applied: true } });
     expect(mocks.fromWebContents).toHaveBeenCalledWith(webContents);
     expect(win.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 43,
-      color: "#F3F4F7",
-      symbolColor: "#0A0D18",
+      height: 75,
+      color: "#010203",
+      symbolColor: "#F3F5F9",
     });
   });
 
-  it("uses the dark plate for chronos", async () => {
+  it("paints the same dark caption for the schema's retired light theme", async () => {
+    // The app is dark only (docs/design/H3-DESKTOP.md section 4.5); the
+    // boundary still accepts the value, and it can no longer paint light.
     const win = fakeWindow();
     mocks.fromWebContents.mockReturnValue(win);
-    await invoke({ theme: "chronos" });
+    await invoke({ theme: "celeris" });
     expect(win.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 43,
-      color: "#1B1412",
-      symbolColor: "#F3F4F7",
+      height: 75,
+      color: "#010203",
+      symbolColor: "#F3F5F9",
     });
   });
 

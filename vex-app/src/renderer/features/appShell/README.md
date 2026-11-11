@@ -45,33 +45,51 @@ A fresh agent should be able to rebuild these surfaces from this file.
 
 Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
-- Head, 44 high (`AgentSidebarHeader.tsx`): the vx mark (`SidebarHomeSigil`,
-  "Back to welcome" in a session) and the collapse key; content starts at 92 on
-  macOS, 16 elsewhere.
-- New chat and Search rows, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
-  Missions, Portfolio, Board, Lighter, Studio, Settings. One action backs every
-  row, `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
-  Chat and Missions are agent mode (Missions on its Mission tab), Portfolio, Board
-  and Settings open pages, Lighter and Studio switch mode. The selected row is
-  `selectNavDestination`: the open page first, then the mode.
-- Search turns its row into the field with All, Agent and Mission tabs and
-  counts (local text, title filter). Escape closes it and drops the Agent tab.
-- Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),
-  the one scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
-  (`sidebar` variant): 34 high, ellipsis name, then the time or a swatch and word
-  from the mission run (`session-row-state.ts`). Hover or focus swaps the time
+- Head: the header's logo cell and sidebar key (`AgentSidebarHeader.tsx`,
+  H3-DESKTOP.md section 1.3): the vx mark alone, 34 x 27 (`SidebarHomeSigil`,
+  "Back to welcome" in a session), set 92 in on macOS after the traffic lights
+  and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
+- New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to
+  edge, then the nav (`SessionRows/SidebarNav.tsx`, H3-DESKTOP.md section 4.6):
+  Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board,
+  Settings (desktop's names where H3 says Markets and Activity), nine caps rows
+  on the 40 pitch between two rules, the selected one on
+  `--vex-alias-row-selected`. One action backs every row,
+  `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
+  Chat and Missions are agent mode (Missions on its Mission tab); Watchlist,
+  Portfolio, Agent Scan (its full feed), Board and Settings open pages; Lighter
+  and Studio switch mode. The selected row is `selectNavDestination`: the open
+  page first (Agent Scan in any scope selects its row), then the mode.
+- The Search chats field is always open in its 48 cell (VEX Cloud's). A typed
+  query (or Missions) enters the search mode: All, Agent and Mission tabs with
+  counts take the nav's place (local text, title filter). "Clear search" stands
+  only while there is a query. Escape clears a query first, then leaves the mode
+  and drops the Agent tab.
+- The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
+  (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
+  scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
+  (`sidebar` variant): 36 high, ellipsis name at 15, then the time (24-hour today
+  and yesterday, `formatChatRowTime`) or H3's tag, a status square and the word in
+  caps, from the mission run (`session-row-state.ts`: Running grey, Waiting ink,
+  Paused and Sleeping grey outlines, Error red). Hover or focus swaps the time
   for Pin and Remove; double-click renames via `vex.sessions.rename`
   (`sessionTitleSchema`-bounded; an unknown id answers ok(null)). The Sessions
   page reuses the row as `register`.
 - Update slot `vex-upd-slot` (`updates/update-card-slot.ts`): `UpdateCard`
   portals into it above the account row; with no slot it floats at the lower left.
-- Account row (`SidebarProfile.tsx`): the vx box, the name or "What should Vex
-  call you?", a status sentence. Its upward menu: Personalize, Memory (when
+- Account cell (`SidebarProfile.tsx`, the bottom row's first cell): the person's
+  avatar disc (the transcript's drawing, the avatar ground on the chosen rule), the name
+  or "You", then "Account and settings" (or the runtime's trouble as a sentence),
+  and the up chevron. Its upward menu, its foot on the cell's top rule:
+  Personalize (which asks for a name while there is none), Memory (when
   enabled), Sessions, Agent Scan, How Vex works, Settings, Lock Vex, a disabled
   Runtime row. Pages open from the trigger's rect (`origin`).
-- Rail: 40 x 40 keys with tooltips (New chat, Search, Chats, the nav, the
-  account box); Chats opens the sidebar, in Lighter the desk's Markets & sessions
-  drawer. No update slot.
+- Rail (76 wide): the open column's H3 cells at the rail's whole width, icon only
+  with tooltips: the Expand key (48, behind its rule; none on the band or the
+  Lighter desk), New chat (55, the cell fill), Search chats (48), the nav keys on
+  the 40 pitch, and the account cell's disc. Chat and Missions open the column on
+  their list; on the Lighter desk the drawer opens from Markets & sessions. No
+  update slot.
 - Studio (`studio/sidebar/StudioSidebar.tsx`): same head, rows, nav and account;
   under the nav New project, Projects with a Welcome row, and the open project's
   explorer in a `SplitPane` sized by `studioRailExplorerShare` (0.2 to 0.8).
@@ -80,22 +98,24 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
 - The centre's 44px drag row (seam `shell-status-strip`), mounted once because
   `GlobalApprovalsSync` owns the approvals live subscription. It reserves the
-  Windows and Linux caption buttons over a narrow Vex column; on the Lighter desk
-  its right cluster portals into the desk's row (`lighterTrading/shellStripSlot.ts`).
+  Windows and Linux caption buttons over a narrow Vex column. On the Lighter desk
+  it is the desk's title cell, holding the desk's head (`lighterTrading/LighterSidebar.tsx`:
+  "Lighter" over the section and deployment, Markets and sessions, New desk
+  session, Zen) and a cluster of a page's keys and Notices only.
 - Left cell: the page name from `screens/page-crumbs.ts` (`titleBarPageOf`); a
   subpage is a crumb with parent links ("Portfolio / Agent Scan"), each going up
   through `goUpToPage`. Else the Studio project or the session title with "Agent ·
   Restricted" and the mission badge (`MissionRail`). The agent welcome has none.
 - Right cluster: a page close key (top-level page outside agent mode), export,
-  the Studio host word, Notices (while any exist), Needs you, the token chip.
-- `features/vex/NeedsYouControl.tsx`: on every screen and mode; checking, none,
-  some (count capped at 99+) and a failed read ("Needs you · ?", Retry). Its
-  panel is the Vex sidebar's `NeedsYouList`. Review never decides: an on-screen
-  card is scrolled to with Reject focused, other approvals open the Needs you page.
-- Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
-  timer, and "n mission running" only while Vex is hidden. It toggles Vex
-  (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + Period
-  (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt) is the same press,
+  the Studio host word, Notices (while any exist), the token chip.
+- Needs you lives in the Vex console (`features/vex/VexConsole.tsx`, the console
+  line under 1024); `NeedsYouAnnouncer` in the header says a rise in its count.
+  Review never decides: an on-screen card is scrolled to with Reject focused,
+  other approvals open the Needs you page.
+- The VEX cell (`features/vex/VexHeadCell.tsx`, D2): VEX and the 44 key that
+  hides or shows Vex's column ("Hide Vex" or "Show Vex"); Cmd or Ctrl + Shift + B
+  (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt; R3's Cmd or Ctrl +
+  Shift + Period still works for one release, unspelled) is the same press,
   off under a modal. `VexStateAnnouncer` is the one live region of the word.
 
 ## Pages in the centre (`screens/`, section 9.6)
@@ -116,19 +136,20 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 - Props `open` and `onHide`; hidden is 0 width and renders nothing inside. Body:
   head and hide key, state (swatch, scope, word, timer, narration, background
   missions), Needs you, Studio's "This project", the page slot (`vex-sidebar-slot.ts`,
-  the Board's Ask Vex), the K2 plate, the "Show avatar" foot. Lighter puts the
-  desk chat under the plate. Avatar off: no plate, the 44px `VexStatus` token.
+  the Board's Ask Vex), Kimm's section, the "Show avatar" foot. Lighter puts the
+  desk chat under the plate.
   Words come from `useVexPresence` (precedence in `vex-state.ts`).
 - Open by page class (`vexPageClass`, `uiStore/layout.ts`): `chat` (`vexOpenChat`,
   open by default: chat, Needs you, Memory, Sessions, How Vex works, Studio),
   `pages` (`vexOpenPages`, hidden: Portfolio and subpages, Board, Settings),
   `lighter` (`vexOpenLighter`, not persisted). `setVexOpen` writes only the
   current class's slot; the frame hands her `vexEffectiveOpen`, the solved width.
-- She docks when the column shows after the shell came up (`vex-dock.ts`).
-  Hiding plays her close first (`vex-hide.ts`): hide key, chip and shortcut call
-  `requestVexHide(commit)`; the sidebar plays the K2 close, then commits (at once
-  under reduced motion, Save-Data, avatar off). A second press keeps her. Derived
-  closes (narrow tier, page default, Zen) go at once.
+- She docks when her column shows again after a hide; the welcome keeps her
+  column (docs/design/H3-DESKTOP.md section 1.7), so nothing hands her over.
+  Hiding lands at the press (`vex-hide.ts`): the Vex key, chip and shortcut call
+  `requestVexHide(commit)`; the sidebar hands focus on and the write lands at
+  once, her section's own wipe being the close. Derived closes (narrow tier, page
+  default, Zen) go at once.
 
 ## Persisted layout (`stores/uiStore.ts`, `uiStore/persistence.ts`)
 

@@ -13,7 +13,8 @@
  *  3. the shape law: base.css squares every element with one `!important`
  *     rule, the radius tokens are 0, the shadow tokens are transparent, and
  *     Tailwind's default radius, shadow and blur scales are reset;
- *  4. the Vex sidebar's print window shows the print as it is;
+ *  4. no print, grain or veil is laid anywhere: the wall and the Vex
+ *     sidebar's print window are retired;
  *  5. a compatibility alias outliving its last consumer (dead-code decree:
  *     when this fails, delete the alias in shell.css).
  */
@@ -168,6 +169,48 @@ describe("the shape law", () => {
     }
   });
 
+  it("names exactly its exceptions: the chat bubbles (her answer in runs), and the avatar circle as SVG geometry", () => {
+    // docs/design/H3-DESKTOP.md section 2.4 (VEX Cloud's STYLE 5.5): only
+    // the bubbles round, 18 with the speaker's corner sharp at 4. A radius
+    // can beat the law only with `!important`; every such declaration in
+    // every sheet is one of these, and nothing else.
+    const winners = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, , body]) => /border(?:-[a-z]+)*-radius:[^;]*!important/.test(body ?? ""))
+        .map(([, selector, body]) => [name, (selector ?? "").trim().replace(/\s+/g, " "), body ?? ""] as const)
+        .filter(([, selector]) => !selector.startsWith("*,")),
+    );
+    const run = ".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose >";
+    expect(winners.map(([name, selector]) => `${name}: ${selector}`)).toEqual([
+      "base.css: .vex-you__body",
+      "base.css: .vex-welcome__greeting",
+      `base.css: ${run} :is(:first-child, :is(.vex-code-block, .vex-md-table) + *):not(.vex-code-block, .vex-md-table)`,
+      `base.css: ${run} :is(:last-child, :has(+ :is(.vex-code-block, .vex-md-table))):not(.vex-code-block, .vex-md-table)`,
+    ]);
+    expect(winners[0]?.[2]).toContain("border-radius: var(--vex-radius-bubble-you) !important;");
+    expect(winners[1]?.[2]).toContain("border-radius: var(--vex-radius-bubble-vex) !important;");
+    // Her answer's runs: the top corners on a run's first part, the bottom
+    // ones on its last; a code block or a table between runs stays square.
+    expect(winners[2]?.[2]).toContain("border-top-left-radius: var(--vex-radius-bubble-corner-speaker) !important;");
+    expect(winners[2]?.[2]).toContain("border-top-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-right-radius: var(--vex-radius-bubble-corner) !important;");
+    expect(winners[3]?.[2]).toContain("border-bottom-left-radius: var(--vex-radius-bubble-corner) !important;");
+    const room = stripComments(tokensCss);
+    expect(declarationValue(room, "--vex-radius-bubble-vex")).toBe("4px 18px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-you")).toBe("18px 4px 18px 18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner")).toBe("18px");
+    expect(declarationValue(room, "--vex-radius-bubble-corner-speaker")).toBe("4px");
+    // The avatar is a circle drawn as SVG, never a CSS radius: the law
+    // leaves it whole, so it needs no exception.
+    const sources = new Map(rendererSources());
+    for (const [file, disc] of [
+      [path.join("features", "appShell", "TranscriptMessage.tsx"), "vex-you__disc"],
+      [path.join("features", "appShell", "SidebarProfile.tsx"), "vex-prof__disc"],
+    ] as const) {
+      expect(sources.get(file), file).toMatch(new RegExp(`<circle className="${disc}"`));
+    }
+  });
+
   it("resets Tailwind's radius, shadow and blur scales, and zeroes the app's own names", () => {
     const theme = stripComments(tokensCss.slice(tokensCss.indexOf("@theme {")));
     for (const reset of ["--radius-*: initial;", "--shadow-*: initial;", "--blur-*: initial;"]) {
@@ -184,55 +227,42 @@ describe("the shape law", () => {
   });
 });
 
-describe("the Vex sidebar's print window (vex-sidebar.css)", () => {
-  it("shows the print as it is: no veil, no filter, no motion over it", () => {
+describe("1px rules only (docs/design/H3-DESKTOP.md section 2.4)", () => {
+  it("draws no frame, rule or outline at 1.5px in any sheet", () => {
+    // VEX Cloud's SK STYLE 2.3: lines and fills are 1px only. R3's heavier
+    // 1.5px ink and blue frames retired; a heavier frame is the ink at 1px.
+    const offenders = allSheets().flatMap(([name, css]) =>
+      [...stripComments(css).matchAll(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/g)].map(
+        (match) => `${name}: ${match[0]}`,
+      ),
+    );
+    expect(offenders).toEqual([]);
+    expect("border: 1.5px solid x;").toMatch(/(?:border(?:-[a-z]+)*|outline(?:-width)?):\s*1\.5px[^;]*;/);
+  });
+
+  it("draws no 1.5px frame through a utility in any renderer source", () => {
+    const pattern = /\b(?:border|outline)(?:-[trblxy])?-\[1\.5px\]/;
+    expect("x border-b-[1.5px] y").toMatch(pattern);
+    const offenders = rendererSources()
+      .filter(([, source]) => pattern.test(source))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("the retired prints (shell.css, vex-sidebar.css)", () => {
+  it("lays no print, grain or veil anywhere: the wall, its veil and the plate's print window are gone", () => {
     const shell = stripComments(shellCss);
-    // The full-window wall and its veil are gone, and so is the left page's
-    // print: the print lives in the Vex sidebar's plate only, and nothing
-    // dims it.
+    const sidebar = stripComments(vexSidebarCss);
+    // The full-window wall and its veil went first, then the left page's
+    // print, and with K2 the Vex sidebar's print window (plan rows S8-16 and
+    // S8-17): her column is Kimm's section, which draws its own ground.
     expect(shell).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
     expect(shell).not.toContain("data-vex-backdrop-dimmed");
     expect(shell).not.toContain(".vex-print");
-    for (const selector of [".vex-vs-plate", ".vex-vs-plate__img", ".vex-vs-plate__grain"]) {
-      const body = ruleBody(vexSidebarCss, selector);
-      expect(body, selector).not.toMatch(/(?:^|[\s;])(filter|backdrop-filter|animation|transition):/);
-    }
-  });
-
-  it("cuts the print into the plate at the sidebar's focal point", () => {
-    const body = ruleBody(vexSidebarCss, ".vex-vs-plate__img");
-    expect(declarationValue(body, "width")).toBe("100%");
-    expect(declarationValue(body, "height")).toBe("100%");
-    expect(declarationValue(body, "object-fit")).toBe("cover");
-    expect(declarationValue(body, "object-position")).toBe("50% 82%");
-    // The user's own image is shown as it is, centred.
-    expect(
-      declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--custom"), "object-position"),
-    ).toBe("50% 50%");
-  });
-
-  it("keeps the plate 280 high, 220 at the least in a low window", () => {
-    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate"), "height")).toBe(
-      "clamp(220px, calc(24.4vh + 60px), 280px)",
-    );
-  });
-
-  it("swaps the day and night prints on the theme attribute", () => {
-    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--day"), "display")).toBe(
-      "none",
-    );
-    expect(
-      declarationValue(
-        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--day'),
-        "display",
-      ),
-    ).toBe("block");
-    expect(
-      declarationValue(
-        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--night'),
-        "display",
-      ),
-    ).toBe("none");
+    expect(sidebar).not.toContain(".vex-vs-plate");
+    for (const sheet of [shell, sidebar]) expect(sheet).not.toMatch(/\/art\/(?:plateau|grain)/);
+    expect(vexSidebarCss).not.toContain('[data-vex-theme="celeris"]');
   });
 });
 

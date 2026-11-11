@@ -18,8 +18,9 @@
  * interval is the reply's own numbers; another interval's ledger is the
  * read's.
  *
- * R3 Minimal (docs/design/R3-MINIMAL.md sections 1.2, 1.3, 6): words in
- * Instrument Sans, every figure in JetBrains Mono with `vex-num`, signals as
+ * R3 Minimal (docs/design/R3-MINIMAL.md sections 1.2, 1.3, 6), in H3's faces
+ * (docs/design/H3-DESKTOP.md section 2.3): words in the sans (Be Vietnam
+ * Pro), every figure in the mono (Roboto Mono) with `vex-num`, signals as
  * words, and status in words rather than colour. The change is ink with its
  * sign: section 1.2 lists the surfaces that take trading colour and a chat
  * card is not one of them. Candles keep their own pair inside the chart. A

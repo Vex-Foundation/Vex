@@ -2,10 +2,15 @@
  * LIGHTER ACCOUNT on the Portfolio page (docs/design/R3-MINIMAL.md section
  * 9.1): the Lighter trading account, which is NOT in the on-chain total above
  * (it lives on the venue, and the total sums on-chain balances only). Four
- * figures in a row (Equity, Available, Margin in use, Unrealized trading PnL)
- * between a rule and a quiet rule, then the open positions as a table
- * (Position, Size, Entry, Mark, Liq. price, Margin, uPnL). "Open Lighter" sits
- * at the right of the head.
+ * figures as a row of ruled cells (Equity, Available, Margin in use,
+ * Unrealized trading PnL), then OPEN POSITIONS and its count over H3's
+ * positions table (docs/design/H3-DESKTOP.md section 4.1 item 13 and A.8): a
+ * framed cell with caps heads, rows 54 high with the market's name over a
+ * muted line of its terms, figures in mono at the right, and the row's key in
+ * a cell of its own at the end. Lighter's columns stand where H3 draws its
+ * strategy table's (Position, Size, Entry, Mark, Liq. price, Margin, uPnL),
+ * with no CLOSE or STOP: this page signs nothing. "Open Lighter" sits at the
+ * right of the head.
  *
  * TRADING COLOURS ON TRADING VALUES ONLY (section 1.2): the Long or Short word
  * and every signed uPnL take trade up or trade down; nothing else on the page
@@ -145,6 +150,34 @@ function signedPercent(fraction: number | null): string | null {
   return `${fraction > 0 ? "+" : ""}${text}%`;
 }
 
+/**
+ * The account's two headline figures for the page's tiles (`PositionBlock`):
+ * equity and the unrealized PnL in the settlement unit, with the PnL's
+ * trading direction and how many positions it is open on. The SAME
+ * derivations this section prints (`accountRisk`, the money words above), so a
+ * tile and the section under it can never disagree. Null for an account that
+ * is not ready, and each figure null where the read does not carry it.
+ */
+export interface LighterTileFigures {
+  readonly unit: "USDC" | "USDG";
+  readonly equity: string | null;
+  readonly unrealizedPnl: string | null;
+  readonly pnlDirection: "up" | "down" | null;
+  readonly openPositions: number;
+}
+
+export function lighterTileFigures(account: LighterTradingAccount | null): LighterTileFigures | null {
+  if (account === null || account.status !== "ready") return null;
+  const risk = accountRisk(account.summary);
+  return {
+    unit: account.environment === "core" ? "USDC" : "USDG",
+    equity: money(risk.equity),
+    unrealizedPnl: signedMoney(risk.unrealizedPnl),
+    pnlDirection: direction(risk.unrealizedPnl),
+    openPositions: account.positions.length,
+  };
+}
+
 /** "Not available" in muted ink where the read carries no figure. */
 function Missing(): JSX.Element {
   return <span className="vex-pf-muted">{NOT_AVAILABLE}</span>;
@@ -209,30 +242,40 @@ function ReadyAccount({ account }: { readonly account: LighterTradingAccount }):
       {account.positions.length === 0 ? (
         <CardStateNote>No open positions.</CardStateNote>
       ) : (
-        <table className="vex-pf-t vex-pf-t--positions" data-vex-area="portfolio-lighter-positions">
-          <thead>
-            <tr>
-              <th scope="col">Position</th>
-              <th scope="col" className="vex-pf-r">Size</th>
-              <th scope="col" className="vex-pf-r">Entry</th>
-              <th scope="col" className="vex-pf-r">Mark</th>
-              <th scope="col" className="vex-pf-r">Liq. price</th>
-              <th scope="col" className="vex-pf-r">Margin</th>
-              <th scope="col" className="vex-pf-r">uPnL</th>
-              <th scope="col" className="vex-pf-act">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {account.positions.map((position) => (
-              <PositionRow
-                key={`${String(position.marketId)}:${position.side}`}
-                position={position}
-              />
-            ))}
-          </tbody>
-        </table>
+        <>
+          {/* H3's OPEN POSITIONS head and its count (section 2.3: a section
+              head, 13 caps, 600), without H3's strategy line: these are the
+              account's Lighter perps, and the marks are the read's own, not a
+              live price (`positionMetrics` without a stream). */}
+          <h3 className="vex-pf-subh">
+            Open positions{" "}
+            <span className="vex-pf-subh__n vex-num">{String(account.positions.length)}</span>
+          </h3>
+          <table className="vex-pf-t vex-pf-t--positions" data-vex-area="portfolio-lighter-positions">
+            <thead>
+              <tr>
+                <th scope="col">Position</th>
+                <th scope="col" className="vex-pf-r">Size</th>
+                <th scope="col" className="vex-pf-r">Entry</th>
+                <th scope="col" className="vex-pf-r">Mark</th>
+                <th scope="col" className="vex-pf-r">Liq. price</th>
+                <th scope="col" className="vex-pf-r">Margin</th>
+                <th scope="col" className="vex-pf-r">uPnL</th>
+                <th scope="col" className="vex-pf-act">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {account.positions.map((position) => (
+                <PositionRow
+                  key={`${String(position.marketId)}:${position.side}`}
+                  position={position}
+                />
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </>
   );
@@ -264,12 +307,19 @@ function PositionRow({ position }: { readonly position: LighterPositionRow }): J
 
   return (
     <tr>
-      <td>
-        {position.symbol}{" "}
-        <span className="vex-pf-side" data-trade={position.side === "long" ? "up" : "down"}>
-          {side}
+      {/* H3's market cell: the name on the first line, a muted line under it
+          (H3 prints the venue and strategy there; desktop prints the
+          position's own terms, its leverage and margin mode). */}
+      <td className="vex-pf-pos">
+        <span className="vex-pf-pos__m">
+          {position.symbol}{" "}
+          {/* The side is a word in ink, never the trading pair (DG5-07,
+            * docs/design/H3-DESKTOP.md section 5.3). */}
+          <span className="vex-pf-side" data-side={position.side}>
+            {side}
+          </span>
         </span>
-        {terms.length > 0 ? <span className="vex-pf-muted">{` · ${terms}`}</span> : null}
+        {terms.length > 0 ? <span className="vex-pf-pos__sub">{terms}</span> : null}
       </td>
       <td className="vex-pf-r vex-num">
         {formatDecimalString(size)} <span className="vex-pf-u">{position.symbol}</span>

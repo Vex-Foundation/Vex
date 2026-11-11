@@ -31,25 +31,151 @@ here is a defect:
 
 - `.vex-expand` (220ms) - the open/close primitive's own budget, one value for
   both directions, stated at its declaration.
-- `TOAST_EXIT_MS` (200ms) and the notification enter (160ms) - the exit is a
-  JS-owned pair (`lib/notifications/notification-model.ts` removes the node
-  when it elapses), so its duration is a behaviour of the notification model
-  rather than a style choice; retuning it is a notification change, not a
-  motion change.
+- `TOAST_EXIT_MS` (1000ms) and the toast's enter (620ms on the push curve,
+  8px down and in) - VEX Cloud's toast (`--vx-duration-toast-fade`,
+  `--vx-dur-caption` on its caption curve, which has the push curve's control
+  points; `docs/design/H3-DESKTOP.md` section 5.1), a cross-app contract. The
+  exit is a JS-owned pair (`lib/notifications/notification-model.ts` removes
+  the node when it elapses), so its duration is a behaviour of the
+  notification model rather than a style choice; retuning it is a
+  notification change, not a motion change.
+- The tooltip's fade in, 160ms - VEX Cloud's `--vx-tooltip-in`
+  (`docs/design/H3-DESKTOP.md` section 5.4): opacity only, on the entrance
+  curve; reduced motion shows it at once. It leaves at once (Cloud fades it
+  out in 220ms, which would need the bubble to outlive its anchor's hover).
+- The Vex key's portrait crossfade, 200ms - VEX Cloud's `.vk-face img` and
+  `.vk-pic` (the H3 mockup's app.css; `docs/design/H3-DESKTOP.md` section
+  1.6): her face and the portrait glyph swap by opacity, with the open
+  ground's fill, on the standard curve, as her section opens or closes.
+  Opacity and a fill only, inside a fixed 76 cell, so nothing moves; reduced
+  motion and Save-Data change it at once (title-bar.css states both).
+- The Vex key's chevron turn, 300ms (`--vex-duration-reveal`, on the
+  standard curve) - VEX Cloud's `.vx-vk-dir > svg` (`styles/header.css`;
+  `docs/design/H3-DESKTOP.md` section 1.6): one up chevron turns 180 degrees
+  as her section closes and back as it opens, at the press. A transform of a
+  16px glyph inside its fixed cell, so nothing moves around it (Cloud rides
+  its house curve, which desktop keeps for a page's re-lay alone); reduced
+  motion and the still frame turn it at once (title-bar.css states both).
+- The general key's hover fill, 420ms (`--vex-duration-key-fill`,
+  `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
+  `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
+  under a hovering pointer. A transform only (`scaleY`), on the entrance
+  curve (Cloud draws it on its own `--vx-ease-ease`, the house curve,
+  which desktop keeps for a page's re-lay alone); reduced motion lands it at
+  once. It shares Kimm's
+  close number by coincidence and borrows nothing of hers.
 - The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
   authored against the landing's own timing and out of scope for the desktop
   scale.
+- Kimm's section, 720ms to open (`--vex-duration-vex-open`,
+  `DURATION_VEX_OPEN_MS`) and 420ms to close (`--vex-duration-vex-close`,
+  `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
+  mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
+  VEX Cloud, so they are a cross-app contract rather than a style step. They
+  are hers, the chats panel's, a page's re-lay's and the next-step bar's rise
+  alone (below): nothing else may borrow them.
+  Her wipe animates clip-path, transform and opacity only, never a size, so
+  the money card beside her never moves (section 3.6); reduced motion and
+  Save-Data land her at once.
+  The wipe runs on Web Animations (`components/vex/kimm/kimm-wipe.ts`), as
+  VEX Cloud's mockup runs it, so its clip and its 1px scan head share one
+  clock from one edge. The scan head runs on the open and on the close, at
+  full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
+  linearly out over the leg's last 8%: an opacity keyed to the leg, not a
+  duration of its own. Her 32px drop rides the same leg, driven by the
+  inset (-32 x inset / distance), so she rises as the wipe closes. A press
+  during a leg turns it from the edge where it stands over
+  max(`DURATION_VEX_TURN_MIN_MS`, base x distance left / distance), the
+  floor 140ms (VEX Cloud's `TURN_MIN_MS`), so a turn near a leg's end still
+  moves rather than snaps. After a pointer's Hide Vex, the console's rest
+  takes no pointer for at least `DURATION_VEX_GUARD_MS` (500ms, Cloud's
+  `SECTION_GUARD_MS`), until the close has ended and the pointer has left the
+  pressed key (`kimm-guard.ts`): a timer, not a motion, named here because it
+  is a number of hers.
+- The chats panel (`features/appShell/ChatsPanel.tsx`,
+  `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
+  (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides
+  over Vex's column in `DURATION_VEX_OPEN_MS` (720ms) and back in
+  `DURATION_VEX_CLOSE_MS` (420ms) on the push curve; its scrim fades in over
+  `DURATION_CHATS_SCRIM_OPEN_MS` (600ms) and out over
+  `DURATION_CHATS_SCRIM_CLOSE_MS` (300ms); its first rows enter over
+  `DURATION_CHATS_ROW_MS` (620ms), row n after `CHATS_ROW_DELAY_MS` +
+  n x `CHATS_ROW_STAGGER_MS` (120 + 45n ms). Web Animations on transform and
+  opacity, JS constants with no CSS twin (no sheet reads them), and no grid
+  track moves, so a waiting card never does. Reduced motion and Save-Data
+  land it at once.
+- The next-step bar's rise, 720ms (`--vex-duration-vex-open`) on the push
+  curve (`MissionControls/MissionNextStepBar.tsx`, chat-transcript.css;
+  `docs/design/H3-DESKTOP.md` section 5.10; owner decision 2026-11-10): on
+  the bar's first appearance for a given state of a given mission (review,
+  start, renew), the blue of its key rises once from the key's foot, a
+  layer under the word scaled from 0 to the full key (`scaleY`, a transform
+  only), then the layer goes and the key rests on its own blue. Attention,
+  once, on arrival: the rise is remembered for the app's run, so a
+  re-render, a remount or a return to the chat never plays it again. It
+  borrows her open step because the owner asked for the push step, not a
+  new number. Reduced motion and Save-Data never start it (the component
+  reads `prefersStillFrame()`; the sheet states its own collapse too), nor
+  does a held key or the ink key a waiting money card leaves it. No timer
+  is paired with it: the layer leaves on its own `animationend`.
+- The running blink, 600ms a cycle (`--vex-duration-blink`,
+  `DURATION_BLINK_MS`) on `steps(2, end)`: a running square's opacity steps
+  from 1 to 0.25 and back (PD-06, `docs/design/H3-DESKTOP.md` section 2.2).
+  It is VEX Cloud's built `--vx-blink`, a cross-app contract like Kimm's
+  timings. It is the drawing of a live state, not decoration: it runs only
+  while the running, working or pending state lasts, and every running square
+  in view blinks in phase (`StateSquare` pins its animation to document time
+  zero). Reduced motion and Save-Data hold it still as half a square, so it
+  never reads as the solid Filled square (`ui-primitives/marks.css`).
+- The loading hatch, 1200ms a cycle (`--vex-duration-blink-hatch`,
+  `DURATION_BLINK_HATCH_MS`) on `steps(2, end)`: the 14px hatch beside a
+  loading word (`.vex-stripes`, `LoadingHatch`) steps its opacity from 1 to
+  0.25 and back on the running square's keyframe at half its pace. It is VEX
+  Cloud's built `--vx-blink-hatch` (`docs/design/H3-DESKTOP.md` section 5.6),
+  a cross-app contract. It is mounted only while a real load lasts, so its
+  loop ends with the wait. Reduced motion and Save-Data hold it still at full
+  ink (`ui-primitives/marks.css`); the parked cover beside it never moves at
+  all.
+  `VexLoader`, desktop's loader, draws this hatch in place of R3's
+  stepping loading line.
+- The loader gate's exit (`components/brand/LoaderGate.tsx`,
+  `docs/design/H3-DESKTOP.md` section 5.9), VEX Cloud's own numbers: the
+  gate fades over 600ms (`--vex-duration-gate-fade`,
+  `DURATION_GATE_FADE_MS`, Cloud's `--vx-dur-item`) on the standard curve,
+  while its mark lifts out to 96% over 700ms (`--vex-duration-gate-mark`,
+  Cloud's `--vx-dur-gate`) on the in-out curve and fades over 500ms
+  (`--vex-duration-gate-mark-fade`, Cloud's `--vx-dur-item-fade`). Cloud
+  lifts the mark on its own `--vx-ease-gate`, cubic-bezier(0.77, 0, 0.18,
+  1); desktop takes the family's in-out curve, (0.76, 0, 0.24, 1), the
+  nearest, since the family admits no sixth. The fade is a JS pair: the
+  component's backstop timer reads `DURATION_GATE_FADE_MS` (plus 120ms)
+  in case `transitionend` never fires. Two timers of the gate are numbers,
+  not motion: a full bar rests 320ms before the fade (`GATE_HOLD_MS`) and
+  after 12 s the bar completes whatever has arrived (`GATE_CEILING_MS`).
+  The fill's walk is a count of real progress, one frame at a time (the
+  whole bar in 2.4 s, at most 50ms a frame), drawn as a clip. Reduced
+  motion and Save-Data: no walk, no rest, no fade; the gate still leaves
+  only when what it counts has arrived.
 
 ### The easing family
 
-One family, three curves, no fourth. All three are declared in `tokens.css`
-and mirrored in `lib/motion/index.ts`:
+One family, five curves, no sixth. The first four are declared in
+`tokens.css` and mirrored in `lib/motion/index.ts`; the fifth is JS only:
 
 | Token | JS mirror | For |
 |---|---|---|
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, the chats panel's slide, the toast's arrival (VEX Cloud's caption curve, the same control points) and the next-step bar's rise, and nothing else |
+| (none: Web Animations only) | `EASE_HOUSE` | a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press (`features/appShell/page-relay.ts`, VEX Cloud's `--vx-ease-ease`), and nothing else |
+
+The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
+chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms
+while opening and at 120 and 240ms while closing, and this curve reproduces
+all five to the printed digits (`motion-tokens.test.ts` replays them). The
+review sheet's own `--ease`, `cubic-bezier(0.625, 0.05, 0, 1)`, is the review
+page's curve, not the app's, and misses those frames by up to about 315px.
 
 A hardcoded `cubic-bezier(...)` anywhere else is a defect. It has happened:
 `dialog[open]` carried `cubic-bezier(0.42, 0, 0.58, 1)` under a comment
@@ -72,10 +198,10 @@ lasts, the signing stroke only while a key is being made. Attention is ONCE
 (`docs/design/R3-MINIMAL.md` section 11): the "awaiting your action" badge
 (`vex-badge--shimmer`, a mission contract or a compaction ready to accept)
 dips its opacity once on arrival, on the reveal step each way, and then rests
-on its swatch and word; it no longer pulses for as long as it waits. The one
-named exception is Vex's portrait, bound by its own section below ("The K2
-portrait"). Motion never delays a committed result, an approval, a final
-error or a security decision.
+on its swatch and word; it no longer pulses for as long as it waits. The two
+named exceptions are Kimm's glyph field and Vex's bars, each bound by its own
+section below ("Kimm's glyph field", "Vex's bars"). Motion never
+delays a committed result, an approval, a final error or a security decision.
 
 Prefer `transform` and `opacity`. Animating a size is reserved for the owner
 of that layout (`.vex-expand`, the shell's column tracks); nothing inside a
@@ -104,6 +230,14 @@ every movement and leaves at most an opacity change. Its holders are the
 toasts (their exit fade stays a fade) and the pre-shell stage plate with the
 handoff turn (the stage and the shell crossfade over a fixed 240ms linear).
 
+**While the window is resized** (VEX Cloud's motion contract, section 3 rule
+6): `data-vex-resizing` stands on `<html>` while the window is dragged and for
+220ms after its last resize event (`RESIZE_SETTLE_MS`, `lib/wide-zoom.ts`),
+`base.css` holds every transition still meanwhile, and the Web Animations
+owners (the chats panel, a page's re-lay, Kimm's wipe) read
+`isWindowResizing()` and land at once, so nothing trails the layout as it
+follows the window. Keyframe loops keep their own time.
+
 What reduced motion means across R3 (`docs/design/R3-MINIMAL.md` section 11),
 and where each part is stated:
 
@@ -113,66 +247,108 @@ and where each part is stated:
 - the shell's column tracks snap: opening or hiding the Vex sidebar is a width
   change with no slide (`shell.css` states its own collapse);
 - swatches and the loading line stop stepping (`ui-primitives/marks.css`);
-- the K2 hologram paints one settled frame (`use-still-frame.ts`): her dock
-  into the sidebar is her simply appearing, and a hide does not wait for her
-  close, the column goes at once;
+- Kimm's glyph field paints one settled frame (`use-still-frame.ts`), and so
+  do Vex's bars, for her mood;
+- Save-Data asks for the same still frame, and since it has no media query
+  it reaches CSS as `data-still` on `<html>`: `public/theme-boot.js` stamps
+  it before first paint and follows the connection's change event
+  (`stampSaveData`, `use-still-frame.ts`), and `base.css` carries a twin of
+  the reduced-motion catch-all under it, with the same one opt-out. A
+  CSS-only motion lands at once under either;
+- Kimm's wipe is Web Animations, which no catch-all reaches, so it takes
+  the instant path in JS: under either, `KimmSection` reads
+  `prefersStillFrame()` at the press, starts no animation and rests her
+  phase at once; the sheet's resting insets are the whole of her
+  (`docs/design/H3-DESKTOP.md` section 3.7);
 - the stage and the shell crossfade over a fixed 240ms linear (the opt-out
   above). Nothing slides.
 
-### The K2 portrait
+### Kimm's glyph field
 
-Vex's portrait (`src/renderer/components/vex/k2/`, one canvas per placement)
-is a presence, not a decoration: she blinks, her hair moves in the wind, by
-default she looks at you and now and then glances away, and while the agent is
-idle she plays one action of her idle pool at a time (the blow, the bird, the
-giggle, the blush, the whistle, the hum). It is bound four ways:
+VEX Cloud's live field behind Kimm's figure, ' VEX' on its blue horizon
+(`src/renderer/components/vex/kimm/KimmField.tsx` over the recipe and gate in
+`kimm-field.ts`, drawn by the Gradient ASCII port `gradient-ascii.ts`;
+`docs/design/H3-DESKTOP.md` sections 1.5, 3.2 and 3.5) is the named loop. It
+is part of how she is drawn, not an idle decoration, and it is bound four
+ways:
 
-- **A 30 fps episode step, a 10 fps idle step.** Her clock steps at 30 fps
-  while an episode plays (the wake, an open, the close and the coin's turn, a
-  gesture) and at 10 fps otherwise (`frameTime`, `EPISODE_FPS` and `STEP_MS`
-  in `k2-time.ts`); her idle life reads the 10 fps step even inside an
-  episode. A frame whose dots, token and light did not change is never
-  repainted, and a settled frame's unchanging dots are drawn once and copied.
-- **A 250ms clock cap.** One animation frame never advances her clock by more
-  than 250ms (`CLOCK_CAP_MS` in `k2-engine.ts`), so a stalled or hidden window
-  resumes where it stopped instead of jumping through a wake or a gesture.
-- **The run gate.** `lib/motion/run-gate.ts` runs her loop only while her
-  canvas is on screen and the window is shown; a hidden window or a folded
-  sidebar paints no frame.
+- **Only while her section is open.** Closed, the field holds its frame in
+  the strip (section 3.2) and draws nothing; opening starts it again from
+  that frame. Her section's open choice is the switch, never her agent's
+  state. Under 1024 her band draws one frame and never runs, and on a page
+  her open section holds its frame (VEX Cloud runs the field only in a
+  chat's section, its `kimmFieldMode`).
+- **The run gate.** `lib/motion/run-gate.ts` runs it only while the field is
+  on screen and the window is shown; a hidden window, a column folded or
+  scrolled away, or the inspect view over her paints no frame. The port also
+  stops its own ticker when hidden or off screen.
+- **A clamped step.** The port advances at most 50ms in one animation frame,
+  so a stalled window resumes where it stopped, and it draws at most twice
+  the CSS pixel. Its pointer trail and click ripple play only while it runs.
 - **The still frame.** Reduced motion and Save-Data
-  (`lib/motion/use-still-frame.ts`) paint one composed frame (awake, the token
-  flat, the beam still, no wind, no gestures, the emotion settled) and repaint
-  only when the theme, the ground, the hover, the emotion or the layout
-  changes. The wake never plays then.
+  (`lib/motion/use-still-frame.ts`) hold it at one frame (the port's
+  `setStill`); no ticker starts.
 
-The agent's state is her pose (`k2-poses.ts`, a 300ms dissolve on her clock),
-and her idle pool plays only in the idle pose, so she never plays over a
-working turn or a pending approval.
+Running or holding is the port's `setStill`, never a remount. It draws on a
+canvas (WebGL2, plain script: no eval, no wasm, the CSP untouched), so it
+moves nothing in the layout and no transition or keyframe of it exists to
+collapse; the bounds above are the whole of its motion. Where WebGL2 is
+missing it draws nothing and her ground keeps the field's baked frame.
 
-Her open and close episodes, the re-wake and the look at you chain run on her
-clock; the still frame skips them (she appears, or the token stands alone).
+### Vex's bars
+
+The bars on the foot of Vex's column, under her line
+(`src/renderer/features/vex/VexBars.tsx` over the pure model `vex-bars.ts`;
+`docs/design/H3-DESKTOP.md` section 1.8 and Appendix A.6; VEX Cloud's bars
+canvas, its `bars()` in the H3 mockup's js/stage.js) are the second named
+loop. They are a display of her mood (ready, busy while she thinks or works,
+approve while a decision waits), never a key and never a reading: no figure,
+no data, no claim (Cloud's PD-15). Their levels ease on a critically damped
+spring toward each mood's sweep or pulse, so they run in every mood, her rest
+included, and they are bound three ways:
+
+- **The run gate.** `lib/motion/run-gate.ts` runs them only while their canvas
+  is on screen and the window is shown; a hidden window, a column folded away
+  or a page without her column paints no frame and asks for none.
+- **A capped step.** One animation frame never eases the levels more than
+  50ms (`VEX_BARS_STEP_CAP_S`), so a stalled window resumes calmly. A frame
+  paints one fill per bar (12 to about 35) and reads no style: the colour is
+  read once per box.
+- **The still frame.** Reduced motion and Save-Data
+  (`lib/motion/use-still-frame.ts`) paint one settled frame for her mood
+  (`VEX_BARS_STILL_S`) and repaint only when her mood or the box changes; no
+  loop starts.
+
+Like the field, they draw on a canvas, so they move nothing in the layout;
+the bounds above are the whole of their motion.
 
 ### The shell and the Vex sidebar
 
-- **The column tracks.** The frame's `grid-template-columns` rides
-  `--vex-duration-reveal` on `--vex-ease-inout`; a sidebar and its rail swap in
-  one commit and only the tracks move. Lighter's chat share drag pauses the
-  transition. Reduced motion snaps the tracks.
-- **The dock.** The welcome has no right sidebar; on the first message Vex
-  docks into it: the sidebar's plate plays her open episode from its token as
-  the column first shows (`vex-dock.ts`, `VexPortraitPlate`), and does again
-  when a hidden column is shown. Under the still frame she simply appears.
-- **The hide waits for her close.** When the user hides the column (its hide
-  key, the title bar's token chip, Cmd or Ctrl + Shift + Period), she collapses
-  into the token in the plate first, and only when that ends does the toggle
-  write the store and the column's track close (`features/vex/vex-hide.ts`).
-  Meanwhile the column is inert and focus that was in it moves to the token
-  chip, which already reads "Show Vex"; pressing a toggle again keeps her (the
-  close stops and she opens again, nothing is written). The wait is skipped,
-  and the column goes at once, under the still frame, with the avatar off, or
-  with her plate hidden under the inspect view. A column the shell closes on
-  its own (the narrow tier when the left sidebar opens, a table page's default,
-  Lighter's Zen) never waits.
+- **The column tracks.** In H3's frame (the agent shell and Studio) the
+  tracks never animate (`docs/design/H3-DESKTOP.md` section 3.6, VEX Cloud's
+  EC-26): a track that slid would carry a waiting card, so the grid snaps at
+  every seam, fold and page strip. On a table page Show Vex and Hide Vex
+  re-lay the page at the press, and it fades in from 0.4 over 720ms opening
+  and 420ms closing on the house curve while her column wipes in with
+  clip-path on the push curve (`features/appShell/page-relay.ts`). On the
+  Lighter desk the frame's `grid-template-columns` still rides
+  `--vex-duration-reveal` on `--vex-ease-inout`; its chat share drag pauses
+  the transition. Reduced motion snaps the tracks and lands the re-lay at
+  once.
+- **Her section opens and closes in its own wipe.** Kimm's section, the
+  welcome's column included, opens in a 720ms clip-path wipe and closes in a
+  420ms one, Web Animations started at the press (`KimmSection`,
+  `kimm-wipe.ts`; the resting insets in kimm.css;
+  `docs/design/H3-DESKTOP.md` section 3.1). A press during a leg stops it
+  and starts the next from the edge where it stood. Under the still frame
+  she simply appears or folds.
+- **A hide lands at the press.** When the user hides her (the header's Vex
+  key, the desk's token chip, Cmd or Ctrl + Shift + B), the toggle writes the
+  store at once and her section's wipe is the close
+  (`features/vex/vex-hide.ts`); focus that was in a column that goes moves to
+  the toggle that brings her back. A column the shell closes on its own (the
+  narrow tier when the left sidebar opens, a table page's default, Lighter's
+  Zen) goes at once too.
 
 ### The CSP rule for motion
 
@@ -193,14 +369,19 @@ Live pairs:
 
 | JS constant | CSS site | Consequence of drift |
 |---|---|---|
-| `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
+| `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding the slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
 
-One pair has no CSS side and cannot drift: the Vex sidebar's hide waits
-`VEX_HIDE_EPISODE_MS` (`features/vex/vex-hide.ts`), which IS her close
-episode's length on her clock (`CLOSE_MS`, `k2-time.ts`), imported rather than
-restated, so the column never goes in the middle of her close nor stands as a
-bare token after it.
+Kimm's wipe is no pair: its clip, its scan head, her 32px drop and the end
+of her phase are one leg of Web Animations (`kimm-wipe.ts`), timed by
+`DURATION_VEX_OPEN_MS` and `DURATION_VEX_CLOSE_MS` alone; the sheet holds
+only where she rests, and no sheet of hers reads `--vex-duration-vex-open`
+or `--vex-duration-vex-close` (they stay declared as the JS constants'
+mirrors, which `motion-tokens.test.ts` holds equal). The one sheet that
+reads `--vex-duration-vex-open` is the next-step bar's rise
+(chat-transcript.css), a CSS keyframe with no JS timer beside it. The lengths the leg moves by are
+read from her box, never repeated: the strip (`--vex-h3-strip-h`, or a
+seat's `--vex-kimm-stub`) and the drop (`--vex-kimm-drop`).
 
 
 CSP for the renderer is strict: `style-src 'self'`: no `'unsafe-inline'`, no
@@ -298,6 +479,10 @@ If a primitive injects runtime `<style>`, two options exist:
 
 - `motion.div`, `motion.span`, etc. with `initial`, `animate`, `exit`,
   `transition` props (React-JSX path).
+- `element.animate()` (Web Animations) for Kimm's wipe (`kimm-wipe.ts`):
+  its keyframes are values handed to the animation engine, not a style
+  string parsed into a `style` attribute or a stylesheet, so `style-src`
+  does not govern it.
 - `useAnimate`, `useScroll`, `useTransform` hooks.
 - `AnimatePresence` for component mount/unmount transitions WITHOUT
   `layout`/`layoutId`.

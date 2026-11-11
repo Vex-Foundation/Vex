@@ -55,19 +55,30 @@
  * which no renderer glob should inline:
  *
  *   6. no Departure Mono anywhere in the renderer's code or sheets;
- *   7. no `font-mono` with `uppercase` in one class string, and no sheet rule
- *      in the mono face with caps: words are Instrument Sans in sentence
- *      case and caps belong to tags (`.vex-stamp`, `.vex-tag`) alone;
+ *   7. mono caps only through their register: H3 sets the money card's
+ *      field labels in mono caps (docs/design/H3-DESKTOP.md section 2.3), so
+ *      a sheet rule may set the mono face with caps only for the field-label
+ *      register (`.vex-field-label`) and the tags (`.vex-stamp`, `.vex-tag`);
+ *      a call site reaches it through the class, never through a
+ *      `font-mono` and `uppercase` pair of utilities. And every caps rule in
+ *      a sheet is tracked: H3 never sets caps untracked;
  *   8. no import of the retired eagle modules (the print plate, the flock
  *      engine, its agent state, the sprite classifier) and no reference to
  *      the eagle or bird art;
  *   9. no citation of the retired V10 spread document anywhere in the app;
  *  10. the trading colours (`trade-up`, `trade-down`) only in the Lighter,
- *      Portfolio, Board and Agent Scan sources and their sheets.
+ *      Portfolio, Board and Agent Scan sources and their sheets;
+ *  11. no colour literal and no primitive in any sheet but tokens.css: a
+ *      sheet paints through the alias tier, so a palette change reaches
+ *      every surface (the H3 look moved nine sheets' strays onto tokens). The
+ *      one exception is the candle pair on the Lighter chart's canvas host;
+ *      the terminal's wire-contract slots live in tokens.css itself.
  *
  * The radius, shadow and blur bans stay where they are: the patterns above
  * for the call sites, `styles/global-css/__tests__/glass-tokens.test.ts` for
- * the sheets and the token scales.
+ * the sheets and the token scales. That suite also holds the shape law's
+ * exceptions to exactly the two chat bubbles (base.css), the avatar circle
+ * being SVG geometry that needs none.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -558,8 +569,28 @@ const DEPARTURE = /Departure Mono|departure-mono/i;
 // in either order; a variant prefix (`md:uppercase`) counts.
 const MONO_CAPS_CLASS =
   /["'`][^"'`\n]*(?<![\w-])font-mono(?![\w-])[^"'`\n]*(?<![\w-])uppercase(?![\w-])|["'`][^"'`\n]*(?<![\w-])uppercase(?![\w-])[^"'`\n]*(?<![\w-])font-mono(?![\w-])/;
-/** Tags own the only caps in the app (ui-primitives/marks.css). */
-const TAG_SELECTOR = /\.vex-(?:stamp|tag)\b/;
+/**
+ * The registers allowed mono caps: the tags (ui-primitives/marks.css) and the
+ * money card's field labels (type.css).
+ */
+const TAG_SELECTOR = /\.vex-(?:stamp|tag|field-label)\b/;
+
+/**
+ * Each rule in the sheet that sets caps with no tracking, by selector. The
+ * shared tag and stamp rule is exempt: its two variants set the tracking.
+ */
+function untrackedCapsRules(css: string): string[] {
+  const offenders: string[] = [];
+  for (const match of stripCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = (match[1] ?? "").trim();
+    const body = match[2] ?? "";
+    if (!/text-transform:\s*uppercase/.test(body)) continue;
+    if (/letter-spacing:/.test(body)) continue;
+    if (/^\.vex-stamp,\s*\.vex-tag$/.test(selector)) continue;
+    offenders.push(selector);
+  }
+  return offenders;
+}
 
 /** Each rule in the sheet whose body sets the mono face and caps, by selector. */
 function monoCapsRules(css: string): string[] {
@@ -637,6 +668,29 @@ function isTradeSource(file: string): boolean {
   return TRADE_SOURCE_PREFIXES.some((prefix) => file.startsWith(prefix));
 }
 
+/** 11. Colour literals and primitives in a declaration value. */
+const COLOUR_LITERAL = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/i;
+const PRIMITIVE_REF = /var\(--color-(?:white|black|paper|blue|blue-hi|night-0|night|night-1|night-2|type-2|type-3|peri|peri-hi|candle-up|candle-down|h3-[a-z0-9-]+)\)/;
+/** The sanctioned primitive references outside tokens.css, by file and property. */
+const PRIMITIVE_EXCEPTIONS = new Set([
+  "lighter-tokens.css :: --lit-candle-up",
+  "lighter-tokens.css :: --lit-candle-down",
+]);
+
+/** Each declaration in a sheet that spells a colour or reaches a primitive. */
+function strayColours(file: string, css: string): string[] {
+  const offenders: string[] = [];
+  for (const match of stripCssComments(css).matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/gi)) {
+    const property = match[1] ?? "";
+    const value = (match[2] ?? "").replace(/url\([^)]*\)/g, "");
+    if (COLOUR_LITERAL.test(value)) offenders.push(`${file} :: ${property}: ${value.trim()}`);
+    else if (PRIMITIVE_REF.test(value) && !PRIMITIVE_EXCEPTIONS.has(`${file} :: ${property}`)) {
+      offenders.push(`${file} :: ${property}: ${value.trim()}`);
+    }
+  }
+  return offenders;
+}
+
 describe("shell design guard (R3 bans)", () => {
   it("scans the renderer's code and sheets", () => {
     // Sanity: a broken walk cannot silently pass every ban below.
@@ -656,12 +710,36 @@ describe("shell design guard (R3 bans)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("sets no word in JetBrains Mono caps: no font-mono with uppercase, no mono caps rule", () => {
+  it("sets mono caps only through the field-label register and the tags", () => {
     const classes = RENDERER_CODE.filter((c) => MONO_CAPS_CLASS.test(c.text)).map((c) => c.file);
     const rules = RENDERER_SHEETS.flatMap((c) =>
       monoCapsRules(c.text).map((selector) => `${c.file} :: ${selector}`),
     );
     expect([...classes, ...rules]).toEqual([]);
+    // The register exists, so the allowance is not a hole.
+    const type = RENDERER_SHEETS.find((c) => c.file === "type.css")?.text ?? "";
+    expect(stripCssComments(type)).toMatch(/\.vex-field-label \{[^}]*font-family: var\(--font-mono\);[^}]*text-transform: uppercase;/);
+  });
+
+  it("tracks every caps rule in every sheet", () => {
+    const rules = RENDERER_SHEETS.flatMap((c) =>
+      untrackedCapsRules(c.text).map((selector) => `${c.file} :: ${selector}`),
+    );
+    expect(rules).toEqual([]);
+  });
+
+  it("sets no display type in the retired serif: no sheet reads it, and its token names the sans", () => {
+    // docs/design/H3-DESKTOP.md section 2.3: Instrument Serif retires and
+    // display type is the sans. The `font-serif` utility's call sites keep
+    // compiling because the token names the display sans; a sheet rule never
+    // spells it.
+    const serifRules = RENDERER_SHEETS.filter(
+      (c) => c.file !== "tokens.css" && stripCssComments(c.text).includes("var(--font-serif)"),
+    ).map((c) => c.file);
+    expect(serifRules).toEqual([]);
+    const tokens = RENDERER_SHEETS.find((c) => c.file === "tokens.css")?.text ?? "";
+    expect(stripCssComments(tokens)).toMatch(/--font-serif:\s*var\(--font-display\);/);
+    expect(stripCssComments(tokens)).toMatch(/--font-display:\s*var\(--font-sans\);/);
   });
 
   it("imports none of the retired eagle modules and loads none of their art", () => {
@@ -691,6 +769,26 @@ describe("shell design guard (R3 bans)", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("spells no colour and reaches no primitive in any sheet but tokens.css", () => {
+    const offenders = RENDERER_SHEETS.filter((c) => c.file !== "tokens.css").flatMap((c) =>
+      strayColours(c.file, c.text),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads a stray colour in every form it takes, and lets the aliases and the candle host pass", () => {
+    expect(strayColours("x.css", ".a { color: #a3abff; }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { --sel: rgba(163, 171, 255, 0.1); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { background: var(--color-night-0); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { background: var(--color-h3-ground); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { color: var(--vex-alias-label-primary); }")).toEqual([]);
+    expect(strayColours("x.css", ".a { background: url(/art/kimm/strip.webp); }")).toEqual([]);
+    expect(strayColours("x.css", "html, body, #root { height: 100%; }")).toEqual([]);
+    expect(
+      strayColours("lighter-tokens.css", ".c { --lit-candle-up: var(--color-candle-up); }"),
+    ).toEqual([]);
+  });
+
   it("keeps the trading colours on the Lighter, Portfolio, Board and Agent Scan surfaces", () => {
     const sources = RENDERER_CODE.filter(
       (c) => TRADE_COLOUR.test(c.text) && !isTradeSource(c.file),
@@ -712,13 +810,19 @@ describe("shell design guard (R3 bans)", () => {
     expect(MONO_CAPS_CLASS.test('className="font-mono-ish not-uppercase"')).toBe(false);
   });
 
-  it("flags a mono caps rule but lets a tag keep its caps", () => {
+  it("flags a mono caps rule but lets a tag and the field-label register keep theirs", () => {
     expect(
       monoCapsRules(".x { font-family: var(--font-mono); text-transform: uppercase; }"),
     ).toEqual([".x"]);
     expect(
       monoCapsRules(".vex-tag, .vex-stamp { font-family: var(--font-mono); text-transform: uppercase; }"),
     ).toEqual([]);
+    expect(
+      monoCapsRules(".vex-field-label { font-family: var(--font-mono); text-transform: uppercase; }"),
+    ).toEqual([]);
+    expect(untrackedCapsRules(".x { text-transform: uppercase; }")).toEqual([".x"]);
+    expect(untrackedCapsRules(".x { text-transform: uppercase; letter-spacing: 0.08em; }")).toEqual([]);
+    expect(untrackedCapsRules(".vex-stamp,\n.vex-tag { text-transform: uppercase; }")).toEqual([]);
     expect(monoCapsRules(".x { font-family: var(--font-sans); text-transform: uppercase; }")).toEqual([]);
     expect(
       monoCapsRules("/* .x { font-family: var(--font-mono); text-transform: uppercase; } */"),

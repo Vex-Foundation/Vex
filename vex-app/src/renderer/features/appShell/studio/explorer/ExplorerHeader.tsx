@@ -12,9 +12,11 @@
  * only contain tree items, so a button in there would put a control in the
  * arrow-key sequence a screen reader walks.
  *
- * R3 (docs/design/R3-MINIMAL.md section 4, "Studio"): one line in the left
- * sidebar's group head register, "Explorer · {project}" in 12 / 500 muted,
- * with the keys at the right as 14px line icons in ink 2 on 24 x 24 targets.
+ * H3 (our approved Studio plate, docs/design/H3-DESKTOP.md section 4.9): a 44
+ * head, EXPLORER in the section head register (13, 600, caps, ink), with the
+ * keys at the right as 16px line icons, muted, on 28 x 28 targets
+ * (left-sidebar.css). The open project's name is the header's title cell, so
+ * the head says the section alone unless a caller names one.
  */
 
 import type { JSX } from "react";
@@ -103,7 +105,7 @@ export function ExplorerHeader({
             onClick={onCreateFile}
             className="vex-st-xkey"
           >
-            <LineFile size={14} />
+            <LineFile size={16} />
           </button>
         </Tooltip>
       )}
@@ -115,7 +117,7 @@ export function ExplorerHeader({
             onClick={onCreateFolder}
             className="vex-st-xkey"
           >
-            <LineFolder size={14} />
+            <LineFolder size={16} />
           </button>
         </Tooltip>
       )}
@@ -126,7 +128,7 @@ export function ExplorerHeader({
           onClick={onRefresh}
           className="vex-st-xkey"
         >
-          <LineRefresh size={14} />
+          <LineRefresh size={16} />
         </button>
       </Tooltip>
       <Tooltip label={EXPLORER_COLLAPSE_ALL_TOOLTIP} side="bottom">
@@ -136,7 +138,7 @@ export function ExplorerHeader({
           onClick={onCollapseAll}
           className="vex-st-xkey"
         >
-          <LineChevronUp size={14} />
+          <LineChevronUp size={16} />
         </button>
       </Tooltip>
     </div>

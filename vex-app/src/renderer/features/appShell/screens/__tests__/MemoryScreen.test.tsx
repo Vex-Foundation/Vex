@@ -133,6 +133,19 @@ describe("MemoryScreen", () => {
     ).toBe(true);
   });
 
+  it("stands the guarantee in the side column, first in the reading order, the register beside it (Cloud's built Memory page)", () => {
+    const { container } = renderScreen();
+    const grid = container.querySelector(".vex-mem-page > .vex-mem-g");
+    expect(grid).not.toBeNull();
+    const side = grid?.querySelector(":scope > aside.vex-mem-side");
+    const main = grid?.querySelector(":scope > .vex-mem-main");
+    expect(side?.getAttribute("aria-label")).toBe("About memory");
+    expect(side?.querySelector(".vex-mem-card")).not.toBeNull();
+    expect(main?.querySelector('[data-vex-screen="memory"]')).not.toBeNull();
+    expect(main?.querySelector("details.vex-mem-more")).not.toBeNull();
+    expect(grid?.firstElementChild).toBe(side);
+  });
+
   it("has no em dash, en dash or caps label in its own words", () => {
     const { container } = renderScreen();
     const dashes = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);

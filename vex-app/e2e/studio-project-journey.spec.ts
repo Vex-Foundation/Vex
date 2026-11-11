@@ -249,7 +249,7 @@ test("Studio journey: create a project, see its report, open it and get a termin
   await expect(report).toBeVisible();
   // The Close button is the other half of the invariant: the pinned slot bounds
   // itself, so the footer keeps its seat whatever the report's length.
-  const close = creator.getByRole("button", { name: "Close" });
+  const close = creator.locator(".vex-dialog-foot").getByRole("button", { name: "Close" });
   await expect(close).toBeVisible();
 
   const runFailure = await report.getAttribute("data-vex-run-failure");
@@ -340,12 +340,13 @@ test("Studio journey: create a project, see its report, open it and get a termin
   expect(box?.height ?? 0).toBeGreaterThan(200);
   await expect(page.locator('[data-vex-area="studio-welcome"]')).toHaveCount(0);
   // The way back to Agent survives the project opening: the left sidebar's nav
-  // stays, with its Chat row (docs/design/R3-MINIMAL.md section 4).
+  // stays, folded to its Studio row with the key that unfolds the Chat row
+  // (our approved Studio plate, docs/design/H3-DESKTOP.md section 4.9).
   await expect(
     page
       .locator('[data-vex-area="studio-sidebar"]')
       .getByRole("navigation", { name: "Main" })
-      .getByRole("button", { name: "Chat" }),
+      .getByRole("button", { name: "Show every page" }),
   ).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await shot(page, testInfo, "02-project-open");

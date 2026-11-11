@@ -14,8 +14,8 @@
  *  - the tour navigator is QA scaffolding the spec owns, so the two probes
  *    that need a screenshot take a `CaptureClip` from the caller rather than
  *    reaching for the tour themselves;
- *  - the theme walk (`pickTheme`) and the output directory are the spec's own
- *    route through the product, not a measurement.
+ *  - the theme check (the app is dark only) and the output directory are the
+ *    spec's own route through the product, not a measurement.
  *
  * `expect` appears here only where a probe cannot continue without the thing
  * it is measuring (no layout, no grid, no reply), the same way

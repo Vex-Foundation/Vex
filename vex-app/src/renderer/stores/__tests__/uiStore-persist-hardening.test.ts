@@ -105,7 +105,9 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
 
     expect(merged.runtimeMode).toBe("studio");
     expect(merged.activeProjectId).toBe("9c1b0e8e-0000-4000-8000-000000000000");
-    expect(merged.themePreference).toBe("celeris");
+    // The one slot that does NOT round-trip: H3 is dark only, so a stored
+    // Celeris coerces to the one room.
+    expect(merged.themePreference).toBe("chronos");
     expect(merged.sidebarOpen).toBe(false);
     expect(merged.bookOpen).toBe(false);
     expect(merged.sidebarWidth).toBe(300);

@@ -1,11 +1,13 @@
 /* ---------------------------------------------------------------------------
- * Order ticket (docs/design/R3-MINIMAL.md sections 1.2, 1.3 and 9.3): the
- * leverage key and the available balance in a 44 high row, Market or Limit
- * tabs, sentence case labels in Instrument Sans over white fields with a 1px
- * rule, every figure in JetBrains Mono, the facts as rows, then "Review with
- * Vex" as the blue outline and Long and Short as the trading fills (trade up
- * and trade down, the arrow carries the direction too). Nothing here signs:
- * "Review order" takes the ticket's place (section 8.6, below).
+ * Order ticket in H3 cells (docs/design/H3-DESKTOP.md section 4.9, the
+ * approved desk plate; plan row S8-09): Cross · 10x and Available in a 40 row
+ * of cells, MARKET | LIMIT as cells, then the order's fields, the only part
+ * that scrolls: caps labels over fields on the chosen rule, Qty | Risk, the
+ * presets, slippage, the Reduce-only and TP/SL ticks, the facts with mono
+ * caps labels. At the foot: REVIEW WITH VEX as a key cell, "Nothing signs
+ * until you confirm.", then LONG | SHORT as raised cells with the side word
+ * in gain or loss type, never a green or red fill and never the blue.
+ * Nothing here signs: "Review order" takes the ticket's place (below).
  * ------------------------------------------------------------------------- */
 
 /* The ticket owns its panel height. Account context and actions stay visible;
@@ -46,28 +48,30 @@
   outline-offset: 2px;
 }
 
-/* 44 high: the leverage key at the left, the available balance at the right. */
+/* A 40 row of cells: the leverage key at the left, the available balance at
+ * the right. */
 .lit-ticket-meta {
   display: flex;
-  min-height: 44px;
+  min-height: 40px;
   flex: 0 0 auto;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 16px;
-  background: var(--lit-panel);
-  font-size: 12.5px;
+  gap: 12px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  padding: 0 16px 0 0;
+  background: var(--lit-bg);
+  font-size: 13px;
 }
 
 .lit-ticket-body {
   display: flex;
   min-height: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 16px 10px;
+  padding: 12px 16px;
 }
 
 .lit-ticket-body::-webkit-scrollbar { width: 5px; }
@@ -79,55 +83,58 @@
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   margin-top: auto;
-  padding: 4px 16px 14px;
-  background: var(--lit-panel);
+  padding: 0;
+  background: var(--lit-bg);
 }
 
-/* Cross · 10x: the leverage key, 28 high, a blue 12.5 / 500 word in a rule
- * frame with the line chevron. */
+/* CROSS · 10X: the leverage key, a cell on the cell fill, caps in ink, the
+ * line chevron after it. */
 .lit-margin-chip {
   display: inline-flex;
-  height: 28px;
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--lit-line);
-  background: transparent;
-  padding: 0 9px;
-  color: var(--lit-positive);
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+  padding: 0 14px 0 16px;
+  color: var(--lit-ink);
   font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-  letter-spacing: normal;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .lit-margin-chip svg { flex: 0 0 auto; }
-.lit-margin-chip:hover { border-color: var(--lit-positive); }
+.lit-margin-chip:hover { background: var(--lit-hover); }
 
 .lit-ticket-available {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
-  align-items: baseline;
+  align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   color: var(--lit-ink-muted);
   white-space: nowrap;
 }
 
 .lit-ticket-available small {
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
   text-overflow: ellipsis;
+  text-transform: uppercase;
 }
 
 .lit-ticket-available b {
   color: var(--lit-ink);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -155,13 +162,15 @@
   gap: 6px;
 }
 
-/* Field labels: 13 / 500 ink 2, sentence case. */
+/* Field labels: caps 12, tracked, muted (H3 section 2.3). */
 .lit-field > span:first-child,
 .lit-protection-leg legend,
 .lit-tif-field legend {
-  color: var(--lit-ink-secondary);
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .lit-field small,
@@ -176,31 +185,31 @@
  * the figure in mono 14. */
 .lit-input-shell {
   display: flex;
-  min-height: 42px;
+  min-height: 44px;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-field);
-  padding: 0 0 0 12px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: transparent;
+  padding: 0 0 0 14px;
 }
 
-.lit-input-shell:focus-within { border-color: var(--lit-positive); }
+.lit-input-shell:focus-within { border-color: var(--lit-ink); }
 
 .lit-input-shell input {
   min-width: 0;
-  height: 40px;
+  height: 42px;
   flex: 1 1 auto;
   border: 0;
   background: transparent;
   color: var(--lit-ink);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   outline: 0;
 }
 
-.lit-input-shell input::placeholder { color: var(--vex-alias-label-tertiary); }
+.lit-input-shell input::placeholder { color: var(--vex-alias-label-placeholder); }
 
 .lit-input-shell b,
 .lit-unit-toggle {
@@ -242,7 +251,7 @@
   gap: 6px;
 }
 
-.lit-slippage-field > span:first-child { font-weight: 400; }
+.lit-slippage-field > span:first-child { color: var(--lit-ink-muted); font-weight: 400; }
 
 .lit-slippage-controls {
   display: grid;
@@ -253,7 +262,7 @@
 
 .lit-slippage-controls > button {
   height: 26px;
-  border: 1px solid var(--lit-line);
+  border: 1px solid var(--vex-alias-rule);
   background: transparent;
   padding: 0 8px;
   color: var(--lit-ink-secondary);
@@ -266,11 +275,11 @@
 .lit-slippage-controls > button + button { margin-left: -1px; }
 .lit-slippage-controls > button:hover { color: var(--lit-ink); }
 
-/* Selected: the selection fill, blue 500. */
+/* Selected: the open ground, in ink. */
 .lit-slippage-controls > button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--lit-positive) 8%, transparent);
-  color: var(--lit-positive);
-  font-weight: 500;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
 }
 
 .lit-slippage-input { min-height: 26px; margin-left: 8px; padding: 0 0 0 6px; }
@@ -307,18 +316,17 @@
 
 .lit-size-slider input[type="range"]::-webkit-slider-runnable-track {
   height: 2px;
-  background: linear-gradient(to right, var(--lit-positive) var(--lit-size-fill, 0%), var(--lit-line-quiet) 0);
+  background: linear-gradient(to right, var(--lit-ink) var(--lit-size-fill, 0%), var(--vex-alias-rule-chosen) 0);
 }
 
+/* The thumb: an ink square (the one blue is a primary key's alone). */
 .lit-size-slider input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
   margin-top: -5px;
   appearance: none;
   border: 0;
-  outline: 1px solid var(--vex-alias-button-accent-edge);
-  outline-offset: -1px;
-  background: var(--lit-action);
+  background: var(--lit-ink);
 }
 
 .lit-size-slider input[type="range"]:disabled::-webkit-slider-thumb {
@@ -342,7 +350,7 @@
 
 .lit-size-presets button {
   height: 26px;
-  border: 1px solid var(--lit-line);
+  border: 1px solid var(--vex-alias-rule);
   background: transparent;
   color: var(--lit-ink-secondary);
   font-family: var(--font-mono);
@@ -356,28 +364,16 @@
 .lit-size-presets button:disabled { color: var(--lit-ink-muted); }
 
 .lit-size-presets button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--lit-positive) 8%, transparent);
-  color: var(--lit-positive);
-  font-weight: 500;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
 }
 
-/* The slider's ticks are labels, not keys in a frame. */
+/* The slider's stops are preset cells under its track (the plate's presets). */
 .lit-size-slider .lit-size-presets button {
-  height: 16px;
-  border: 0;
-  margin-left: 0;
-  padding: 0;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  height: 26px;
+  font-size: 12px;
   text-align: center;
-}
-
-.lit-size-slider .lit-size-presets button:first-child { text-align: left; }
-.lit-size-slider .lit-size-presets button:last-child { text-align: right; }
-
-.lit-size-slider .lit-size-presets button[aria-pressed="true"] {
-  background: transparent;
-  color: var(--lit-positive);
 }
 
 /* Qty | Risk beside the Size label; Risk derives the size from the stop-loss. */
@@ -388,9 +384,10 @@
   gap: 8px;
 }
 
+/* Qty | Risk: two small key cells in caps, the chosen one on the open ground. */
 .lit-size-mode {
   display: inline-flex;
-  border: 1px solid var(--lit-line);
+  border: 1px solid var(--vex-alias-rule);
 }
 
 .lit-size-mode button {
@@ -398,19 +395,21 @@
   border: 0;
   background: transparent;
   padding: 0 10px;
-  color: var(--lit-ink-secondary);
-  font-size: 12.5px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
   font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
-.lit-size-mode button + button { border-left: 1px solid var(--lit-line); }
+.lit-size-mode button + button { border-left: 1px solid var(--vex-alias-rule); }
 .lit-size-mode button:hover:not(:disabled) { color: var(--lit-ink); }
 .lit-size-mode button:disabled { color: var(--lit-ink-muted); cursor: default; }
 
 .lit-size-mode button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--lit-positive) 8%, transparent);
-  color: var(--lit-positive);
-  font-weight: 500;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
 }
 
 .lit-size-field[data-size-mode="risk"] .lit-size-presets { grid-template-columns: repeat(3, 1fr); }
@@ -516,9 +515,9 @@
 .lit-tif-tabs button:hover { color: var(--lit-ink); }
 
 .lit-tif-tabs button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--lit-positive) 8%, transparent);
-  color: var(--lit-positive);
-  font-weight: 500;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
 }
 
 .lit-ticket-options {
@@ -530,12 +529,31 @@
   gap: 8px 20px;
 }
 
+/* The ticks: Reduce-only and TP/SL, a 16 square box in the second ink's
+ * rule, filled with the ink when on; the word in caps (H3 section 2.4). */
 .lit-check-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--lit-ink);
+  gap: 10px;
+  color: var(--lit-ink-secondary);
   font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  appearance: none;
+  border: 1px solid var(--lit-ink-secondary);
+  background: transparent;
+}
+
+.lit-check-row input[type="checkbox"]:checked {
+  border-color: var(--lit-ink);
+  background: var(--lit-ink);
 }
 
 .lit-expiry {
@@ -558,28 +576,33 @@
 
 /* Facts: rows 24 high, the key 12.5 muted, the figure mono 12 in ink, under
  * a quiet rule. */
+/* Facts: rows 22 high under the rule, the label in mono caps 11 (the money
+ * card's field labels, H3 section 2.3), the figure mono 12 in ink. */
 .lit-ticket-facts {
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: 1fr;
   margin: 0;
-  border-top: 1px solid var(--lit-line-quiet);
-  padding-top: 6px;
-  font-size: 12.5px;
+  border-top: 1px solid var(--vex-alias-rule);
+  padding-top: 8px;
+  font-size: 12px;
 }
 
 .lit-ticket-facts > div {
   display: flex;
   min-width: 0;
-  min-height: 24px;
+  min-height: 22px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
+/* The labels wear the field-label register (`.vex-field-label`, type.css),
+ * the one place mono caps are set; here only their size and tone. */
 .lit-ticket-facts dt {
   overflow: hidden;
   color: var(--lit-ink-muted);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -595,47 +618,54 @@
   white-space: nowrap;
 }
 
+/* The promise, between the two keys: sans 12, muted, centred, on its rule. */
 .lit-review-note {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 1px 0 0;
+  margin: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+  padding: 8px 16px;
   color: var(--lit-ink-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.45;
   text-align: center;
 }
 
-/* Review with Vex comes before the manual order keys: the blue outline key,
- * 40 high, the vx mark beside the words. */
+/* REVIEW WITH VEX: a key cell, 44 high on the raised fill, ink caps beside
+ * the vx mark. */
 .lit-ask-draft {
   display: flex;
-  min-height: 40px;
+  min-height: 44px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--lit-positive);
-  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-interactive-solid);
   padding: 0 18px;
-  color: var(--lit-positive);
+  color: var(--lit-ink);
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: normal;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.lit-ask-draft:hover:not(:disabled) { background: var(--lit-hover); }
-.lit-ask-draft:disabled { border-style: dotted; cursor: not-allowed; }
+.lit-ask-draft:hover:not(:disabled) { background: var(--lit-pressed); }
+.lit-ask-draft:disabled { background: var(--vex-alias-bg-layer-3); color: var(--lit-ink-muted); cursor: not-allowed; }
+
+.lit-ticket-footer > .lit-review-outcome { margin: 8px 16px; }
 
 .lit-ticket-approval-action {
   align-self: center;
   border: 0;
   background: transparent;
-  padding: 4px 0;
-  color: var(--lit-positive);
+  padding: 6px 0;
+  color: var(--lit-ink);
   font-size: 13px;
   font-weight: 500;
   text-decoration: underline;
@@ -646,8 +676,8 @@
 .lit-ticket-approval-action:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
 
 /* Ticket feedback: preparation, validation, approval and provider outcomes.
- * A flat note: a 1px ink frame for news, 1.5px for attention, 1.5px with an
- * 8px hatch band for an error. The bar under it drains the time it stays. */
+ * A flat note in a 1px ink frame (1px rules only, H3 2.4), an error with an
+ * 8px hatch band. The bar under it drains the time it stays. */
 .lit-review-outcome {
   position: relative;
   overflow: hidden;
@@ -711,12 +741,7 @@
   from { opacity: 0; }
 }
 
-.lit-review-outcome[data-tone="warn"] {
-  border-width: 1.5px;
-}
-
 .lit-review-outcome[data-tone="error"] {
-  border-width: 1.5px;
   padding-left: 18px;
 }
 
@@ -760,75 +785,69 @@
   cursor: not-allowed;
 }
 
-/* The two side keys: the active side submits, the other flips the ticket and
- * submits for it. Both are orders, so both are full keys: Long in the trade up
- * fill, Short in the trade down fill, 48 high, 15 with an 11 / 500 sub word;
- * white type on paper, night type at night (section 1.2). */
+/* LONG | SHORT: the active side submits, the other flips the ticket and
+ * submits for it. Both are orders, so both are keys: raised cells, 56 high,
+ * side by side on one rule, the side word in caps in INK over the order in
+ * mono muted (VEX Cloud's DG5-07, docs/design/H3-DESKTOP.md section 5.3: a
+ * side is a word, never the trading green and red, because red means
+ * refused). Never a green or red fill, never the blue. */
 .lit-side-actions {
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 0;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
 .lit-side-actions .lit-review-button {
   display: flex;
-  min-height: 48px;
+  min-height: 56px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 3px;
   border: 0;
+  background: var(--vex-alias-interactive-solid);
   padding: 4px 8px;
-  color: var(--vex-alias-trade-ink);
+  color: var(--lit-ink);
   line-height: 1.15;
 }
 
-.lit-side-actions .lit-review-button[data-side="buy"] { background: var(--vex-alias-trade-up); }
-.lit-side-actions .lit-review-button[data-side="sell"] { background: var(--vex-alias-trade-down); }
+.lit-side-actions .lit-review-button + .lit-review-button { border-left: 1px solid var(--vex-alias-rule); }
 
-.lit-side-actions .lit-review-button[data-side="buy"]:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--vex-alias-trade-up) 86%, var(--vex-alias-label-primary));
-}
+.lit-side-actions .lit-review-button:hover:not(:disabled) { background: var(--lit-pressed); }
 
-.lit-side-actions .lit-review-button[data-side="sell"]:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--vex-alias-trade-down) 86%, var(--vex-alias-label-primary));
-}
-
-/* Disabled: the dotted outline in the side's own trading colour. */
-.lit-side-actions .lit-review-button[data-side="buy"]:disabled {
-  outline-color: var(--vex-alias-trade-up);
-  background: transparent;
-  color: var(--vex-alias-trade-up);
-}
-
-.lit-side-actions .lit-review-button[data-side="sell"]:disabled {
-  outline-color: var(--vex-alias-trade-down);
-  background: transparent;
-  color: var(--vex-alias-trade-down);
+/* Disabled: the cell fill with muted words (H3 section 2.4). */
+.lit-side-actions .lit-review-button:disabled {
+  outline: 0;
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--lit-ink-muted);
 }
 
 .lit-side-actions .lit-review-button b {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
-.lit-side-actions .lit-review-button[data-side="buy"] b::before { content: "\2191\00a0"; }
-.lit-side-actions .lit-review-button[data-side="sell"] b::before { content: "\2193\00a0"; }
+.lit-side-actions .lit-review-button[data-side] b { color: var(--lit-ink); }
+.lit-side-actions .lit-review-button:disabled b { color: var(--lit-ink-muted); }
 
 .lit-side-actions .lit-review-button small {
   max-width: 100%;
   overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 @container (max-width: 300px) {
-  .lit-ticket-body,
-  .lit-ticket-footer,
-  .lit-ticket-meta { padding-inline: 10px; }
+  .lit-ticket-body { padding-inline: 10px; }
+  .lit-ticket-meta { padding-inline-end: 10px; }
 }
 
 /* No account yet: the ticket becomes one guided setup block. Each step ends
@@ -897,7 +916,7 @@
   height: 10px;
   flex: 0 0 auto;
   box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   color: var(--lit-positive);
 }
 
@@ -908,10 +927,13 @@
 /* ---------------------------------------------------------------------------
  * "Review order" in the ticket's place (docs/design/R3-MINIMAL.md section
  * 8.6). The slot sits beside the ticket's form and scrolls on its own, so the
- * card's sticky footer holds at short heights. The review is the same R3
- * approval card as the transcript's (approval.css), narrower: padding 12 14
- * 12 16, the sentence at 18, definition columns 112 and 1fr, rows 13 / 1.35,
- * Reject and the action key side by side. No modal, no veil.
+ * card's sticky footer holds at short heights. The review is the same
+ * approval card as the transcript's (approval.css), narrower: H3's cells keep
+ * their rules edge to edge with the text 14 in (the card's one inset,
+ * `--vex-appr-inset`, in place of its 24; the card's inner padding is 0, as
+ * the cells own their inset), the sentence at 18, definition columns 112 and
+ * 1fr, rows 13 / 1.35, Reject and the action key side by side. No modal, no
+ * veil.
  * ------------------------------------------------------------------------- */
 
 .lit-review-slot {
@@ -969,8 +991,11 @@
   font-size: 12.5px;
 }
 
-.lit-order-review .vex-appr { margin: 12px 0 0; }
-.lit-order-review .vex-appr__in { padding: 12px 14px 12px 16px; }
+.lit-order-review .vex-appr {
+  --vex-appr-inset: 14px;
+  margin: 12px 0 0;
+}
+.lit-order-review .vex-appr__in { padding: 0; }
 
 .lit-order-review .vex-appr__title {
   margin-bottom: 8px;
@@ -981,7 +1006,7 @@
 
 .lit-order-review .vex-appr__dl dt,
 .lit-order-review .vex-appr__dl dd {
-  padding: 5px 0;
+  padding-block: 5px;
   font-size: 13px;
   line-height: 1.35;
 }
@@ -1186,7 +1211,7 @@
   outline: none;
 }
 
-.lit-setup-amount input::placeholder { color: var(--lit-ink-muted); }
+.lit-setup-amount input::placeholder { color: var(--vex-alias-label-placeholder); }
 
 .lit-setup-amount b {
   flex: 0 0 auto;
@@ -1212,14 +1237,14 @@
 }
 
 /* Shortfall: the amount is larger than the wallet holds. Names the gap and
- * hands over the address that closes it, in the 1.5px ink frame of
+ * hands over the address that closes it, in the 1px ink frame of
  * attention. */
 .lit-setup-fund {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 1px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   padding: 10px 12px;
 }
 
@@ -1315,7 +1340,7 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: 1px solid currentColor;
   color: var(--lit-ink-secondary);
 }
 

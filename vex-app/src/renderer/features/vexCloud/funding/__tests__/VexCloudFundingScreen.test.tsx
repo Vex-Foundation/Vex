@@ -179,10 +179,18 @@ async function typeAmount(value: string): Promise<void> {
 }
 
 describe("page states", () => {
-  it("loading is a word, never figures", () => {
+  it("loading is the word over the Balance box's covers, never figures", () => {
     bridge.account.mockReturnValue(new Promise(() => undefined));
     renderPage();
-    expect(screen.getByText("Checking Vex Inference")).toBeTruthy();
+    const status = screen.getByRole("status", { name: "Checking Vex Inference…" });
+    expect(status.querySelector(".vex-stripes")).not.toBeNull();
+    const box = screen.getByTestId("funding-balance-loading");
+    expect([...box.querySelectorAll(".vex-inf-fig__k")].map((k) => k.textContent)).toEqual([
+      "Available",
+      "Withdrawable now",
+    ]);
+    expect(box.querySelectorAll(".vex-cover").length).toBeGreaterThan(0);
+    expect(box.textContent).not.toMatch(/\d/);
   });
 
   it("signed out points at Settings and offers no form", async () => {
@@ -221,6 +229,32 @@ describe("page states", () => {
     expect(screen.getByTestId("deposit-mismatch").textContent).toContain(DEPOSIT);
     expect(screen.getByTestId("deposit-mismatch").textContent).toContain(W2);
     expect(screen.queryByLabelText("You send")).toBeNull();
+  });
+});
+
+describe("the Balance box (Cloud's built Vex Inference page as the plate, owner decision 2026-11-09)", () => {
+  it("heads the box Balance with the account's own read time and draws the two figures", async () => {
+    renderPage();
+    const box = await screen.findByTestId("funding-balance");
+    expect(within(box).getByRole("heading", { level: 2 }).textContent).toBe("Balance");
+    const time = box.querySelector(".vex-inf-bal__asof time");
+    expect(time?.getAttribute("datetime")).toBe(NOW);
+    const local = new Date(NOW);
+    const clock = `${String(local.getHours()).padStart(2, "0")}:${String(local.getMinutes()).padStart(2, "0")}`;
+    expect(box.querySelector(".vex-inf-bal__asof")?.textContent).toBe(`As of ${clock}`);
+    expect([...box.querySelectorAll(".vex-inf-fig__k")].map((k) => k.textContent)).toEqual([
+      "Available",
+      "Withdrawable now",
+    ]);
+  });
+
+  it("opens the Withdraw and Deposit tabs from the box's keys", async () => {
+    renderPage();
+    const box = await screen.findByTestId("funding-balance");
+    fireEvent.click(within(box).getByRole("button", { name: "Withdraw" }));
+    expect(screen.getByRole("tab", { name: "Withdraw" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(within(box).getByRole("button", { name: "Deposit" }));
+    expect(screen.getByRole("tab", { name: "Deposit" }).getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -574,10 +608,11 @@ describe("withdraw", () => {
     expect(form.textContent).toContain("withdrawable now 998.82 VEX");
     expect(form.textContent).toContain("Daily limit left: 500.12 VEX");
     expect(form.textContent).not.toMatch(/\d\.\d{3,} VEX/);
-    // The page's own line: an estimate under a cent is "less than $0.01".
-    const top = screen.getByTestId("funding-available").parentElement;
-    expect(top?.textContent).toContain("998.82 VEX · less than $0.01 · withdrawable now 998.82 VEX");
-    expect(top?.textContent).not.toContain("about less than");
+    // The page's Balance box: an estimate under a cent is "less than $0.01".
+    const available = screen.getByTestId("funding-available").parentElement;
+    expect(available?.textContent).toBe("Available998.82 VEXless than $0.01");
+    expect(available?.textContent).not.toContain("about less than");
+    expect(screen.getByTestId("funding-withdrawable").textContent).toBe("998.82 VEX");
 
     fireEvent.change(screen.getByLabelText("You withdraw"), { target: { value: "998.822910592527374555" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Review withdrawal" }).hasAttribute("disabled")).toBe(false));

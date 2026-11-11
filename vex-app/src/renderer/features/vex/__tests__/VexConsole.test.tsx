@@ -1,0 +1,464 @@
+/**
+ * The Vex console (docs/design/H3-DESKTOP.md section 1.5; Appendix A.3). The
+ * Needs you model is built here from fixtures with the real `needs-you.ts`
+ * (its own rules are `needs-you.test.ts`); this suite pins what the console
+ * draws from it:
+ *
+ *  - NEEDS YOU and its count: the number, "?" after a failed read, nothing
+ *    before the first read; never a 0 nobody verified;
+ *  - one decision row at a fixed height: the card's own sentence, its meta
+ *    line with the time as a figure, and a key with the item's word that only
+ *    opens the item; with several waiting, the one that expires first;
+ *  - "Nothing needs you." at zero, and never for a read that failed or has
+ *    not answered: those say so, the failed one with Retry;
+ *  - the missions row: what runs on Mainnet, the one named, "No mission
+ *    running" with none, nothing before the sessions answer; its key opens
+ *    the mission or the missions list; it closes the top block;
+ *  - This project in Studio, from the open project's own read, and Open
+ *    activity to Agent Scan, in Studio in the project's own scope.
+ */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { approvalNeedsYouItem, needsYouLeadOf, type NeedsYouItem } from "../needs-you.js";
+import type { NeedsYouResult } from "../useVexPresence.js";
+import { NO_BACKGROUND_WORK, backgroundWorkOf } from "../background-work.js";
+import { approval, session } from "./fixtures.js";
+
+/** What `projects.get` answers for the open project, per test. */
+const project = vi.hoisted(() => ({ current: null as unknown, loading: false }));
+vi.mock("../../../lib/api/projects.js", () => ({
+  useProject: () => ({
+    isLoading: project.loading,
+    data: project.current === null ? undefined : { ok: true, data: project.current },
+  }),
+}));
+vi.mock("../../../lib/api/wallet-inventory.js", () => ({
+  useAvailableWallets: () => ({
+    data: {
+      ok: true,
+      data: {
+        evm: [],
+        solana: [{ id: "sol-1", address: "H3FixtureWa11etSo1anaxxxxxxxxxxxxxxxxxxxxxx", label: "Trading wallet" }],
+      },
+    },
+  }),
+}));
+/** What `sessions.get` answers for the open chat, per test. */
+const chat = vi.hoisted(() => ({ current: null as unknown }));
+/** What the sessions list answers, per test: the missions row reads its failure. */
+const sessionsList = vi.hoisted(() => ({ current: { data: undefined, isError: false } as unknown }));
+vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useSession: (id: string | null) => ({
+    data: id === null || chat.current === null ? undefined : { ok: true, data: chat.current },
+  }),
+  useSessionsList: () => sessionsList.current,
+}));
+
+const {
+  OpenActivityKey,
+  VexConsoleMissions,
+  VexConsoleNeedsYou,
+  VexConsoleThisProject,
+  VexConsoleTop,
+  PROJECT_ACCESS_SENTENCE,
+  needsYouCountText,
+} = await import("../VexConsole.js");
+const { useUiStore } = await import("../../../stores/uiStore.js");
+
+const SESSION = "00000000-0000-4000-8000-0000000000a1";
+const OTHER = "00000000-0000-4000-8000-0000000000c3";
+const NOW = Date.parse("2026-11-04T12:30:00.000Z");
+
+function model(overrides: Partial<NeedsYouResult> = {}): NeedsYouResult {
+  return {
+    status: "ready",
+    unknownCopy: null,
+    count: 0,
+    items: [],
+    retry: vi.fn(),
+    retrying: false,
+    ...overrides,
+  };
+}
+
+function ready(items: NeedsYouItem[]): NeedsYouResult {
+  return model({ count: items.length, items });
+}
+
+function section(): HTMLElement {
+  const el = document.querySelector<HTMLElement>("[data-vex-area='vex-needs-you']");
+  if (el === null) throw new Error("the console's Needs you is missing");
+  return el;
+}
+
+function row(): HTMLElement {
+  const el = section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-row']");
+  if (el === null) throw new Error("the decision row is missing");
+  return el;
+}
+
+beforeEach(() => {
+  useUiStore.setState({
+    runtimeMode: "agent",
+    activeSessionId: SESSION,
+    shellRoute: { kind: "none" },
+  });
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe("the console's Needs you head", () => {
+  it("says NEEDS YOU and the count, which a failed read never makes a zero", () => {
+    expect(needsYouCountText(model({ count: 0 }))).toBe("0");
+    expect(needsYouCountText(model({ count: 3 }))).toBe("3");
+    // A failed read draws no count at all (VEX Cloud's console): not "?", never 0.
+    expect(needsYouCountText(model({ status: "unknown", count: null }))).toBeNull();
+    expect(needsYouCountText(model({ status: "loading", count: null }))).toBeNull();
+
+    render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
+    const head = within(section()).getByRole("heading", { level: 2 });
+    expect(head.querySelector(".vex-console__label")?.textContent).toBe("Needs you");
+    expect(head.querySelector(".vex-console__count")?.textContent).toBe("0");
+    // The section is named by its head.
+    expect(screen.getByRole("region", { name: /^Needs you/ })).toBe(section());
+  });
+
+  it("draws no count while the first read runs, and holds the row with a cover", () => {
+    render(<VexConsoleNeedsYou needsYou={model({ status: "loading", count: null })} />);
+    expect(section().querySelector(".vex-console__count")).toBeNull();
+    // The parked cover, never a pulse: one status named Loading, no words.
+    const cover = within(row()).getByRole("status", { name: "Loading" });
+    expect(cover.querySelector(".vex-cover")).not.toBeNull();
+    expect(row().textContent).toBe("");
+    expect(row().textContent).not.toContain("Nothing needs you.");
+  });
+});
+
+describe("the console's decision row", () => {
+  it("says Nothing needs you. at zero, in its fixed row", () => {
+    render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
+    expect(row().textContent).toBe("Nothing needs you.");
+    expect(within(row()).queryByRole("button")).toBeNull();
+  });
+
+  it("mutes a zero count, and only a zero (VEX Cloud's b[data-zero])", () => {
+    const view = render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
+    expect(section().querySelector(".vex-console__count")?.hasAttribute("data-zero")).toBe(true);
+    view.unmount();
+    const item = approvalNeedsYouItem(approval({ id: "a1", sessionId: SESSION }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([item])} />);
+    expect(section().querySelector(".vex-console__count")?.hasAttribute("data-zero")).toBe(false);
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/vex-sidebar.css"), "utf8");
+    expect(sheet).toMatch(/\.vex-console__count\[data-zero\] \{\s*color: var\(--vex-alias-label-tertiary\);/);
+  });
+
+  it("gives the card's own sentence, its meta line, and a key that only opens the card", () => {
+    const item = approvalNeedsYouItem(
+      approval({ id: "a1", sessionId: SESSION, toolName: "BridgeExecute", sessionTitle: "Treasury chat" }),
+      NOW,
+    );
+    useUiStore.setState({ shellRoute: { kind: "memory", origin: null } });
+    render(<VexConsoleNeedsYou needsYou={ready([item])} />);
+    expect(section().querySelector(".vex-console__count")?.textContent).toBe("1");
+    expect(row().querySelector(".vex-console__sentence")?.textContent).toBe(item.title);
+    const meta = row().querySelector(".vex-console__meta");
+    expect(meta?.textContent).toBe(
+      item.metaTime === null ? item.metaLead : `${item.metaLead} ${item.metaTime}`,
+    );
+    const review = within(row()).getByRole("button", { name: `Review: ${item.title}` });
+    expect(review.textContent).toBe("Review");
+    fireEvent.click(review);
+    // The card is in the chat beside the console: the page over it closes.
+    expect(useUiStore.getState().activeSessionId).toBe(SESSION);
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("points its key down at a card in the chat beside it, and onward at one raised elsewhere", () => {
+    const here = approvalNeedsYouItem(approval({ id: "a1", sessionId: SESSION }), NOW);
+    const view = render(<VexConsoleNeedsYou needsYou={ready([here])} />);
+    const glyph = (): string | null | undefined =>
+      row().querySelector(".vex-console__key path")?.getAttribute("d");
+    expect(glyph()).toBe("M4 6l4 4 4-4");
+    view.unmount();
+    const elsewhere = approvalNeedsYouItem(approval({ id: "a2", sessionId: OTHER }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([elsewhere])} />);
+    expect(glyph()).not.toBe("M4 6l4 4 4-4");
+    fireEvent.click(within(row()).getByRole("button", { name: `Review: ${elsewhere.title}` }));
+    expect(useUiStore.getState().activeSessionId).toBe(OTHER);
+  });
+
+  it("names the chat a decision from elsewhere waits in, and not the chat on screen", () => {
+    // VEX Cloud's consoleMetaOf: Chat “{title}” leads the meta line,
+    // dropped only for the chat on screen.
+    useUiStore.setState({ runtimeMode: "agent", activeSessionId: SESSION });
+    const elsewhere = approvalNeedsYouItem(
+      approval({ id: "a2", sessionId: OTHER, sessionTitle: "Treasury chat" }),
+      NOW,
+    );
+    const view = render(<VexConsoleNeedsYou needsYou={ready([elsewhere])} />);
+    const meta = (): string | null | undefined => row().querySelector(".vex-console__meta")?.textContent;
+    expect(meta()?.startsWith(`Chat “Treasury chat” · ${elsewhere.metaLead}`)).toBe(true);
+    view.unmount();
+    const untitled = approvalNeedsYouItem(approval({ id: "a3", sessionId: OTHER, sessionTitle: null }), NOW);
+    const second = render(<VexConsoleNeedsYou needsYou={ready([untitled])} />);
+    expect(meta()?.startsWith("Chat “Untitled chat” · ")).toBe(true);
+    second.unmount();
+    const here = approvalNeedsYouItem(
+      approval({ id: "a1", sessionId: SESSION, sessionTitle: "This chat" }),
+      NOW,
+    );
+    render(<VexConsoleNeedsYou needsYou={ready([here])} />);
+    expect(meta()?.startsWith(here.metaLead)).toBe(true);
+    expect(meta()).not.toContain("Chat “");
+  });
+
+  it("lists every decision, the one that expires first leading, and counts them all", () => {
+    const soon = approvalNeedsYouItem(
+      approval({ id: "a1", sessionId: OTHER, expiresAt: "2026-11-04T12:40:00.000Z" }),
+      NOW,
+    );
+    const later = approvalNeedsYouItem(
+      approval({ id: "a2", sessionId: OTHER, expiresAt: "2026-11-04T13:40:00.000Z" }),
+      NOW,
+    );
+    const open = approvalNeedsYouItem(approval({ id: "a3", sessionId: OTHER, expiresAt: null }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([open, later, soon])} />);
+    expect(section().querySelector(".vex-console__count")?.textContent).toBe("3");
+    // Every decision is listed (VEX Cloud's console), the soonest first.
+    const items = within(row()).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]?.querySelector(".vex-console__meta")?.textContent).toContain("expires");
+    expect(
+      within(row()).getAllByRole("button").map((key) => key.getAttribute("aria-label")),
+    ).toEqual([soon, open, later].map((item) => `Review: ${item.title}`));
+    // The cue says how many wait beyond the row, and pages the list.
+    const cue = section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-cue']");
+    expect(cue?.textContent).toBe("2 more below");
+    expect(cue?.getAttribute("data-dir")).toBe("down");
+  });
+
+  it("pages the list a row at a time and turns the cue at its end", () => {
+    const items = ["a1", "a2", "a3"].map((id) =>
+      approvalNeedsYouItem(approval({ id, sessionId: OTHER, expiresAt: null }), NOW),
+    );
+    render(<VexConsoleNeedsYou needsYou={ready(items)} />);
+    const list = section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-list']");
+    if (list === null) throw new Error("no list");
+    // jsdom lays nothing out: give the row its height, one decision a page.
+    Object.defineProperty(list, "clientHeight", { configurable: true, value: 63 });
+    const cue = (): HTMLElement | null =>
+      section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-cue']");
+    fireEvent.click(cue() ?? document.body);
+    expect(cue()?.textContent).toBe("1 more below");
+    fireEvent.click(cue() ?? document.body);
+    expect(cue()?.textContent).toBe("2 more above");
+    expect(cue()?.getAttribute("data-dir")).toBe("up");
+    // A scroll by hand reads the place back.
+    list.scrollTop = 63;
+    fireEvent.scroll(list);
+    expect(cue()?.textContent).toBe("1 more below");
+  });
+
+  it("draws no cue for one decision", () => {
+    const one = approvalNeedsYouItem(approval({ id: "a1", sessionId: OTHER }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([one])} />);
+    expect(section().querySelector("[data-vex-area='vex-needs-you-cue']")).toBeNull();
+  });
+
+  it("says a read it could not make is Not available, with the cross, no count and no Retry", () => {
+    render(
+      <VexConsoleNeedsYou
+        needsYou={model({
+          status: "unknown",
+          count: null,
+          unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.",
+        })}
+      />,
+    );
+    expect(section().querySelector(".vex-console__count")).toBeNull();
+    expect(row().textContent).toBe("Not available");
+    expect(row().querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
+    // The full statement stays on the line's title.
+    expect(row().querySelector("[title]")?.getAttribute("title")).toContain(
+      "Couldn't check for pending approvals.",
+    );
+    expect(row().textContent).not.toContain("Nothing needs you.");
+    // These reads are polled: no Retry.
+    expect(within(row()).queryByRole("button")).toBeNull();
+  });
+
+  it("lists what it has when one source failed, then Could not load every decision.", () => {
+    const item = approvalNeedsYouItem(approval({ id: "a1", sessionId: OTHER }), NOW);
+    render(
+      <VexConsoleNeedsYou
+        needsYou={model({ status: "unknown", count: null, items: [item] })}
+      />,
+    );
+    const items = within(row()).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[1]?.textContent).toBe("Could not load every decision.");
+    expect(section().querySelector(".vex-console__count")).toBeNull();
+  });
+});
+
+describe("needsYouLeadOf", () => {
+  it("takes the decision that expires first, else the first in reading order", () => {
+    const at = (id: string, expiresAt: string | null): NeedsYouItem =>
+      approvalNeedsYouItem(approval({ id, sessionId: OTHER, expiresAt }), NOW);
+    const none = at("a1", null);
+    const late = at("a2", "2026-11-04T14:00:00.000Z");
+    const soon = at("a3", "2026-11-04T12:45:00.000Z");
+    expect(needsYouLeadOf([])).toBeNull();
+    expect(needsYouLeadOf([none])).toBe(none);
+    expect(needsYouLeadOf([none, late, soon])).toBe(soon);
+    expect(needsYouLeadOf([late, none])).toBe(late);
+  });
+});
+
+describe("the console's missions row", () => {
+  it("says what runs on Mainnet, names the one, and opens its session", () => {
+    const running = session({ title: "Weekly ETH buys", missionStatus: "running" });
+    render(<VexConsoleMissions missions={backgroundWorkOf([running], null)} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("1 mission running on Mainnet · Weekly ETH buys");
+    fireEvent.click(within(row ?? document.body).getByRole("button"));
+    expect(useUiStore.getState().activeSessionId).toBe(running.id);
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+  });
+
+  it("stays with no mission running, in its own words, and opens the missions list", () => {
+    useUiStore.setState({ sessionModeFilter: "all", shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexConsoleMissions missions={NO_BACKGROUND_WORK} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("No mission running");
+    fireEvent.click(within(row ?? document.body).getByRole("button"));
+    expect(useUiStore.getState().sessionModeFilter).toBe("mission");
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("holds its row with covers, never saying none, until the sessions list answers", () => {
+    render(<VexConsoleMissions missions={null} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toBe("");
+    expect(row?.querySelectorAll(".vex-cover")).toHaveLength(2);
+  });
+
+  it("says Missions · Not available when the sessions list failed, never a zero", () => {
+    sessionsList.current = { data: undefined, isError: true };
+    render(<VexConsoleMissions missions={null} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("Missions · Not available");
+    expect(row?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
+    sessionsList.current = { data: undefined, isError: false };
+  });
+
+  it("closes the top block at a fixed foot: Needs you, then the missions row", () => {
+    render(<VexConsoleTop needsYou={model({ count: 0 })} missions={NO_BACKGROUND_WORK} />);
+    const top = document.querySelector<HTMLElement>("[data-vex-area='vex-console-top']");
+    expect(Array.from(top?.children ?? []).map((el) => el.getAttribute("data-vex-area"))).toEqual([
+      "vex-needs-you",
+      "vex-missions",
+    ]);
+  });
+});
+
+describe("the console's This project (Studio)", () => {
+  const PROJECT_ID = "00000000-0000-4000-8000-0000000000d4";
+  const part = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='vex-this-project']");
+  const facts = (): (string | undefined)[][] =>
+    [...(part()?.querySelectorAll(".vex-console__fact") ?? [])].map((row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ]);
+
+  afterEach(() => {
+    project.current = null;
+    project.loading = false;
+  });
+
+  it("states a restricted project's access, and says None where nothing is chosen", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "restricted",
+      agents: [],
+      wallets: { evm: null, solana: null },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(within(part() ?? document.body).getByRole("heading", { level: 2 }).textContent).toBe(
+      "This project",
+    );
+    expect(part()?.textContent).toContain(PROJECT_ACCESS_SENTENCE.restricted);
+    expect(facts()).toEqual([
+      ["Agents", "None"],
+      ["Wallet", "None"],
+      ["Folder", "~/Vex/projects/notes"],
+    ]);
+  });
+
+  it("names a Solana wallet by the inventory's label, with its short address in mono", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "full",
+      agents: ["gemini-cli"],
+      wallets: {
+        evm: null,
+        solana: { id: "sol-1", address: "H3FixtureWa11etSo1anaxxxxxxxxxxxxxxxxxxxxxx" },
+      },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain(PROJECT_ACCESS_SENTENCE.full);
+    expect(facts()[1]).toEqual(["Wallet", "Trading wallet H3Fixt…xxxx"]);
+    expect(part()?.querySelector(".vex-console__fact dd .vex-num")).not.toBeNull();
+  });
+
+  it("says it is loading, or that the read failed, never an empty block", () => {
+    project.loading = true;
+    const view = render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain("Loading");
+    view.unmount();
+    project.loading = false;
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain("Vex could not read this project.");
+    // Its assets stay one press away either way.
+    expect(screen.getByRole("button", { name: "Project assets" })).not.toBeNull();
+  });
+
+  it("opens the project's own assets register", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "full",
+      agents: [],
+      wallets: { evm: null, solana: null },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Project assets" }));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("assets");
+    if (route.kind !== "assets") throw new Error("unreachable");
+    expect(route.projectId).toBe(PROJECT_ID);
+  });
+
+  it("opens the project's activity through Agent Scan's own project scope", () => {
+    render(<OpenActivityKey projectId={PROJECT_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("agentScan");
+    if (route.kind !== "agentScan") throw new Error("unreachable");
+    expect(route.projectId).toBe(PROJECT_ID);
+    cleanup();
+    render(<OpenActivityKey />);
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "agentScan", origin: null, sessionId: null });
+  });
+});

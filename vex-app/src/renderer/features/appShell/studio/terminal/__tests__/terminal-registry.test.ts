@@ -16,6 +16,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TerminalRegistry } from "../terminal-registry.js";
+import { RendererPreference } from "../webgl-renderer.js";
 import { installMatchMedia, stubBox } from "./terminal-harness.js";
 
 /** The chain must not attempt a real WebGL load; jsdom has no context. */
@@ -241,5 +242,65 @@ describe("TerminalRegistry lifecycle", () => {
       registry.dispose("nope");
       registry.attach("nope", mount());
     }).not.toThrow();
+  });
+
+  it("sets the terminal in the figures face at 13, its bold the real 700", () => {
+    const registry = new TerminalRegistry(noWebgl);
+    const { terminal } = registry.acquire("face");
+    expect(terminal.options.fontSize).toBe(13);
+    expect(terminal.options.fontWeight).toBe(400);
+    expect(terminal.options.fontWeightBold).toBe(700);
+    registry.disposeAll();
+  });
+
+  it("measures the cell again on demand, in the same faces, and never on an unknown id", () => {
+    // The root's token, as the stylesheet sets it in the app.
+    document.documentElement.style.setProperty("--font-mono", '"Roboto Mono", "SF Mono", monospace');
+    const registry = new TerminalRegistry(noWebgl);
+    const { terminal } = registry.acquire("remeasure");
+    expect(terminal.options.fontFamily).toBe('"Roboto Mono", "SF Mono", monospace');
+    const before = terminal.options.fontFamily ?? "";
+    // A different spelling of the same stack, so xterm measures again ...
+    expect(registry.remeasureFace("remeasure")).toBe(true);
+    const after = terminal.options.fontFamily ?? "";
+    expect(after).not.toBe(before);
+    expect(after.replace(/,\s+/g, ",")).toBe(before.replace(/,\s+/g, ","));
+    // ... and back the next time.
+    expect(registry.remeasureFace("remeasure")).toBe(true);
+    expect(terminal.options.fontFamily).toBe(before);
+    expect(registry.remeasureFace("nope")).toBe(false);
+    registry.dispose("remeasure");
+    expect(registry.remeasureFace("remeasure")).toBe(false);
+    document.documentElement.style.removeProperty("--font-mono");
+  });
+});
+
+describe("TerminalRegistry renderer settle", () => {
+  beforeEach(() => {
+    installMatchMedia();
+  });
+
+  it("says when the WebGL renderer has attached, so the host fits its cell again", async () => {
+    class FakeWebglAddon {
+      activate(): void {}
+      dispose(): void {}
+      onContextLoss(): { dispose: () => void } {
+        return { dispose: () => undefined };
+      }
+    }
+    const withWebgl = new TerminalRegistry({
+      webglLoader: () => Promise.resolve(FakeWebglAddon),
+      rendererPreference: new RendererPreference(),
+    });
+    withWebgl.acquire("gl");
+    await expect(withWebgl.rendererSettled("gl")).resolves.toBe(true);
+    withWebgl.dispose("gl");
+    await expect(withWebgl.rendererSettled("gl")).resolves.toBe(false);
+
+    const dom = new TerminalRegistry({ ...noWebgl, rendererPreference: new RendererPreference() });
+    dom.acquire("dom");
+    await expect(dom.rendererSettled("dom")).resolves.toBe(false);
+    await expect(dom.rendererSettled("unknown")).resolves.toBe(false);
+    dom.dispose("dom");
   });
 });

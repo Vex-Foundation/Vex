@@ -182,12 +182,11 @@ describe("SessionTranscript", () => {
     expect(screen.getByText("context compacted")).not.toBeNull();
     expect(screen.getByText(/onerror="alert\(1\)"/)).not.toBeNull();
     expect(container.querySelector("img[onerror]")).toBeNull();
-    // Assistant turns are signed by the inline VexMark on the tape spine, not
-    // by a raster portrait: no <img> reaches the transcript at all, and the
-    // mark is aria-hidden because the row's sr-only label names the speaker.
-    const avatar = container.querySelector("[data-vex-agent-avatar] svg");
-    expect(avatar).not.toBeNull();
-    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    // Assistant turns are named by the row's sr-only label, never by a
+    // raster portrait or a token (docs/design/H3-DESKTOP.md section 1.7: H3
+    // draws no mark beside Vex's rows): no <img> reaches the transcript.
+    expect(container.querySelector("[data-vex-turn-head]")).not.toBeNull();
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(listMock).toHaveBeenCalledWith({
       sessionId: SESSION,
@@ -332,9 +331,41 @@ describe("SessionTranscript", () => {
     });
     fireEvent.scroll(getScroller(container));
     await waitFor(() => {
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull();
+      expect(screen.getByText("Earlier messages did not load")).not.toBeNull();
     });
     expect(screen.getByText("newest")).not.toBeNull();
+    // The failure is an alert, with a Retry that reads the failed page again.
+    expect(screen.getByRole("alert").textContent).toContain("Earlier messages did not load");
+    const calls = listMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(listMock.mock.calls.length).toBeGreaterThan(calls);
+    });
+    expect(listMock.mock.calls.some(([input]) => (input as { cursor: unknown }).cursor !== null)).toBe(true);
+  });
+
+  it("says the start of the chat once the reader paged back to its first message", async () => {
+    listMock.mockImplementation((input: { readonly cursor: unknown }) =>
+      Promise.resolve(
+        input.cursor === null
+          ? page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], 3)
+          : page([msg({ id: 1, role: "user", kind: "text", content: "oldest" })], null),
+      ),
+    );
+    setVex();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+    // One page: the band says nothing, since nothing was paged back.
+    expect(screen.queryByText("Start of the chat")).toBeNull();
+    fireEvent.scroll(getScroller(container));
+    await waitFor(() => {
+      expect(screen.getByText("Start of the chat")).not.toBeNull();
+    });
   });
 
 });

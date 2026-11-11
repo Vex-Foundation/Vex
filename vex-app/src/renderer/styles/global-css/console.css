@@ -1,17 +1,138 @@
-/* Composer chrome (SessionComposer), R3 (docs/design/R3-MINIMAL.md section 7):
- * a square field on a 1px rule (`--vex-alias-composer`, radius 0, no shadow,
- * no blur) with NO focus treatment of any kind - the blue caret and the send
- * key carry focus. Under the text sits one bar: the options control, the
- * permission as its promise, the context label and meter, and the send or
- * named stop key. Border chrome lives here (not in a className) because the
- * design guard scans .tsx sources for border chrome. */
+/* The chat's chrome: its header cells (ChatHeaderCells, below) and the
+ * composer (SessionComposer, after them).
+ *
+ * Composer chrome, H3 (docs/design/H3-DESKTOP.md section 1.8): the status
+ * strip, "{model} HIGH", the permission as its promise, the composer's state
+ * and CONTEXT with its meter, over the composer row, the model cell, the
+ * field and the blue send or stop cell. Square cells on 1px rules (radius 0,
+ * no shadow, no blur), NO focus treatment on the field - the caret carries
+ * it. Border chrome lives here (not in a className) because the design guard
+ * scans .tsx sources for border chrome. */
 
+/* ── THE CHAT'S HEADER CELLS (docs/design/H3-DESKTOP.md section 1.3) ───────
+ * The header row's cells over the chat column. The row, its grid and the
+ * cells' places are the header's (title-bar.css); what the chat's cells say
+ * and how they read is here.
+ *
+ * THE TITLE CELL (680, 398 at 1440): the chat's title, sans 14 / 1.3 in ink
+ * (VEX Cloud's `.hd-title h1`), and
+ * under it its kind and access ("Agent · Restricted"), the line H3 draws as
+ * "SAMPLE DATA": sans 11 caps, tracked, muted (section 2.3; VEX Cloud's
+ * `.sample`). Text sits 24 in
+ * from the cell's edge (704 at 1440). The markup is the running head's
+ * (`RunningHead.tsx`, `.vex-tb-title`); a page's crumb (a `nav`) keeps its
+ * one line, and a page's own line ("Needs you" and its count) stacks like
+ * the chat's kind. */
+.vex-shell-head > [data-vex-head-cell="title"] {
+  padding-left: 24px;
+}
+.vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+}
+.vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title > .vex-tb-title__name {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title > .vex-tb-title__sub {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* THE NETWORK CELL (1078, 240 at 1440): MAINNET, a key's caps 13 in ink,
+ * then the REAL FUNDS mark, the hatch glyph and the words, caps 11, the
+ * card's stamp without its fill (section 2.2; VEX Cloud's `.hd-net` and
+ * `.rf`). A statement: no chevron, no menu,
+ * no hover. A 1px rule divides it from the title cell, as every cell is
+ * divided from its neighbour (section 2.4); text 24 in from each side. */
+.vex-shell-head > .vex-chat-funds {
+  gap: 16px;
+  padding-inline: 24px;
+  border-left: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-primary);
+}
+.vex-chat-funds__net {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-chat-funds__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* The hatch glyph: three ink strokes, the card stamp's ground strokes
+ * (approval.css) drawn in the ink on the ground. */
+.vex-chat-funds__mark::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-alias-label-primary) 0 1.5px,
+    transparent 1.5px 4px
+  );
+}
+/* MAIN, under 1280 (VEX Cloud's H3 mockup, `.hd-short` and `.rf-word`): the
+ * network's short word stands where MAINNET stood, and the mark keeps its
+ * hatch; "Mainnet" and "Real funds" stay in the accessibility tree, clipped
+ * out of sight, so the cell still says the whole statement. */
+.vex-chat-funds__short {
+  display: none;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@media (max-width: 1279px) {
+  .vex-chat-funds__net,
+  .vex-chat-funds__words {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .vex-chat-funds__short {
+    display: inline;
+  }
+}
+/* THE CAPTION RESERVE, where H3 draws PAUSE ALL: the Windows and Linux
+ * caption buttons stand over it, so it is a cell of its own, divided by the
+ * rule, only while the overlay is there; elsewhere it is 0 wide and draws
+ * nothing (window-chrome.css). */
+html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reserve"] {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+/* ── THE COMPOSER (docs/design/H3-DESKTOP.md section 1.8) ──────────────────
+ * The form holds the options bar and, under it, the composer row: the
+ * chat's cells of the bottom row. The form itself draws no frame: every cell
+ * draws its own 1px rules, as every H3 cell does. Square (radius 0), no
+ * shadow, no blur, and NO focus treatment on the field - the caret carries
+ * it; the keys show the 2px ink ring inside their cells (their classNames). */
 .vex-composer-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 10px 18px;
-  border: 1px solid var(--vex-alias-border-input);
+  min-width: 0;
   border-radius: 0;
   background: var(--vex-alias-composer);
   /* Elevated-surface scrollbar rebind (the indirection contract). */
@@ -19,29 +140,119 @@
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* While an approval waits the field takes the 1.5px ink frame, and the tag on
- * its top edge says "Waiting for approval". Status is shown by the frame and
- * the word, never by a colour. The padding gives back the extra half pixel so
- * the text does not move. */
+/* While an approval waits the composer takes the 1px ink frame, drawn
+ * inside its box so nothing moves, and the tag on the field's top edge says
+ * "Waiting for approval". Status is shown by the frame and the word, never
+ * by a colour. */
 .vex-composer-card[data-vex-composer-state="approval"] {
-  border-width: 1.5px;
-  border-color: var(--vex-alias-rule-ink);
-  padding: 13.5px 13.5px 9.5px 17.5px;
+  outline: 1px solid var(--vex-alias-rule-ink);
+  outline-offset: -1px;
 }
 
-/* Right under the mission strip (open at its foot) the field's top edge is
- * the strip's floor, drawn in the quiet rule (R3 d2x mission renders). */
-[data-vex-area="composer-mission-strip"] + .vex-composer-card {
-  border-top-color: var(--vex-alias-rule-quiet);
+/* THE COMPOSER ROW: at 1440,
+ *
+ *   model   680, 75     the model's glyph: the model choice, on the cell fill
+ *   field   755, 545    "Ask Vex...", running on to the send key (H3's image
+ *                       key, 1226 to 1300, is left out: attachments are not
+ *                       supported, so the field takes its 74)
+ *   send    1300, 140   the blue SEND, or STOP while a turn runs
+ *
+ * 72 high under the bottom row's top rule (827 at 1440): each cell draws
+ * that rule as its own top border, so a cell is 73 with it. A draft past one
+ * line grows the FIELD upward over the transcript: the row is bottom
+ * aligned, so the model and send cells keep their 73 at the window's foot
+ * and the frame's bottom row never changes height; only the field's cell,
+ * and its rule, rise. The row is its own size container, so a narrow chat
+ * (the Lighter desk's rail) folds the send cell to its glyph. */
+.vex-composer-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  container: composer-row / inline-size;
+}
+.vex-composer-model {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 75px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  border-top: 1px solid var(--vex-alias-rule);
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+  background-clip: padding-box;
+  color: var(--vex-alias-label-primary);
+}
+/* D2'S MODEL CELL (docs/design/H3-DESKTOP.md section 6.5): one cell of the
+ * bottom row holding the provider's mark (the model key, 56 wide, its frame
+ * given to the cell) and the model's name over "Reasoning: High" with the
+ * effort key's chevron, 16 from the cell's right rule; at most 260 wide, the
+ * name truncating first. */
+.vex-composer-modelcell {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 260px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  align-items: stretch;
+  border-top: 1px solid var(--vex-alias-rule);
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+  background-clip: padding-box;
+}
+.vex-composer-modelcell .vex-composer-model {
+  width: 56px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+.vex-composer-modelcell > .vex-composer-options {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding-right: 16px;
+}
+.vex-composer-options__reasoning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+}
+.vex-composer-modelcell .vex-composer-options .vex-composer-options__effort {
+  height: 20px;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-composer-model:hover:not(:disabled) {
+  background-color: var(--vex-alias-interactive-hover);
+}
+.vex-composer-model:disabled {
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+/* The field's cell: its one 24 high line centred in the 72 (24 above, 24
+ * below), text 24 in, growing up to the field's 336 cap. */
+.vex-composer-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(var(--vex-h3-bottom-h) + 1px);
+  padding: 24px;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
 /* The tag on the field's top edge: 22 high, field ground, a 1px ink border,
- * 12 / 500 (section 7). The stop acknowledgement wears the same shape on the
- * rule. */
+ * 12 / 500, clear of the send cell. The stop acknowledgement wears the same
+ * shape on the rule. */
 .vex-composer-tag {
   position: absolute;
   top: -11px;
-  right: 14px;
+  right: 152px;
   z-index: 20;
   display: inline-flex;
   align-items: center;
@@ -61,115 +272,411 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* The bar under the text: 8 apart, 6 below the field. */
-.vex-composer-bar {
-  margin-top: 6px;
-}
-
-/* The options control: "{model} · Reasoning: {effort}" in one 30 high frame
- * on the quiet rule, 13, the dot and "Reasoning:" muted, a chevron last. The
- * model name and the effort are two keys inside the one frame (the model opens
- * its settings, the effort opens its menu). */
-.vex-composer-options {
+/* THE SEND CELL: 138 wide and the row's 72 under its top rule, padding 0 30
+ * 0 32 (H3's `.cmp-send`), the composer's one blue fill (section 2.4's
+ * primary key), white caps 13 behind the glyph: the 20px dots for SEND, faint
+ * at rest and white under the pointer, a 14 x 14 square for STOP (VEX
+ * Cloud's `.vx-cmp-stop`). The fill
+ * stops at the rule, which stays the ground's.
+ *
+ * HELD (VEX Cloud's EC-04): while there is nothing to send, SEND is
+ * held (`aria-disabled`, so it keeps its place in the tab order) and says so
+ * by its look, the cell fill with a muted word and the
+ * faint dots, no blue and no hover; a blue key that does nothing would be a
+ * trust regression. A stop being acknowledged is the same held key. */
+.vex-composer-key {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--vex-alias-rule-quiet);
-  background: transparent;
-  color: var(--vex-alias-label-primary);
-  font-size: 13px;
-  white-space: nowrap;
-}
-.vex-composer-options__key {
   flex: none;
-  color: var(--vex-alias-label-tertiary);
-}
-/* The effort's menu opens upward from the frame and keeps the width of its
- * longest word ("Minimal"), whatever the trigger's own width. */
-.vex-composer-options [role="listbox"] {
-  right: auto;
-  min-width: 8rem;
-}
-
-/* The legacy plan seat keeps the quiet frame of the options control. */
-.vex-composer-chip {
-  border: 1px solid var(--vex-alias-rule-quiet);
-}
-
-/* The permission as its promise: 13 / 500 blue with its icon, 30 high. */
-.vex-composer-promise {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 4px;
-  color: var(--vex-alias-accent-primary);
+  justify-content: center;
+  gap: 14px;
+  width: 138px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  padding: 0 30px 0 32px;
+  border-top: 1px solid var(--vex-alias-rule);
+  background-clip: padding-box;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
 }
-
-/* "Context 21%" in 12.5 muted and the five cell meter: cells 4 x 10, two
- * apart, the rule border, filled cells blue (section 7). */
-.vex-composer-context {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 4px;
-  color: var(--vex-alias-label-tertiary);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.vex-context-meter > i {
-  width: 4px;
-  height: 10px;
-}
-
-/* The send key: 36 x 36. Waiting for text it is a dotted blue outline with a
- * blue arrow; with text it is the view's one blue fill (a periwinkle edge at
- * night, transparent by day). */
-.vex-composer-send {
-  border: 1px solid var(--vex-alias-button-accent-edge);
-  background: var(--vex-alias-button-accent-fill);
+/* The blue hover RISES (VEX Cloud's --vx-blue-fill-hover, an ::after that
+ * climbs from the key's foot over --vx-dur-fill, 420ms): a layer under the
+ * word, scaled from 0 to the full cell on the key-fill step, never a swap of
+ * the key's own fill. A look only: the key acts as before. Held, it has no
+ * hover at all. */
+.vex-composer-send,
+.vex-composer-stop {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--vex-alias-button-accent-fill);
   color: var(--vex-alias-button-accent-ink);
 }
-.vex-composer-send:disabled {
-  border: 1px dotted var(--vex-alias-accent-primary);
-  background: transparent;
-  color: var(--vex-alias-accent-primary);
+.vex-composer-send::before,
+.vex-composer-stop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--vex-alias-button-accent-hover);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform var(--vex-duration-key-fill) var(--vex-ease-out);
+  pointer-events: none;
+}
+.vex-composer-send:hover:not(:disabled, [aria-disabled="true"])::before,
+.vex-composer-stop:hover:not(:disabled)::before {
+  transform: scaleY(1);
+}
+.vex-composer-send:is(:disabled, [aria-disabled="true"]),
+.vex-composer-stop:disabled {
+  background-color: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-tertiary);
   cursor: not-allowed;
 }
-
-/* The named stop key: 36 high, ink fill, paper type, 13 / 500, a 9 x 9
- * square before the words ("Stop agent", "Stop mission"). Stopping keeps the
- * box on a dotted ink line until the stop is acknowledged. */
-.vex-composer-stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-rule-ink);
-  color: var(--vex-alias-bg-base);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
+.vex-composer-key__glyph {
+  flex: none;
+  color: var(--vex-alias-label-faint);
 }
-.vex-composer-stop:disabled {
-  border-style: dotted;
-  background: transparent;
-  color: var(--vex-alias-label-secondary);
+.vex-composer-key:hover:not(:disabled, [aria-disabled="true"]) .vex-composer-key__glyph {
+  color: var(--vex-alias-button-accent-ink);
 }
 .vex-composer-stop__mark {
   display: block;
   flex: none;
-  width: 9px;
-  height: 9px;
+  width: 14px;
+  height: 14px;
   background: currentColor;
+}
+/* A row under 420 (the desk's rail, 300 at its narrowest): the model cell
+ * narrows to 56 and the send cell to a square of its glyph; the key keeps
+ * its name for assistive tech. */
+@container composer-row (max-width: 420px) {
+  .vex-composer-model {
+    width: 56px;
+  }
+  .vex-composer-modelcell > .vex-composer-options {
+    display: none;
+  }
+  .vex-composer-key {
+    width: 72px;
+    padding: 0;
+  }
+  .vex-composer-key__word {
+    display: none;
+  }
+}
+
+/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section 1.8): 32
+ * high with its top rule (VEX Cloud's `.cmp-meta`, 796 to 827 at 1440), its
+ * top rule across the chat column, four cells divided by the rule, each
+ * one's words 24 in and 16 from its right rule (VEX Cloud's `.vx-cmp-cell`),
+ * in the strip's caps 11:
+ *
+ *   model    the model's name, 12 in ink, then the effort word in muted
+ *            caps
+ *   promise  FUNDS REQUIRE APPROVAL or FULL ACCESS, caps, ink 2
+ *   state    H3's empty cell, holding desktop's composer state while it
+ *            lasts
+ *   context  CONTEXT in muted caps, ten cells and the share in ink 2,
+ *            the cell's own key
+ *
+ * A narrow strip (the chat at 1280 and under) tightens the cells to 16 in;
+ * under 600 the promise's words give way to its icon (the seat's classes),
+ * and under 760 too while the state cell holds words, which need its room.
+ * The model cell keeps 120 at the least, its name truncating first; then the
+ * state's words truncate. The context never concedes. */
+.vex-composer-strip {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: 32px;
+  border-top: 1px solid var(--vex-alias-rule);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.vex-composer-strip__cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 0 24px;
+}
+.vex-composer-strip__cell + .vex-composer-strip__cell {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+/* The desk's strip (its approved plate, section 4.9): the model cell takes
+ * the room left, its words from the left, the promise beside it. */
+.vex-composer-strip__model {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.vex-composer-strip__state {
+  flex: 0 1 auto;
+  min-width: 47px;
+  padding: 0 12px;
+}
+/* D2's strip (section 6.5): AI PERMISSION and the promise stand at the left,
+ * the state cell takes the room left, and the context stands at the right. */
+.vex-composer-strip__label {
+  color: var(--vex-alias-label-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-composer-strip__access ~ .vex-composer-strip__state {
+  flex: 1 1 auto;
+}
+.vex-composer-strip__state:empty {
+  padding: 0;
+}
+/* Its words: the tag, 22 high on its 1px ink border, standing in the cell,
+ * its words truncating before they push a neighbour out. */
+.vex-composer-strip__state > .vex-composer-tag {
+  position: static;
+  min-width: 0;
+  max-width: 100%;
+}
+@container (max-width: 760px) {
+  .vex-composer-strip[data-vex-strip-state] [data-vex-permission-label] {
+    display: none;
+  }
+  .vex-composer-strip[data-vex-strip-state] .vex-composer-promise > svg {
+    display: block;
+  }
+}
+/* The context key fills its cell, so its hover and its ring are the cell's;
+ * its panel's sentences wrap as sentences do. */
+.vex-composer-strip__context {
+  align-items: stretch;
+  padding: 0;
+}
+.vex-composer-strip [role="dialog"] {
+  white-space: normal;
+}
+/* The context panel rises from the key's right end. In the shell the key
+ * stands in the box on the conversation column, which never reaches under
+ * Vex's panel (docs/design/H3-DESKTOP.md section 6.6), so neither does it. */
+/* No session, no context to measure (the welcome): the cell leaves rather
+ * than stand empty beside H3's empty state cell. */
+.vex-composer-strip__context:empty {
+  display: none;
+}
+@container (max-width: 700px) {
+  .vex-composer-strip__cell:not(.vex-composer-strip__context):not(.vex-composer-strip__state) {
+    padding: 0 16px;
+  }
+}
+
+/* The options control: the model's name, sans 12 in ink (VEX Cloud's
+ * `.meta-model b`), then the effort
+ * key's word in muted caps 11 ("HIGH", the strip's caps, VEX Cloud's
+ * `.cmp-meta.cap`), its menu opening upward and keeping the
+ * width of its longest word ("Minimal"), whatever the trigger's own width. */
+.vex-composer-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.vex-composer-options .vex-composer-options__effort {
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-composer-options .vex-composer-options__effort:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-composer-options [role="listbox"] {
+  right: auto;
+  min-width: 8rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* The legacy plan seat keeps a quiet frame beside the options. */
+.vex-composer-chip {
+  border: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* The permission as its promise: caps 11 in ink 2 (the strip's caps), its
+ * icon only when the words have given way. */
+.vex-composer-promise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--vex-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* CONTEXT, the meter and the share: the label in muted caps 11, the cell
+ * meter (Cloud's ten cells 6 x 12 two apart, 8% unlit, 39% lit, the last lit
+ * 60%; ui-primitives/marks.css), the share a figure in ink 2; the key is the
+ * whole cell, the strip's last, its text 16 in and 24 from the right edge
+ * (VEX Cloud's budget cell, `.vx-cmp-cell[data-cell="budget"]`). A key cell
+ * reaches 12 up into the transcript's foot, a 44 target on the 32 strip
+ * (`.vx-cmp-cell:is(button)::before`). */
+.vex-composer-context {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 24px 0 16px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.vex-composer-context::before {
+  content: "";
+  position: absolute;
+  inset: -12px 0 0;
+}
+.vex-composer-context__label {
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-composer-context__share {
+  color: var(--vex-alias-label-secondary);
+}
+@container (max-width: 700px) {
+  .vex-composer-context {
+    padding: 0 16px;
+  }
+}
+
+/* ── THE BOX (docs/design/H3-DESKTOP.md section 6.5; owner decision
+ * 2026-11-10, "Framed box on the column") ───────────────────────────────
+ * In the shell the composer is one framed box standing on the conversation
+ * column (its place and its lift off the window's foot are composer.css's):
+ * the card ground in the chosen rule, 1px, square, no shadow, no blur. The
+ * field on top, 16 / 24 sans, 16 20 in, its resting words in ink 2; under
+ * it, on the 7% rule, one row 56 high: the model cell (the cell fill, its
+ * right rule), the strip's cells (AI PERMISSION and the promise as caps
+ * chips in the 7% rule, the state taking the room left, the context key in
+ * its left rule) and SEND at the right end, the row's height. While the
+ * field holds the focus the frame brightens to the kit's white focus rule:
+ * the frame is the focus, so the field still draws no ring of its own. The
+ * Lighter desk's composer (no `.vex-composer-box`) keeps the cells above. */
+.vex-composer-box {
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-card);
+}
+.vex-composer-box:has(> .vex-composer-field [data-vex-composer-field]:focus) {
+  border-color: var(--vex-alias-focus);
+}
+/* While an approval waits the frame is the ink, in place of the outline. */
+.vex-composer-box[data-vex-composer-state="approval"] {
+  border-color: var(--vex-alias-rule-ink);
+  outline: 0;
+}
+.vex-composer-box > .vex-composer-field {
+  min-height: 0;
+  padding: 16px 20px;
+  border-top: 0;
+}
+.vex-composer-box [data-vex-composer-placeholder] {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-composer-box > .vex-composer-row {
+  align-items: stretch;
+  height: 56px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-composer-box .vex-composer-modelcell {
+  height: auto;
+  border-top: 0;
+}
+.vex-composer-box .vex-composer-modelcell .vex-composer-model {
+  width: 48px;
+}
+/* The strip's cells in the row: no strip of their own and no rules between
+ * them but the context key's. The row is the query container, so the strip
+ * is none. */
+.vex-composer-box .vex-composer-row > .vex-composer-strip {
+  flex: 1 1 auto;
+  height: auto;
+  border-top: 0;
+  container-type: normal;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__cell {
+  border-left: 0;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__access {
+  padding: 0 0 0 16px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__promise {
+  padding: 0 0 0 8px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__state {
+  min-width: 0;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__state:not(:empty) {
+  padding: 0 12px;
+}
+.vex-composer-box .vex-composer-strip > .vex-composer-strip__context {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+/* The chips: caps 11, 24 high in the 7% rule, 8 in; AI PERMISSION muted,
+ * the promise in ink 2. */
+.vex-composer-box .vex-composer-strip__label,
+.vex-composer-box .vex-composer-promise {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--vex-alias-rule);
+}
+/* The context key stands inside the box: it reaches no higher than its row. */
+.vex-composer-box .vex-composer-context::before {
+  content: none;
+}
+.vex-composer-box .vex-composer-row .vex-composer-context {
+  padding: 0 16px;
+}
+.vex-composer-box .vex-composer-row .vex-composer-key {
+  height: auto;
+  border-top: 0;
+}
+/* A narrow box gives way in steps: the context's word first, then the
+ * AI PERMISSION caption and "Reasoning:" (both aria-hidden: the grant and
+ * the effort key name themselves), then the promise's words to its icon
+ * (its name stays on the seat). The strip never
+ * shrinks under its cells: the model cell's name truncates first. */
+.vex-composer-box .vex-composer-row > .vex-composer-strip {
+  min-width: min-content;
+}
+@container composer-row (max-width: 900px) {
+  .vex-composer-box .vex-composer-context__label {
+    display: none;
+  }
+}
+@container composer-row (max-width: 760px) {
+  .vex-composer-box .vex-composer-strip > .vex-composer-strip__access,
+  .vex-composer-box .vex-composer-options__prefix {
+    display: none;
+  }
+  .vex-composer-box .vex-composer-strip > .vex-composer-strip__promise {
+    padding-left: 16px;
+  }
+}
+@container composer-row (max-width: 640px) {
+  .vex-composer-box [data-vex-permission-label] {
+    display: none;
+  }
+  .vex-composer-box .vex-composer-promise > svg {
+    display: block;
+  }
 }
 
 /* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is
@@ -185,8 +692,5 @@
   mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100%25" height="100%25" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4 4"/></svg>');
 }
 
-/* Keyboard highlight for the slash-command combobox rows (focus stays in
- * the textarea, so :hover/:focus cannot paint it). */
-[data-vex-composer-command-menu] .vex-menu-item[data-active="true"] {
-  background: var(--vex-alias-interactive-hover);
-}
+/* The slash menu's rows, its keyboard highlight included, are composer.css's
+ * (`.vex-slash`). */

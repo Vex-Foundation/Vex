@@ -1,4 +1,5 @@
-/* Shared onboarding accent: the one blue (the periwinkle at night). Applied
+/* Shared onboarding accent: the accent as type, which H3 sets in ink (the
+ * blue is a key's fill only, docs/design/H3-DESKTOP.md section 2.1). Applied
  * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
  * each onboarding screen (systemCheck, runtimeMigration, runtimeBootstrap,
  * migrations, wizard, unlock). Shared primitives read
@@ -8,50 +9,15 @@
   --vex-onboarding-accent: var(--color-accent-primary);
   /* Project the onboarding accent through the shadcn aliases so stock
    * Button/Input/focus-ring inside wizard forms and the unlock screen
-   * speak the same blue. */
+   * speak the same accent as the shell. */
   --color-primary: var(--vex-onboarding-accent);
   --color-ring: var(--vex-onboarding-accent);
 }
 
-/* The first run (docs/design/R3-MINIMAL.md section 10.3): the screens that stand at the right of
- * the stage plate (system check, local runtime, database). The side column, the title and the
- * lead are the stage's own (`chronos-gate.css`); what is here is the crumb, the probe rows, the
- * card, the steps, the log block and the actions. Radius 0, no shadow, tokens only. The failure
- * callout is the kit's `.vex-callout` (`ui-primitives/indicators.css`). */
-.vex-stage-side.vex-fr-side {
-  justify-content: flex-start;
-  padding-top: 128px;
-  padding-bottom: 56px;
-  overflow-y: auto;
-}
-
-/* The crumb: where you are. 13, gap 18; the current step is blue 500, done and upcoming steps are
- * muted. Its swatches are the blue's (a failure's cross is ink in the swatch sheet). */
-.vex-fr-crumb ol {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 18px;
-  margin: 0 0 36px;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-  line-height: 1.2;
-}
-.vex-fr-crumb li {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-fr-crumb li[data-state="now"] {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-fr-crumb .vex-swatch {
-  color: var(--vex-alias-accent-primary);
-}
+/* The first run's pieces (system check, local runtime, database). On the stage they stand in
+ * H3's rows (`stage.css`, docs/design/H3-DESKTOP.md section 4.9), which re-pin what follows; the
+ * rules here are their base, and the one host outside the stage (Settings > Local runtime, which
+ * draws the runtime's step rows) reads them as they are. Radius 0, no shadow, tokens only. */
 
 /* A body: a column of what the screen has to say, as wide as the probes (504). */
 .vex-fr-stack {
@@ -67,14 +33,9 @@
 .vex-fr-stack > .vex-fr-code {
   width: 100%;
 }
-.vex-fr-side > .vex-callout {
-  width: 100%;
-  max-width: 504px;
-  margin: 0 0 26px;
-}
 
 /* The probe rows: a rule above the list, a quiet rule under each row. Label 15 / 500, the detail
- * 12.5 in the figure face, the state word at the right (13.5). A row in flight is blue. */
+ * 12.5 in the figure face, the state at the right as H3's square and ink word (`StageStatus`). */
 .vex-fr-probes {
   width: 100%;
   max-width: 504px;
@@ -107,19 +68,14 @@
   color: var(--vex-alias-label-tertiary);
   overflow-wrap: anywhere;
 }
-.vex-fr-probe .vex-state-word {
+.vex-fr-probe .vex-pre-status {
   grid-row: 1 / span 2;
   grid-column: 2;
-  font-size: 13.5px;
-  color: var(--vex-alias-label-primary);
+  align-self: center;
 }
 /* A row with no detail line keeps its word on the label's line. */
-.vex-fr-probe:not(:has(.vex-fr-probe__d)) .vex-state-word {
+.vex-fr-probe:not(:has(.vex-fr-probe__d)) .vex-pre-status {
   grid-row: 1;
-}
-.vex-fr-probe[data-live] .vex-fr-probe__l,
-.vex-fr-probe[data-live] .vex-state-word {
-  color: var(--vex-alias-accent-primary);
 }
 
 /* The card: the title at the left, the state word at the right, the detail under them. */
@@ -139,11 +95,6 @@
   font-size: 15px;
   font-weight: 500;
   line-height: 1.3;
-  color: var(--vex-alias-label-primary);
-}
-.vex-fr-card .vex-state-word {
-  font-size: 13.5px;
-  font-weight: 400;
   color: var(--vex-alias-label-primary);
 }
 .vex-fr-card__detail {
@@ -199,7 +150,7 @@
 }
 
 /* An inline confirmation in place of the actions (section 10.2, the unlock's "Set up a new
- * vault?"): a 1.5px ink frame, padding 22 24 20, max 470; a destructive choice arms here. */
+ * vault?"): a 1px ink frame, padding 22 24 20, max 470; a destructive choice arms here. */
 .vex-fr-panel {
   display: flex;
   flex-direction: column;
@@ -207,7 +158,7 @@
   width: 100%;
   max-width: 470px;
   padding: 22px 24px 20px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-bg-base);
 }
 

@@ -1,19 +1,23 @@
 /**
- * CHRONOS GATE: the boot cold open (`docs/design/R3-MINIMAL.md section 10.2`). The wake screen
- * covers the window from first paint while `useSetupOrchestrator` runs the real launch pipeline:
- * "Waking the desk", one progress line and the five stage lines at the right, and Vex on the
- * stage's plate at the left (the plate belongs to `App`, so she keeps waking across the screens
- * that follow). The gate never holds a stage and never waits for her.
+ * CHRONOS GATE: the boot cold open, the wake on H3's stage (docs/design/H3-DESKTOP.md section
+ * 4.9; the plate `stage-wake`). The wake covers the window from first paint while
+ * `useSetupOrchestrator` runs the real launch pipeline: the five stages in the left column, the
+ * live stage in the title cell and the meter in the bottom row (`GateActs`). Kimm stands in her
+ * own column, which belongs to `App` (`StagePlate`), so she stays across the screens that follow:
+ * the gate's frame leaves that column open. The gate never holds a stage and never waits for her.
  *
  * The reveal: once BOTH the pipeline handoff and the short minimum hold have resolved, the gate
  * applies the handoff to the view machine BENEATH itself, waits one frame for the screen to
- * mount, and lifts away over 240ms. A handoff to the shell lifts the plate away with it (the
- * stage to shell crossfade); every other handoff stands on the same plate, so only the gate's
- * type fades and the picture never moves. Reduced motion: no hold, and the gate leaves at once.
+ * mount, and lifts away over 240ms. A handoff to the shell or to the unlock lifts her stage away
+ * with it (the stage to shell crossfade; the lock screen draws her in its own panel,
+ * docs/design/H3-DESKTOP.md section 4.13); every other handoff stands on the same seams, so only
+ * the gate's own cells fade and she never moves. Reduced motion: no hold, and the gate leaves at
+ * once.
  *
- * Layering: `z-50`, below the floating update card (`.vex-upd[data-floating]`,
- * z 60, projected by `UpdateLayer`) so a critical update stays visible over
- * the boot ritual.
+ * Layering: `z-50`, over her column (z 40) and below the floating update card
+ * (`.vex-upd[data-floating]`, z 60, projected by `UpdateLayer`) so a critical
+ * update stays visible over the boot ritual. The root takes no pointer; the
+ * frame's cells do, so her keys under its open column stay live.
  */
 
 import { useEffect, useState, type JSX } from "react";
@@ -67,11 +71,12 @@ export function ChronosGate(): JSX.Element | null {
     return () => cancelAnimationFrame(raf);
   }, [handoff, revealing, held, openUnlock, setCurrentView]);
 
-  // A handoff to the shell leaves the stage: the plate lifts away with the gate
-  // (the 240ms crossfade). Any other screen stands on the same plate.
+  // A handoff to the shell or to the unlock leaves the stage: the plate lifts
+  // away with the gate (the 240ms crossfade). Any other screen stands on the
+  // same plate.
   useEffect(() => {
     if (!revealing || handoff === null) return;
-    if (handoff.kind === "view" && handoff.view === "appShell") stageVexExit();
+    if (handoff.kind === "unlock" || handoff.view === "appShell") stageVexExit();
   }, [revealing, handoff]);
 
   // Reduced motion: dismiss via effect, not the fade's animation callback -
@@ -94,7 +99,7 @@ export function ChronosGate(): JSX.Element | null {
       // Carries the pre-shell token scope so the gate's type speaks the
       // pre-shell register.
       data-vex-gate="true"
-      className="fixed inset-0 z-50 overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-50 overflow-hidden"
       initial={false}
       animate={{ opacity: revealing ? 0 : 1 }}
       transition={

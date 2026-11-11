@@ -11,16 +11,30 @@
  * variant). The primitive already resolved which neighbour a drag traded with,
  * including the end-pane inversion; re-deriving that at the state layer would be
  * a second implementation of the same rule, free to disagree with the first.
+ *
+ * IN H3 CELLS (our approved Studio plate, docs/design/H3-DESKTOP.md section
+ * 4.9; terminal.css): the panel header over the panes; a split lays its panes
+ * on a 1px rule, each under a 36 head with its state square, its process and
+ * its close key, the active pane's head on the raised fill and the others on
+ * the ground. The terminal's text is on the ground itself.
  */
 
 import type { JSX } from "react";
-import type { TerminalShellId, TerminalShellOption } from "@shared/schemas/terminal.js";
 import { LineClose } from "../../../../components/icons/line/index.js";
 import { SplitPane } from "../../../../components/ui/split-pane.js";
 import type { WorkspaceTerminalGroup } from "../workspace/types.js";
 import { TerminalPanelHeader } from "./TerminalPanelHeader.js";
+import { TerminalStateSquare } from "./TerminalStateSquare.js";
 import { XtermHost } from "./XtermHost.js";
+import { terminalShellLabel } from "./terminal-copy.js";
 import type { TerminalRegistry } from "./terminal-registry.js";
+import {
+  terminalGroupRunState,
+  terminalPaneRunState,
+  type TerminalRunFacts,
+} from "./terminal-tab-model.js";
+
+const EMPTY_SHELL_LABELS: ReadonlyMap<string, string> = new Map<string, string>();
 
 export interface TerminalPaneGroupProps {
   readonly group: WorkspaceTerminalGroup;
@@ -33,7 +47,8 @@ export interface TerminalPaneGroupProps {
   /**
    * The SHELL said what it is running (an OSC title). It no longer names the
    * tab - a tab is `Terminal n` or whatever the user called it - so this feeds
-   * the shell label the tooltip and the header's second line show.
+   * the shell label the tooltip, the header's second line and a pane's head
+   * show.
    */
   readonly onShellTitle: (terminalId: string, title: string) => void;
   /** The header's split action, for the tab this group is. */
@@ -43,11 +58,11 @@ export interface TerminalPaneGroupProps {
   /** The header's rename action, committed by the user. */
   readonly onRename: (title: string) => void;
   /**
-   * WHAT IS RUNNING in the active pane, as the host reported it, or `null`
-   * before it has said. The tab is named `Terminal n`, so this is the header's
-   * second line rather than its title.
+   * WHAT IS RUNNING in each pane, as the host reported it, keyed by terminal
+   * id; a pane the host has not described yet is absent. The tab is named
+   * `Terminal n`, so this is the header's second line and a pane head's name.
    */
-  readonly shellLabel: string | null;
+  readonly shellLabelById?: ReadonlyMap<string, string>;
   /**
    * One shell reported where it now is. Routed to the WORKSPACE MODEL, which
    * owns the value: this component reads `pane.displayCwd` and holds no copy,
@@ -65,10 +80,12 @@ export interface TerminalPaneGroupProps {
    * stops keystrokes from going into a shell that cannot receive them.
    */
   readonly lostTerminalIds?: ReadonlySet<string>;
-  /** Which shell the NEXT terminal opens with, and the rows to pick from. */
-  readonly shellId: TerminalShellId;
-  readonly shells: readonly TerminalShellOption[];
-  readonly onSelectShell: (shellId: TerminalShellId) => void;
+  /**
+   * What the panel's and the panes' squares are drawn from: the host-loss
+   * set, the exits the panes reported and whether a restore is running.
+   * Defaults to the lost set alone, as a fresh workspace has it.
+   */
+  readonly runFacts?: TerminalRunFacts;
 }
 
 export function TerminalPaneGroup({
@@ -82,20 +99,23 @@ export function TerminalPaneGroup({
   onSplit,
   onKill,
   onRename,
-  shellLabel,
+  shellLabelById = EMPTY_SHELL_LABELS,
   onDisplayCwdChange,
   onPaneExit,
   lostTerminalIds,
-  shellId,
-  shells,
-  onSelectShell,
+  runFacts,
 }: TerminalPaneGroupProps): JSX.Element {
   const multiple = group.panes.length > 1;
+  const facts: TerminalRunFacts = runFacts ?? {
+    lostTerminalIds: lostTerminalIds ?? new Set<string>(),
+    exits: new Map(),
+    restoring: false,
+  };
 
   // The header describes the ACTIVE pane - the one the user is typing into.
   // With one pane that is the only pane; with several it follows the same
-  // `activePaneId` the focus ring below is drawn from, so the header and the
-  // ring can never name different shells.
+  // `activePaneId` the raised head below is drawn from, so the header and the
+  // head can never name different shells.
   //
   // THE DIRECTORY IS READ FROM THE MODEL, never remembered here. This component
   // used to keep its own `Map<terminalId, displayCwd>` fed only by the property
@@ -113,10 +133,10 @@ export function TerminalPaneGroup({
       <TerminalPanelHeader
         title={group.title}
         displayCwd={activeLabel}
-        shellLabel={shellLabel}
-        shellId={shellId}
-        shells={shells}
-        onSelectShell={onSelectShell}
+        shellLabel={
+          activePane === undefined ? null : (shellLabelById.get(activePane.terminalId) ?? null)
+        }
+        state={terminalGroupRunState(group, facts)}
         onSplit={onSplit}
         onKill={onKill}
         onRename={onRename}
@@ -133,65 +153,73 @@ export function TerminalPaneGroup({
         >
           {group.panes.map((pane, index) => {
             const lost = lostTerminalIds?.has(pane.terminalId) === true;
+            const active = pane.paneId === group.activePaneId;
             return (
             <div
               key={pane.paneId}
-              // THE PANE is the field (docs/design/R3-MINIMAL.md section 9.5).
-              // The focused pane of a split is named by a 1.5px blue outline
-              // drawn INSIDE it (terminal.css), not by a fill: a filled active
-              // pane would sit on top of the terminal's own background and
-              // change how the output reads.
-              data-active={multiple && pane.paneId === group.activePaneId ? "" : undefined}
-              className="vex-ws-pane relative h-full w-full bg-surface-field"
+              // THE PANE is the ground. The active pane of a split is named by
+              // its head on the raised fill, never by a frame round the
+              // terminal: a fill there would change how the output reads.
+              data-active={multiple && active ? "" : undefined}
+              className="vex-ws-pane relative flex h-full w-full flex-col"
             >
-              <XtermHost
-                terminalId={pane.terminalId}
-                launchShellName={pane.launchShellName ?? null}
-                visible={visible}
-                {...(registry === undefined ? {} : { registry })}
-                onTitleChange={(title) => {
-                  onShellTitle(pane.terminalId, title);
-                }}
-                onDisplayCwdChange={(displayCwd) => {
-                  onDisplayCwdChange(pane.terminalId, displayCwd);
-                }}
-                onActivate={() => {
-                  onActivatePane(pane.paneId);
-                }}
-                onExit={(info) => {
-                  onPaneExit(pane.paneId, info);
-                }}
-              />
-              {lost ? (
-                <div
-                  // The overlay is the ENFORCEMENT, not a label: it sits over the
-                  // terminal so a keystroke cannot reach a textarea whose pty no
-                  // longer exists, while the scrollback stays readable behind it.
-                  role="status"
-                  className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[13px] text-ink-secondary"
-                >
-                  {/* A flat panel: the field and a 1px ink border. It is a
-                      utility the theme defines; an earlier `bg-surface-raised`
-                      named a token that does not exist, so that utility
-                      emitted NOTHING and this notice floated over the terminal
-                      with no plate under it. */}
-                  <span className="border border-rule-ink bg-surface-field px-3 py-1.5 text-ink-primary">
-                    This shell ended when the terminal service stopped.
+              {multiple ? (
+                <div className="vex-ws-pane__head" data-vex-pane-head="">
+                  <TerminalStateSquare state={terminalPaneRunState(pane.terminalId, facts)} />
+                  <span className="vex-ws-pane__name">
+                    {terminalShellLabel(shellLabelById.get(pane.terminalId) ?? null)}
                   </span>
+                  <button
+                    type="button"
+                    aria-label={`Close terminal ${String(index + 1)} in ${group.title}`}
+                    title={`Close terminal ${String(index + 1)} in ${group.title}`}
+                    onClick={() => {
+                      onClosePane(pane.paneId);
+                    }}
+                    className="vex-ws-pane__close"
+                  >
+                    <LineClose size={14} />
+                  </button>
                 </div>
               ) : null}
-              {multiple ? (
-                <button
-                  type="button"
-                  aria-label={`Close terminal ${String(index + 1)} in ${group.title}`}
-                  onClick={() => {
-                    onClosePane(pane.paneId);
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <XtermHost
+                  terminalId={pane.terminalId}
+                  launchShellName={pane.launchShellName ?? null}
+                  visible={visible}
+                  {...(registry === undefined ? {} : { registry })}
+                  onTitleChange={(title) => {
+                    onShellTitle(pane.terminalId, title);
                   }}
-                  className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
-                >
-                  <LineClose size={14} />
-                </button>
-              ) : null}
+                  onDisplayCwdChange={(displayCwd) => {
+                    onDisplayCwdChange(pane.terminalId, displayCwd);
+                  }}
+                  onActivate={() => {
+                    onActivatePane(pane.paneId);
+                  }}
+                  onExit={(info) => {
+                    onPaneExit(pane.paneId, info);
+                  }}
+                />
+                {lost ? (
+                  <div
+                    // The overlay is the ENFORCEMENT, not a label: it sits over the
+                    // terminal so a keystroke cannot reach a textarea whose pty no
+                    // longer exists, while the scrollback stays readable behind it.
+                    role="status"
+                    className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[13px] text-ink-secondary"
+                  >
+                    {/* A flat panel: the field and a 1px ink border. It is a
+                        utility the theme defines; an earlier `bg-surface-raised`
+                        named a token that does not exist, so that utility
+                        emitted NOTHING and this notice floated over the terminal
+                        with no plate under it. */}
+                    <span className="border border-rule-ink bg-surface-field px-3 py-1.5 text-ink-primary">
+                      This shell ended when the terminal service stopped.
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
             );
           })}

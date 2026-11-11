@@ -1,12 +1,15 @@
 /**
- * The composer's model menu (F06), the model key inside the options frame
- * ("{model name} · Reasoning: {effort}", docs/design/R3-MINIMAL.md section
- * 7) for a resolved agent session.
+ * The composer's model menu (F06), the composer row's MODEL CELL for a
+ * resolved agent session (docs/design/H3-DESKTOP.md section 1.8: "the
+ * model's glyph: the model choice", 75 wide and the row's 72 high at the
+ * row's left, on the cell fill).
  *
- * The key reads as the model's name with the provider mark, like the
- * display-only key; pressing it opens a menu UPWARD (the composer sits low on
- * the stage) with a search field, because a catalogue holds hundreds of
- * rows. Rows are grouped by vendor (`anthropic/`, `openai/`, `google/`), each
+ * The key is the cell: the model's glyph alone (`ComposerModelGlyph`: the
+ * provider's mark, or the line model glyph when the provider is unknown),
+ * named in words ("Model: {id} on {provider}. Opens the model menu."); the
+ * model's NAME reads in the status strip over the row. Pressing it opens a
+ * menu UPWARD from the cell (the composer sits on the window's foot) with a
+ * search field, because a catalogue holds hundreds of rows. Rows are grouped by vendor (`anthropic/`, `openai/`, `google/`), each
  * with its name, context window and input and output price per 1M in mono,
  * a "Default" tag on the configured default and the selected swatch on the
  * session's model. The footer keeps today's route to Settings, where the
@@ -38,22 +41,13 @@ import type { ModelOptionDto } from "@shared/schemas/models.js";
 import { providerNameSchema } from "@shared/schemas/provider.js";
 import { cn } from "../../../lib/utils.js";
 import { Swatch } from "../../../components/ui/swatch.js";
-import { IconChevronDown } from "../../../components/icons/index.js";
-import {
-  PROVIDER_DISPLAY_NAME,
-  ProviderMark,
-} from "../../../components/common/ProviderMark.js";
+import { PROVIDER_DISPLAY_NAME } from "../../../components/common/ProviderMark.js";
 import {
   formatContextLength,
   formatUsdPerMillion,
 } from "../../wizard/steps/provider/formatModelMeta.js";
 import { modelDisplayName } from "./model-display-name.js";
-
-/** The provider mark's box beside the 13 px model name. */
-const MARK_PX = 16;
-
-const KEY_CLASS =
-  "inline-flex h-7 min-w-0 items-center gap-1.5 font-sans text-[13px] leading-5 text-ink-primary transition-colors duration-100 hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:text-ink-tertiary";
+import { ComposerModelGlyph, MODEL_CELL_KEY_CLASS } from "./ComposerModelGlyph.js";
 
 export interface ComposerModelMenuProps {
   /** The model the next turn runs on (pending pick, session model or default). */
@@ -207,10 +201,8 @@ export function ComposerModelMenu({
   let flatIndex = -1;
 
   return (
-    // The key is capped at this wrapper (`max-w-full`): the frame shrinks in a
-    // narrow composer, and an uncapped key ran its name over "Reasoning:".
-    // The wrapper stays `min-w-0`, the toolbar's shrink chain (Bug 3).
-    <div ref={rootRef} className="relative min-w-0">
+    // The cell's box: the menu hangs from it, upward, over the transcript.
+    <div ref={rootRef} className="relative flex-none">
       <button
         ref={keyRef}
         type="button"
@@ -218,18 +210,13 @@ export function ComposerModelMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Model: ${modelId}${served}. Opens the model menu.`}
+        // The name for a pointer too: the glyph alone does not say it.
+        title={name}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
-        className={cn("vex-composer-options__model max-w-full", KEY_CLASS)}
+        className={MODEL_CELL_KEY_CLASS}
       >
-        {backend.success ? <ProviderMark provider={backend.data} size={MARK_PX} /> : null}
-        <span data-vex-model-label className="min-w-0 max-w-48 flex-1 truncate">
-          {name}
-        </span>
-        <IconChevronDown
-          size={14}
-          className={cn("shrink-0 text-ink-tertiary transition-transform", open && "rotate-180")}
-        />
+        <ComposerModelGlyph provider={backend.success ? backend.data : null} />
       </button>
 
       {open ? (

@@ -73,7 +73,7 @@ export interface TurnIslandView {
   readonly phase: TurnPhase;
   /**
    * The row's scope, 13 muted beside the word: which part of the wait this is
-   * ("Waiting for the model"), or what the turn already thought ("Reasoned ·
+   * ("Waiting for the model"), or what the turn already thought ("Thought ·
    * 1.2K tokens") while it writes.
    */
   readonly detail?: string;

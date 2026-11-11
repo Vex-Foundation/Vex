@@ -13,6 +13,17 @@
  * stopping spending (Pause, Revoke) never waits on the backend. Each tab is a deterministic form the user drives. The agent has
  * its own deposit tool with its own approval; an auto top-up rule is created
  * only here.
+ *
+ * THE LOOK IS VEX CLOUD'S BUILT VEX INFERENCE PAGE (owner decision 2026-11-09,
+ * docs/design/H3-DESKTOP.md section 4.9: Cloud's built pages are the plates,
+ * look only; Cloud's `AccountBodyView` and `inference.css`, W5 239c202d):
+ * a Balance box on the card ground, its head "Balance" with "As of {time}"
+ * (the account's own `readAt`), then the two figures cut by 1px rules, each
+ * an 11 caps label over a 20 mono figure and a muted line, and Deposit and
+ * Withdraw stacked as cells at the right, which open those tabs. The tab
+ * panels are framed on the card ground, at most 760 wide. The figures, their
+ * names and every form stay desktop's; neither key is blue (the forms own
+ * their one action).
  */
 
 import { useState, type JSX } from "react";
@@ -24,8 +35,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui
 import { useVexCloudAccount, useVexCloudAlert } from "../../../lib/api/vex-cloud.js";
 import { StateWord } from "../../../components/ui/state-word.js";
 import { ShellScreen } from "../../appShell/screens/ShellScreen.js";
+import { PageBar } from "../../appShell/screens/PageBar.js";
 import { formatMicroUsdEstimate } from "@shared/vex-cloud-money.js";
 import { formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
+import { clockFromMs } from "../../appShell/book/portfolio/portfolio-format.js";
+import { PageLoading } from "../../appShell/screens/PageLoading.js";
+import { Cover, CoverText } from "../../../components/ui/cover.js";
 import { CashbackTab } from "./CashbackTab.js";
 import { DepositTab } from "./DepositTab.js";
 import { AutoTopUpTab } from "./AutoTopUpTab.js";
@@ -49,8 +64,26 @@ export function VexCloudFundingScreen({
   readonly origin: ShellScreenOrigin | null;
   readonly onClose: () => void;
 }): JSX.Element {
+  // The H3 frame (docs/design/H3-DESKTOP.md sections 1.9 and 4.9; no plate for
+  // this page): the header's title cell names the page, so it draws no head,
+  // and the tabs row carries "Updated" at the fetch time of the account read
+  // the balance line is drawn from (the same query, one cache entry). The
+  // five funding tabs stay ARIA tabs inside the page: each owns a panel, which
+  // the frame's toggle cells do not.
+  const accountQuery = useVexCloudAccount();
   return (
-    <ShellScreen title={FUNDING_PAGE_TITLE} origin={origin} onClose={onClose}>
+    <ShellScreen
+      title={FUNDING_PAGE_TITLE}
+      origin={origin}
+      onClose={onClose}
+      chapter={null}
+      bar={
+        <PageBar
+          updatedAt={accountQuery.dataUpdatedAt}
+          reading={accountQuery.isFetching && !accountQuery.isLoading}
+        />
+      }
+    >
       <VexCloudFundingPage />
     </ShellScreen>
   );
@@ -64,7 +97,29 @@ export function VexCloudFundingPage(): JSX.Element {
   const [tab, setTab] = useState<FundingTab>("deposit");
   const result = accountQuery.data;
 
-  if (accountQuery.isLoading) return <EmptyBlock scope="Vex Inference" title="Checking Vex Inference" loading />;
+  if (accountQuery.isLoading) {
+    // The first read in the Balance box's shape (H3-DESKTOP section 1.9):
+    // its head and the two labels stay, covers park where the figures will
+    // stand. Never a figure.
+    return (
+      <PageLoading label="Checking Vex Inference…">
+        <section className="vex-inf-bal" aria-hidden="true" data-testid="funding-balance-loading">
+          <div className="vex-inf-bal__h">
+            <span className="vex-inf-bal__t">Balance</span>
+          </div>
+          <div className="vex-inf-figs vex-inf-figs--load">
+            {["Available", "Withdrawable now"].map((label) => (
+              <div key={label} className="vex-inf-fig">
+                <span className="vex-inf-fig__k">{label}</span>
+                <Cover width="50%" height="20px" />
+                <CoverText width="70%" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </PageLoading>
+    );
+  }
   if (result === undefined || !result.ok) {
     return (
       <div className="flex flex-col gap-5" data-testid="funding-page-unavailable">
@@ -96,21 +151,52 @@ export function VexCloudFundingPage(): JSX.Element {
   }
   const { account } = view;
   const usd = account.balances.available.usdMicroEstimate;
+  const readAtMs = Date.parse(account.readAt);
+  const asOf = clockFromMs(readAtMs);
 
   return (
     <div className="flex flex-col gap-5" data-testid="funding-page">
-      <p className="m-0 text-[13px] text-ink-tertiary">
-        Available{" "}
-        <span className="vex-num font-mono text-ink-primary" data-testid="funding-available">
-          {formatVexAmount(account.balances.available)}
-        </span>
-        {" · "}
-        {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : formatMicroUsdEstimate(BigInt(usd))}
-        {" · "}withdrawable now{" "}
-        <span className="vex-num font-mono text-ink-primary">
-          {account.withdrawable === null ? NOT_AVAILABLE : formatVexAmount(account.withdrawable)}
-        </span>
-      </p>
+      <section className="vex-inf-bal" aria-labelledby="vex-inf-bal-title" data-testid="funding-balance">
+        <div className="vex-inf-bal__h">
+          <h2 id="vex-inf-bal-title" className="vex-inf-bal__t">
+            Balance
+          </h2>
+          {asOf === null ? null : (
+            <p className="vex-inf-bal__asof">
+              As of{" "}
+              <time className="vex-num" dateTime={new Date(readAtMs).toISOString()}>
+                {asOf}
+              </time>
+            </p>
+          )}
+        </div>
+        <div className="vex-inf-figs">
+          <div className="vex-inf-fig">
+            <span className="vex-inf-fig__k">Available</span>
+            <span className="vex-inf-fig__v vex-num" data-testid="funding-available">
+              {formatVexAmount(account.balances.available)}
+            </span>
+            <span className="vex-inf-fig__n">
+              {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : formatMicroUsdEstimate(BigInt(usd))}
+            </span>
+          </div>
+          <div className="vex-inf-fig">
+            <span className="vex-inf-fig__k">Withdrawable now</span>
+            <span className="vex-inf-fig__v vex-num" data-testid="funding-withdrawable">
+              {account.withdrawable === null ? NOT_AVAILABLE : formatVexAmount(account.withdrawable)}
+            </span>
+            <span className="vex-inf-fig__n">Only finalized deposits can be withdrawn.</span>
+          </div>
+          <div className="vex-inf-keys">
+            <button type="button" className="vex-inf-key" onClick={() => setTab("deposit")}>
+              Deposit
+            </button>
+            <button type="button" className="vex-inf-key" onClick={() => setTab("withdraw")}>
+              Withdraw
+            </button>
+          </div>
+        </div>
+      </section>
       {belowAlert ? (
         <div className="flex items-center gap-3" data-testid="funding-below-alert">
           <StateWord state="concerned" word="Needs you: balance below your alert" />
@@ -123,7 +209,7 @@ export function VexCloudFundingPage(): JSX.Element {
           Vex Inference paused this account for review. Deposits are still credited; withdrawals wait until it is cleared.
         </p>
       ) : null}
-      <Tabs value={tab} onValueChange={(next) => {
+      <Tabs className="vex-inf-forms" value={tab} onValueChange={(next) => {
           if (isFundingTab(next)) setTab(next);
         }} idScope="vex-cloud-funding">
         <TabsList aria-label="Vex Inference funds">
@@ -133,19 +219,19 @@ export function VexCloudFundingPage(): JSX.Element {
           <TabsTrigger value="autoTopUp">Auto top-up</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
-        <TabsContent value="deposit" className="pt-5">
+        <TabsContent value="deposit" className="vex-inf-panel">
           <DepositTab account={account} pin={view.depositPin} />
         </TabsContent>
-        <TabsContent value="withdraw" className="pt-5">
+        <TabsContent value="withdraw" className="vex-inf-panel">
           <WithdrawTab account={account} localWallets={view.localWallets} onOpenHistory={() => setTab("history")} />
         </TabsContent>
-        <TabsContent value="cashback" className="pt-5">
+        <TabsContent value="cashback" className="vex-inf-panel">
           <CashbackTab account={account} />
         </TabsContent>
-        <TabsContent value="autoTopUp" className="pt-5">
+        <TabsContent value="autoTopUp" className="vex-inf-panel">
           <AutoTopUpTab account={account} depositsOpen={view.depositPin.state === "matches"} />
         </TabsContent>
-        <TabsContent value="history" className="pt-5">
+        <TabsContent value="history" className="vex-inf-panel">
           <HistoryTab />
         </TabsContent>
       </Tabs>

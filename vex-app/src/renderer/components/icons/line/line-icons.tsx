@@ -4,11 +4,19 @@
  *
  * Every component takes the same two props, `size` (14, 16 or 20; default 16)
  * and `className`; the colour is the text colour of the place it sits in.
+ * H3's nav names (`LineH3Chat` and the rest) draw VEX's filled glyphs
+ * (`H3_NAV_GLYPHS`) behind the same props.
  */
 
 import type { JSX } from "react";
+import { Glyph } from "../glyph/Glyph.js";
 import { LineSvg, type LineIconProps } from "./LineSvg.js";
-import { LINE_GLYPHS, type LineIconName } from "./line-glyphs.js";
+import {
+  H3_NAV_GLYPHS,
+  isH3NavGlyph,
+  LINE_GLYPHS,
+  type LineIconName,
+} from "./line-glyphs.js";
 
 export interface LineIconComponent {
   (props: LineIconProps): JSX.Element;
@@ -21,14 +29,24 @@ const pascal = (name: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join("");
 
-function make(name: LineIconName): LineIconComponent {
-  const { draw } = LINE_GLYPHS[name];
-  const Glyph = ({ size, className }: LineIconProps): JSX.Element => (
+/**
+ * One icon by name: a line drawing in `LineSvg`, or, for H3's nav names, the
+ * filled glyph on the 24 grid at the same size (16 unless the caller says).
+ */
+function draw(name: LineIconName, { size, className }: LineIconProps): JSX.Element {
+  if (isH3NavGlyph(name)) {
+    return <Glyph name={H3_NAV_GLYPHS[name]} size={size ?? 16} className={className} />;
+  }
+  return (
     <LineSvg size={size} className={className}>
-      {draw}
+      {LINE_GLYPHS[name].draw}
     </LineSvg>
   );
-  return Object.assign(Glyph, { displayName: `Line${pascal(name)}` });
+}
+
+function make(name: LineIconName): LineIconComponent {
+  const Icon = (props: LineIconProps): JSX.Element => draw(name, props);
+  return Object.assign(Icon, { displayName: `Line${pascal(name)}` });
 }
 
 export const LineNewChat = make("new-chat");
@@ -127,6 +145,13 @@ export const LineScan = make("scan");
 export const LineBook = make("book");
 export const LineSun = make("sun");
 export const LineMoon = make("moon");
+export const LineH3NewChat = make("h3-new-chat");
+export const LineH3Chat = make("h3-chat");
+export const LineH3Missions = make("h3-missions");
+export const LineH3Markets = make("h3-markets");
+export const LineH3Portfolio = make("h3-portfolio");
+export const LineH3Activity = make("h3-activity");
+export const LineH3Settings = make("h3-settings");
 
 /** Every icon by name; the type makes a missing entry a compile error. */
 export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
@@ -226,6 +251,13 @@ export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
   book: LineBook,
   sun: LineSun,
   moon: LineMoon,
+  "h3-new-chat": LineH3NewChat,
+  "h3-chat": LineH3Chat,
+  "h3-missions": LineH3Missions,
+  "h3-markets": LineH3Markets,
+  "h3-portfolio": LineH3Portfolio,
+  "h3-activity": LineH3Activity,
+  "h3-settings": LineH3Settings,
 };
 
 export interface LineIconByNameProps extends LineIconProps {
@@ -233,9 +265,5 @@ export interface LineIconByNameProps extends LineIconProps {
 }
 
 export function LineIcon({ name, size, className }: LineIconByNameProps): JSX.Element {
-  return (
-    <LineSvg size={size} className={className}>
-      {LINE_GLYPHS[name].draw}
-    </LineSvg>
-  );
+  return draw(name, { size, className });
 }

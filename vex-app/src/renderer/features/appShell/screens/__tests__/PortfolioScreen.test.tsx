@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { PortfolioHistoryInput } from "@shared/schemas/portfolio-history.js";
 import type {
   PortfolioDto,
   PortfolioReadInput,
@@ -51,6 +52,8 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 // The heavy sections, stubbed with light ones that echo what they are handed.
 vi.mock("../../book/portfolio/LighterAccountCard.js", () => ({
   LighterAccountCard: () => <div data-testid="lighter-stub" />,
+  // The tiles read the account through the section; with no account, no tile.
+  lighterTileFigures: () => null,
 }));
 vi.mock("../../book/SessionActivityCard.js", () => ({
   SessionActivityCard: ({
@@ -87,6 +90,19 @@ vi.mock("../../market/VexTokenCardCompact.js", () => ({
 }));
 
 const readMock = vi.fn<(input: PortfolioReadInput) => Promise<Result<PortfolioDto>>>();
+// The chart's history read: an empty answer is a real state it words.
+const readHistoryMock = vi.fn((input: PortfolioHistoryInput) =>
+  Promise.resolve(
+    ok({
+      scope: input.wallets.scope,
+      range: input.range,
+      walletCount: 1,
+      groupCount: 0,
+      sampled: false,
+      points: [],
+    }),
+  ),
+);
 const listAvailableMock =
   vi.fn<(input: Record<string, never>) => Promise<Result<AvailableWalletsDto>>>();
 const listSessionWalletsMock =
@@ -183,7 +199,7 @@ function installVexBridge(): void {
     configurable: true,
     writable: true,
     value: {
-      portfolio: { read: readMock },
+      portfolio: { read: readMock, readHistory: readHistoryMock },
       wallets: {
         listAvailable: listAvailableMock,
         listSessionWallets: listSessionWalletsMock,
@@ -238,6 +254,12 @@ function section(id: string): HTMLElement {
 function stub(testId: string): HTMLElement {
   const found = screen.getByTestId(testId);
   if (!(found instanceof HTMLElement)) throw new Error(`missing stub ${testId}`);
+  return found;
+}
+
+function tabsRow(): HTMLElement {
+  const found = document.querySelector('[data-vex-area="page-tabs-row"]');
+  if (!(found instanceof HTMLElement)) throw new Error("missing the tabs row");
   return found;
 }
 
@@ -309,18 +331,49 @@ afterEach(() => {
 });
 
 describe("PortfolioScreen - the chrome", () => {
-  it("opens as the titled Portfolio dialog with a hidden h1", async () => {
+  it("opens as the titled Portfolio region with a hidden h1", async () => {
     renderPage();
     await settleGlobal();
 
-    const dialog = screen.getByRole("dialog", { name: "Portfolio" });
-    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    const dialog = screen.getByRole("region", { name: "Portfolio" });
+    expect(dialog.getAttribute("aria-modal")).toBeNull();
+    expect(dialog.getAttribute("aria-busy")).toBeNull();
     const heading = screen.getByRole("heading", { level: 1, name: "Portfolio" });
     // The page draws its own head (the total): the page's h1 stays for
     // assistive tech only.
     expect(heading.classList.contains("sr-only")).toBe(true);
     // The title bar owns the close key and the crumb; the page draws neither.
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+  });
+
+  it("is busy while its first read runs, then not", async () => {
+    let answerFirst: (value: Result<PortfolioDto>) => void = () => undefined;
+    readMock.mockImplementationOnce(
+      () => new Promise<Result<PortfolioDto>>((resolve) => (answerFirst = resolve)),
+    );
+    renderPage();
+    const region = screen.getByRole("region", { name: "Portfolio" });
+    expect(region.getAttribute("aria-busy")).toBe("true");
+    // The first read's words stand in the stamp's slot, after the hatch.
+    expect(document.querySelector('[data-vex-area="page-loading"]')?.textContent).toBe(
+      "Loading your portfolio…",
+    );
+    act(() => answerFirst(answer({ scope: "global" })));
+    await within(header()).findByText("$1,234.56");
+    expect(region.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("stamps its tabs row with the total's read's own fetch time", async () => {
+    // Only Date is faked: the fetch time TanStack records is this clock's.
+    vi.useFakeTimers({ now: new Date(2026, 10, 3, 14, 30, 5), toFake: ["Date"] });
+    try {
+      renderPage();
+      await settleGlobal();
+      const stamp = tabsRow().querySelector('[data-vex-area="page-updated"]');
+      expect(stamp?.textContent).toBe("Updated 14:30");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("closes through the host's close on Escape when there is no page to return to", async () => {
@@ -333,19 +386,21 @@ describe("PortfolioScreen - the chrome", () => {
 });
 
 describe("PortfolioScreen - composition", () => {
-  it("draws the total, then the sections, then the $VEX line, with the refresh key in the head", async () => {
+  it("draws the tabs row, then the total, the sections and the $VEX line", async () => {
     renderPage();
     await settleGlobal();
 
+    const row = tabsRow();
     const total = header();
     const list = sectionList();
     const vex = document.querySelector('[data-vex-area="vex-token-compact"]');
     if (vex === null) throw new Error("missing the $VEX line");
+    expect(row.compareDocumentPosition(total)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(total.compareDocumentPosition(list)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(list.compareDocumentPosition(vex)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      within(total).getByRole("button", { name: "Refresh portfolio" }),
-    ).not.toBeNull();
+    // The page's key stands in its tabs row (H3 section 4.8), not in the total.
+    expect(within(row).getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(within(total).queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
     // What the total includes, and the headline.
     expect(
       within(total).getByText(
@@ -552,8 +607,9 @@ describe("PortfolioScreen - the scope chips", () => {
 
     const group = chipGroup();
     if (group === null) throw new Error("the scope chips are not offered");
-    // The chips ride at the right of the total.
-    expect(header().contains(group)).toBe(true);
+    // The scope is the page frame's tabs row (H3 section 1.9), not the total.
+    expect(tabsRow().contains(group)).toBe(true);
+    expect(header().contains(group)).toBe(false);
     expect(chipNames()).toEqual([
       "All wallets",
       "Main · Primary",
@@ -580,6 +636,14 @@ describe("PortfolioScreen - the scope chips", () => {
     expect(
       within(header()).getByText("Total value of Main · Lighter is shown separately"),
     ).not.toBeNull();
+    // The chart reads the SAME wallets the figures read: the narrowed global
+    // read, on its default range.
+    await waitFor(() =>
+      expect(readHistoryMock).toHaveBeenCalledWith({
+        range: "30d",
+        wallets: { scope: "global", walletAddress: MAIN.address },
+      }),
+    );
     // Balances is that wallet's read, and offers no register of its own.
     await within(section("balances")).findByText("Wallet Token");
     expect(within(section("balances")).queryByText("Global Token")).toBeNull();
@@ -808,5 +872,72 @@ describe("PortfolioScreen - the scope chips", () => {
     expect(chipGroup()).toBeNull();
     await within(section("balances")).findByText("Global Token");
     expect(section("wallets").querySelectorAll("[data-selected]")).toHaveLength(0);
+  });
+});
+
+describe("PortfolioScreen - a failed refresh keeps the figures (H3-DESKTOP section 1.9)", () => {
+  const REFUSED: Result<PortfolioDto> = {
+    ok: false,
+    error: {
+      code: "internal.unexpected",
+      domain: "portfolio",
+      message: "boom",
+      retryable: true,
+      userActionable: false,
+      redacted: true,
+      correlationId: "11111111-1111-4111-8111-111111111111",
+    },
+  };
+
+  it("keeps the total and the balances, says the refresh failed and Retry reads again", async () => {
+    const { client } = renderPage();
+    await settleGlobal();
+
+    readMock.mockImplementation(() => Promise.resolve(REFUSED));
+    await act(async () => {
+      await client.refetchQueries();
+    });
+
+    // One line says the newest read failed, with Retry.
+    const alert = await within(header()).findByRole("alert");
+    expect(alert.textContent).toBe("Couldn't refresh your portfolio.");
+    // The figures already read stay on screen.
+    expect(within(header()).getByText("$1,234.56")).not.toBeNull();
+    expect(within(section("balances")).getByText("Global Token")).not.toBeNull();
+    expect(within(header()).queryByText("Couldn't load your portfolio.")).toBeNull();
+
+    readMock.mockImplementation((input) => Promise.resolve(answer(input)));
+    const calls = readMock.mock.calls.length;
+    fireEvent.click(within(header()).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(within(header()).queryByRole("alert")).toBeNull();
+    });
+    expect(readMock.mock.calls.length).toBeGreaterThan(calls);
+    expect(within(header()).getByText("$1,234.56")).not.toBeNull();
+  });
+
+  it("with nothing read yet, says it could not load and offers Retry", async () => {
+    readMock.mockImplementation(() => Promise.resolve(REFUSED));
+    renderPage();
+    await within(header()).findByText("Couldn't load your portfolio.");
+    expect(within(header()).queryByText("Couldn't refresh your portfolio.")).toBeNull();
+
+    readMock.mockImplementation((input) => Promise.resolve(answer(input)));
+    fireEvent.click(within(header()).getByRole("button", { name: "Retry" }));
+    await within(header()).findByText("$1,234.56");
+  });
+
+  it("never lends one scope's kept figures to another scope", async () => {
+    readMock.mockImplementation((input) =>
+      Promise.resolve(
+        input.scope === "global" && input.walletAddress === MAIN.address ? REFUSED : answer(input),
+      ),
+    );
+    renderPage();
+    await within(header()).findByText("$1,234.56");
+
+    fireEvent.click(chip(/^Main/));
+    await within(header()).findByText("Couldn't load your portfolio.");
+    expect(within(header()).queryByText("$1,234.56")).toBeNull();
   });
 });

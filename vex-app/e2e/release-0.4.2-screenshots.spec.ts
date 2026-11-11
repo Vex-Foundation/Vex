@@ -260,12 +260,13 @@ async function openFunding(page: Page, tab: string): Promise<void> {
   await page.waitForTimeout(1500);
 }
 
-/** A theme, picked explicitly so the set does not follow the OS. */
-async function pickTheme(page: Page, theme: "celeris" | "chronos"): Promise<void> {
-  await openSettings(page, "Preferences");
-  await page.locator("[data-vex-settings-appearance]").scrollIntoViewIfNeeded();
-  await page.locator(`[data-vex-theme-cube="${theme}"]`).click();
-  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", theme);
+/**
+ * The app's one theme. Since plan row S1-04 the app is dark only
+ * (docs/design/H3-DESKTOP.md section 4.5), so the set never follows the OS and
+ * there is no theme to pick: the run asserts the one room instead.
+ */
+async function expectTheOneTheme(page: Page): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", "chronos");
 }
 
 /** The chat this run made, from the left rail. */
@@ -321,7 +322,7 @@ test("captures the v0.4.2 release screenshots", async ({}, testInfo) => {
       console.log(`wizard walker stopped at: ${at}`);
     }
     await expect(screen(page, "appShell")).toBeVisible();
-    await pickTheme(page, "celeris");
+    await expectTheOneTheme(page);
 
     if (wants("provider")) {
       await openSettings(page, "Inference");
@@ -467,10 +468,6 @@ test("captures the v0.4.2 release screenshots", async ({}, testInfo) => {
     if (wants("site")) {
       await openWelcome(page);
       await shot(page, "site/site-welcome.jpg");
-      await pickTheme(page, "chronos");
-      await openWelcome(page);
-      await shot(page, "site/site-welcome-dark.jpg");
-      await pickTheme(page, "celeris");
     }
 
   } finally {

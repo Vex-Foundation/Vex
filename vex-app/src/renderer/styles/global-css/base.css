@@ -1,7 +1,7 @@
 /* GLOBAL PAGE FOUNDATION: unscoped rules with no single feature owner:
  * the ::selection accent, the html/body/#root base surface, the weight
- * synthesis switch, the placeholder ink, the V10 shape law and the WCAG
- * reduced-motion catch-all.
+ * synthesis switch, the placeholder ink, the V10 shape law, the WCAG
+ * reduced-motion catch-all and its Save-Data twin.
  * The catch-all is a HARD dependency for every effect without a dedicated
  * reduced-motion override (including the looping badge shimmer and backdrop
  * drift); never drop this import and never add layer(...) to it. */
@@ -12,13 +12,16 @@
   color: var(--vex-alias-label-on-accent);
 }
 
+/* The page under the frame is VEX Cloud's --vx-page (#020205), a shade
+ * above the chat column's ground (docs/design/H3-DESKTOP.md section 2.1);
+ * the window's first paint stays the ground, a step away. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: var(--color-surface-base);
+  background-color: var(--vex-alias-bg-page);
   color: var(--color-ink-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -33,27 +36,27 @@ body {
   line-height: 1.45;
 }
 
-/* NEVER A FAKE BOLD. Instrument Serif has no weight axis, so a
- * `font-semibold` reaching it would be synthesised by the browser. Weight
- * synthesis is off for the whole page: a face renders the weights it has
- * (Instrument Sans 400-700 and JetBrains Mono 100-800 are variable, so they
- * lose nothing). Italic synthesis stays on, because Instrument Sans ships
- * upright only and an italic request should still lean. Set on html so every
- * element inherits it. */
+/* NEVER A FAKE BOLD. Be Vietnam Pro ships two static weights (400, 600)
+ * and Roboto Mono one (400), so a weight between or above them would be
+ * synthesised by the browser. Weight synthesis is off for the whole page: a
+ * face renders the weights it has, by the CSS matching rules (500 renders
+ * 400, 700 renders 600, every figure 400). Italic synthesis stays on,
+ * because both faces ship upright only and an italic request should still
+ * lean. Set on html so every element inherits it. */
 html {
   font-synthesis-weight: none;
 }
 
-/* PLACEHOLDERS take the muted ink, a step stronger than a faint hint, so a
- * field's prompt reads (docs/design/R3-MINIMAL.md section 1). Unlayered, so
- * it outranks Tailwind's preflight and any fainter `placeholder:` utility; a
- * feature sheet's own scoped placeholder rule still wins on specificity. */
+/* PLACEHOLDERS take VEX Cloud's --vx-placeholder, white at 55%, 6.3:1 on
+ * the field (docs/design/H3-DESKTOP.md section 2.1). Unlayered, so it
+ * outranks Tailwind's preflight and any `placeholder:` utility; the feature
+ * sheets' own placeholder rules read the same alias. */
 ::placeholder {
-  color: var(--color-ink-tertiary);
+  color: var(--vex-alias-label-placeholder);
   opacity: 1;
 }
 
-/* THE SHAPE LAW (V10): radius 0 on every element, no exceptions, focus rings
+/* THE SHAPE LAW (V10, H3): radius 0 on every element, focus rings
  * included. One unlayered declaration with `!important`, because it has to
  * outrank three kinds of radius at once: Tailwind's `rounded-*` utilities
  * (layered), the class rules of the feature sheets (unlayered, higher
@@ -69,6 +72,32 @@ html {
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner {
   border-radius: 0 !important;
+}
+
+/* ITS EXCEPTIONS, and only these (VEX Cloud's STYLE 5.5;
+ * docs/design/H3-DESKTOP.md section 2.4): the chat bubbles, 18 round with
+ * the corner next to the speaker sharp at 4, Vex's from the left (her
+ * answer and the greeting), the person's from the right; and the avatar
+ * circle, which is SVG geometry (`TranscriptMessage.tsx`,
+ * `SidebarProfile.tsx`), so it needs no radius here. Her answer's bubble is
+ * drawn in runs (chat-transcript.css): a run's first part takes the top
+ * corners and its last part the bottom ones, so a code block or a table
+ * between runs stays square. Each is a class rule with `!important`, so it
+ * outranks the law's `*` on specificity. `glass-tokens.test.ts` holds the
+ * list to exactly these. */
+.vex-you__body {
+  border-radius: var(--vex-radius-bubble-you) !important;
+}
+.vex-welcome__greeting {
+  border-radius: var(--vex-radius-bubble-vex) !important;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(:first-child, :is(.vex-code-block, .vex-md-table) + *):not(.vex-code-block, .vex-md-table) {
+  border-top-left-radius: var(--vex-radius-bubble-corner-speaker) !important;
+  border-top-right-radius: var(--vex-radius-bubble-corner) !important;
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > :is(:last-child, :has(+ :is(.vex-code-block, .vex-md-table))):not(.vex-code-block, .vex-md-table) {
+  border-bottom-right-radius: var(--vex-radius-bubble-corner) !important;
+  border-bottom-left-radius: var(--vex-radius-bubble-corner) !important;
 }
 
 /* Respect reduced-motion preference (WCAG AA).
@@ -99,10 +128,9 @@ html {
  *
  * EVERYTHING ELSE R3 MOVES comes to rest here or in its own rule: the shell's
  * column tracks snap (shell.css states its own collapse), swatches and the
- * loading line stop stepping (ui-primitives/marks.css), and the K2 hologram
- * paints one still frame from JS (`lib/motion/use-still-frame.ts`), so her
- * dock into the sidebar is her simply appearing and a hide does not wait for
- * her close.
+ * loading line stop stepping (ui-primitives/marks.css), Kimm's section rests
+ * at once (kimm.css states its own collapse), and her glyph field paints one
+ * still frame from JS (`lib/motion/use-still-frame.ts`).
  *
  * DELAYS COLLAPSE TOO. A stagger (`.vex-rise-d1` to `-d3` on the wake and
  * unlock type, both-filled) would otherwise hold its line at the animation's
@@ -121,5 +149,37 @@ html {
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* SAVE-DATA lands motion at once too (docs/design/H3-DESKTOP.md section 3.7;
+ * MOTION-POLICY.md "Reduced motion"). Save-Data has no media query, so
+ * `data-still` on <html> carries it: public/theme-boot.js stamps it before
+ * first paint and keeps it current (`stampSaveData`,
+ * lib/motion/use-still-frame.ts). The rule is the reduced-motion catch-all
+ * above, word for word, with the same one opt-out: the JS still frame
+ * (`useStillFrame`) and this rule then agree, so a CSS-only motion such as
+ * Kimm's clip-path wipe lands at once in both. */
+html[data-still] *:not([data-vex-motion-opacity]),
+html[data-still] *:not([data-vex-motion-opacity])::before,
+html[data-still] *:not([data-vex-motion-opacity])::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* WHILE THE WINDOW IS RESIZED (VEX Cloud's motion contract, section 3 rule
+ * 6; MOTION-POLICY.md "Reduced motion"): `data-vex-resizing` stands on
+ * <html> while the window is dragged and for 220ms after its last resize
+ * (`lib/wide-zoom.ts`), and every transition is held still meanwhile, so
+ * nothing trails the layout as it follows the window: a hover fill, her
+ * section's clip, a key's chevron. Keyframe loops keep their own time. */
+html[data-vex-resizing] *,
+html[data-vex-resizing] *::before,
+html[data-vex-resizing] *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
 }
 

@@ -2,8 +2,8 @@
  * Order book (asks over bids, or bids beside asks) and trades
  * (docs/design/R3-MINIMAL.md sections 1.2 and 9.3). Bids are trading values
  * in trade up, asks in trade down, each over a wash of its colour (14% and
- * 12%); the B and S ratio bar is the same pair. Rows 22 high in JetBrains
- * Mono 11.5; the column heads 11.5 / 500 muted in Instrument Sans. The tape
+ * 12%); the B and S ratio bar is the same pair. Rows 22 high in the mono
+ * (--font-mono) 11.5; the column heads 11.5 / 500 muted in the sans. The tape
  * keeps the blue and the ink for its prints.
  * ------------------------------------------------------------------------- */
 
@@ -309,9 +309,10 @@
 
 .lit-book-row b { font-weight: 400; }
 
-/* The trading pair: bid prices up, ask prices down. */
-.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-trade-up); }
-.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-trade-down); }
+/* A side is ink, never the trading pair (DG5-07): bid prices in the ink,
+ * ask prices in ink 2, as the tape's buys and sells below. */
+.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-positive); }
+.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-negative); }
 
 /* The tape's prints: a buy in the blue, a sell in the ink. */
 .lit-trade-row b { color: var(--lit-positive); }
@@ -385,8 +386,9 @@
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-secondary); }
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row::before { right: 0; left: auto; }
 
-/* Bid and ask share of the visible depth: "B 54%" in trade up, "46% S" in
- * trade down, and a 6 high bar of the two fills between them. */
+/* Bid and ask share of the visible depth: "B 54%" in the ink, "46% S" in
+ * ink 2, and a 6 high bar between them, the bids' share the ink over the
+ * asks' faint ink (a side is never the trading pair, DG5-07). */
 .lit-book-ratio {
   display: grid;
   min-height: 28px;
@@ -398,15 +400,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.lit-book-ratio > [data-side="bid"] { color: var(--lit-trade-up); }
-.lit-book-ratio > [data-side="ask"] { color: var(--lit-trade-down); }
+.lit-book-ratio > [data-side="bid"] { color: var(--lit-positive); }
+.lit-book-ratio > [data-side="ask"] { color: var(--lit-negative); }
 
 .lit-book-ratio i {
   --lit-bid-share: 50%;
   position: relative;
   display: block;
   height: 6px;
-  background: var(--lit-trade-down);
+  background: color-mix(in srgb, var(--lit-positive) 24%, transparent);
 }
 
 .lit-book-ratio i::before {
@@ -414,7 +416,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--lit-bid-share);
-  background: var(--lit-trade-up);
+  background: var(--lit-positive);
 }
 
 .lit-trades-list {
@@ -443,3 +445,146 @@
   letter-spacing: normal;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+ * THE H3 DESK'S BOOK (docs/design/H3-DESKTOP.md section 4.9, the approved
+ * desk plate; plan row S8-09): under the chart, in square cells on the 1px
+ * rule. A 40 head row of cells (ORDER BOOK | TRADES, the price grouping,
+ * BTC | USD at the right end), the 30 spread row, the column labels in caps,
+ * bids beside asks, five levels a side (four under an 800-high window,
+ * lighter-desk.css), their depth bars at 14% of their colour from the
+ * centre out, and the B and S row under them.
+ * ------------------------------------------------------------------------- */
+
+.lit-book-column .lit-book-panel,
+.lit-book-column .lit-trades-panel {
+  padding: 0;
+  background: var(--lit-bg);
+}
+
+.lit-book-column .lit-panel-header {
+  min-height: 40px;
+  height: 40px;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  padding: 0;
+}
+
+.lit-book-column .lit-panel-tabs {
+  gap: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+}
+
+.lit-book-column .lit-panel-tabs button {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  padding: 0 14px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-panel-tabs button:first-child { border-left: 0; }
+
+.lit-book-column .lit-panel-tabs button[aria-selected="true"] {
+  border-bottom-color: transparent;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
+}
+
+.lit-book-column .lit-book-controls {
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0;
+}
+
+.lit-book-column .lit-book-controls > select {
+  width: 76px;
+  height: 100%;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  background-color: transparent;
+  padding-left: 14px;
+}
+
+.lit-book-column .lit-unit-switch {
+  margin-left: auto;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+.lit-book-column .lit-unit-switch button {
+  height: 100%;
+  border-right: 1px solid var(--vex-alias-rule);
+  padding: 0 14px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-unit-switch button:last-child { border-right: 0; }
+
+.lit-book-column .lit-unit-switch button[aria-pressed="true"] {
+  color: var(--lit-ink);
+  font-weight: 400;
+}
+
+/* The book's stream state is the market bar's LIVE; its word stays for
+ * assistive tech only. */
+.lit-book-column .lit-live-dot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.lit-book-column .lit-book-mid {
+  min-height: 30px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.lit-book-column .lit-book-mid b {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.lit-book-column .lit-book-labels { padding: 4px 16px 0; }
+
+.lit-book-column .lit-book-columns {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-book-body { padding: 0 16px 4px; }
+.lit-book-column .lit-book-row { font-size: 12px; }
+
+.lit-book-column .lit-book-ratio {
+  border-top: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.lit-book-column .lit-book-ratio i { height: 4px; }
+
+.lit-book-column .lit-trades-columns {
+  padding: 4px 16px 0;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-trades-list { padding: 0 16px 4px; }

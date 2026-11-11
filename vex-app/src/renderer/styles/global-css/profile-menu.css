@@ -1,92 +1,133 @@
-/* THE ACCOUNT ROW AND ITS PROFILE MENU (docs/design/R3-MINIMAL.md sections 4
- * and 12). The row (SidebarProfile) sits at the foot of the left sidebar and
- * of the Studio sidebar, on paper: padding 12 18 14, the vx in blue in a 30px
- * box on a 1px rule, the name at 14 / 500 over a 12 muted status line, the up
- * and down chevron in muted at the right. Closed to a rail it is the box
- * alone. Open, the row takes the selection wash.
+/* THE ACCOUNT CELL AND ITS PROFILE MENU (docs/design/H3-DESKTOP.md sections
+ * 1.4 and 1.8). The cell (SidebarProfile) is the bottom row's first cell,
+ * under the chats column; the Lighter desk's rail and a standalone Studio
+ * sidebar carry it at their foot. Measured at 1440 in
+ * `h3-merged__welcome-closed-1440`, in VEX Cloud's built metrics
+ * (`.vx-lc-me`): the whole 248 x 72 cell is the key, a grid of 34 / 1fr / 16
+ * at gap 12; the avatar disc, 34 across, 24 in, centred on the row; the name
+ * at 70 (24 + 34 + 12), 14 / 1.25 in ink, over "Account and settings" at
+ * 12 / 1.3, muted (`.vx-lc-me-text b` and `small`); the 16 up chevron muted
+ * at the right, 20 in, turned 180 degrees while the menu is open (300ms;
+ * Cloud turns it on its house curve, which desktop keeps in JS only, so the
+ * sheet takes the out curve; at once under reduced motion). Hover takes
+ * Cloud's cell hover, white at 5% (here the ink at 5%: the sheets name no
+ * primitive); an open menu lays the chosen row's wash over the rail's
+ * ground, so nothing scrolled under it shows through. Closed to the
+ * rail it is the disc alone, centred in its cell.
+ *
+ * The disc is the transcript's (chat-transcript.css, `.vex-you__disc`): the
+ * circle on Cloud's avatar ground (--vx-avatar, #151618), on the chosen
+ * rule (#3C3F3E measured), the person glyph in ink.
  *
  * The menu is the Menu primitive's card (ui-primitives/menu.css); opened
- * upward from a sidebar foot it becomes the flat profile panel: 316 wide,
- * paper, a 1.5px ink frame, padding 6 0, rows of a 20px icon column, a 14
- * title over a 12.5 muted line and a 12 muted shortcut at the right. No
- * shadow, no scale. It only fades, over the 150ms base duration; the keyframe
- * names stay because SidebarProfile closes the menu on the exit's
- * `animationend`. */
+ * upward from the cell it becomes the profile panel: 316 wide, 12 in from the
+ * window's edge, its foot on the cell's top rule, the card ground (a menu
+ * over the column, section 2.1) inside the chosen rule, padding 6 0, rows of a
+ * 20px icon column, a 14 title over a 12.5 muted line and a 12 muted
+ * shortcut at the right. No shadow, no scale. It only fades, over the 150ms
+ * base duration; the keyframe names stay because SidebarProfile closes the
+ * menu on the exit's `animationend`. */
 
 .vex-prof {
-  --prof-sel: rgba(163, 171, 255, 0.1);
+  --prof-sel: var(--vex-alias-row-selected), var(--vex-alias-sidebar-fill);
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 16px;
-  column-gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr) 16px;
+  column-gap: 12px;
   align-items: center;
   width: 100%;
-  padding: 12px 18px 14px;
+  min-height: calc(var(--vex-h3-bottom-h) - 1px);
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
   text-align: left;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
-[data-vex-theme="celeris"] .vex-prof {
-  --prof-sel: rgba(0, 0, 192, 0.075);
+.vex-prof:hover {
+  background: color-mix(in srgb, var(--vex-alias-label-primary) 5%, transparent);
 }
-.vex-prof:hover,
 .vex-prof[aria-expanded="true"] {
   background: var(--prof-sel);
 }
 .vex-prof:not([data-open]) {
-  grid-template-columns: 30px;
+  grid-template-columns: 34px;
   justify-content: center;
-  width: auto;
   padding: 0;
-}
-.vex-prof:not([data-open]):hover,
-.vex-prof:not([data-open])[aria-expanded="true"] {
-  background: transparent;
 }
 .vex-prof:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
 }
 .vex-prof__av {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--vex-alias-rule);
-  color: var(--vex-alias-accent-primary);
+  display: flex;
+  width: 34px;
+  height: 34px;
 }
-.vex-prof:not([data-open])[aria-expanded="true"] .vex-prof__av {
-  background: var(--prof-sel);
+.vex-prof__av > svg {
+  display: block;
 }
+.vex-prof__disc {
+  fill: var(--vex-alias-avatar);
+  stroke: var(--vex-alias-rule-chosen);
+}
+.vex-prof__glyph {
+  fill: var(--vex-alias-label-primary);
+}
+/* The words may run 6 into the gap before the chevron: H3 leaves "Account
+ * and settings" about 15 clear of it, and the bundled face sets the line a
+ * little wider than the capture does. */
 .vex-prof__name {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
+  margin-inline-end: -6px;
 }
 .vex-prof__n {
   overflow: hidden;
   font-size: 14px;
-  font-weight: 500;
-  line-height: 1.2;
+  font-weight: 400;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.vex-prof__n--ask {
-  font-weight: 400;
-}
+/* 12, VEX Cloud's account line. */
 .vex-prof__s {
   font-size: 12px;
   line-height: 1.3;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-prof__s--live {
+/* "Account and settings" keeps one line; a trouble's sentence may wrap. */
+.vex-prof__s--line {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.vex-prof__s:not(.vex-prof__s--line) {
+  font-size: 12px;
+}
 .vex-prof__chev {
   color: var(--vex-alias-label-tertiary);
+  transition: transform var(--vex-duration-reveal) var(--vex-ease-out);
+}
+.vex-prof[aria-expanded="true"] .vex-prof__chev {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-prof__chev {
+    transition: none;
+  }
+}
+html[data-still] .vex-prof__chev {
+  transition: none;
+}
+
+/* From 1920 the name steps up to 15 with the column's words (VEX Cloud's
+ * `.vx-lc-me-text > b`, left-sidebar.css's WIDE block). */
+@media (min-width: 1920px) {
+  .vex-prof__n {
+    font-size: 15px;
+  }
 }
 
 /* The menu's two-line rows, in any placement. */
@@ -117,18 +158,20 @@
   cursor: default;
 }
 
-/* The panel: opened upward from a sidebar foot. */
+/* The panel: opened upward from the account cell, a cell over the column,
+ * 12 in from the window's edge (the Menu's margin), so its rows' icons stand
+ * 12 further in, at 24, over the disc. */
 .vex-profile-menu--panel.vex-menu {
   width: 316px;
   max-width: calc(100vw - 24px);
   padding: 6px 0;
-  border: 1.5px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-bg-overlay);
 }
 .vex-profile-menu--panel .vex-menu-item {
   gap: 12px;
   min-height: 0;
-  padding: 8px 16px;
+  padding: 8px 20px 8px 12px;
   white-space: normal;
 }
 .vex-profile-menu--panel .vex-menu-item-icon {
@@ -137,10 +180,7 @@
   color: var(--vex-alias-label-secondary);
 }
 .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(163, 171, 255, 0.1);
-}
-[data-vex-theme="celeris"] .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(0, 0, 192, 0.075);
+  background: var(--vex-alias-interactive-hover);
 }
 .vex-profile-menu--panel .vex-menu-separator {
   margin: 6px 0;
@@ -150,7 +190,7 @@
   padding-top: 0;
 }
 .vex-profile-menu--panel .vex-menu-footer .vex-menu-item {
-  padding: 8px 16px 6px;
+  padding: 8px 20px 6px 12px;
 }
 
 .vex-profile-menu {
@@ -162,10 +202,6 @@
   animation: vex-profile-menu-exit var(--vex-duration-base) linear both;
 }
 
-/* The chevron never tweens. */
-.vex-profile-chevron {
-  transition: none;
-}
 
 @keyframes vex-profile-menu-enter {
   from { opacity: 0; }

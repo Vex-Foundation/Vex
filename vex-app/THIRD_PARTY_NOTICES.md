@@ -52,6 +52,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Gradient ASCII
+
+Kimm's glyph field, `src/renderer/components/vex/kimm/gradient-ascii.ts`, is
+React Bits' Gradient ASCII background by David Haz
+(https://github.com/DavidHDev/react-bits, `src/content/Backgrounds/GradientASCII`),
+by way of vex-home's `src/gradient-ascii.js`, the H3 mockup's
+`js/vendor/gradient-ascii.mjs` and VEX Cloud's TypeScript port
+(`apps/web/src/components/kimm/gradient-ascii.ts`). Modifications: vanilla
+JavaScript, then TypeScript; H3's `still` option and `setStill()`; the VEX
+glyph rules of vex-home; the page mount removed; the canvas removed on
+`dispose()`. It ships as part of the Vex desktop app, never on its own. The
+file keeps its licence header, and the licence's full text stands beside it in
+`GRADIENT-ASCII-LICENSE.md`.
+
+Copyright (c) 2026 David Haz
+
+Licensed under MIT + Commons Clause License Condition v1.0: use, copy, modify,
+merge, publish and distribute as part of an application, website or product;
+the component itself is not sold, sublicensed or redistributed on its own.
+
 ## Lightweight Charts
 
 The board's market chart is rendered by TradingView Lightweight Charts

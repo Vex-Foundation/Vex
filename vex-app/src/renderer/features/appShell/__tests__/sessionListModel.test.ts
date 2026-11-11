@@ -3,8 +3,65 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   filterSessionsByTitle,
   filterSessionsByWorkspace,
+  formatChatRowTime,
   formatSessionTime,
+  groupSessions,
 } from "../sessionListModel.js";
+
+describe("groupSessions", () => {
+  // docs/design/H3-DESKTOP.md Appendix A.2: Pinned, Today, Yesterday, Earlier.
+  const at = (daysAgo: number): string => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 12).toISOString();
+  };
+
+  it("files chats under Pinned, Today, Yesterday and Earlier, in that order", () => {
+    const pinned = makeRow({ title: "Pinned one", startedAt: at(9), pinnedAt: at(0) });
+    const today = makeRow({ title: "Today's", startedAt: at(0) });
+    const yesterday = makeRow({ title: "Yesterday's", startedAt: at(1) });
+    const earlier = makeRow({ title: "Last week's", startedAt: at(7) });
+    const groups = groupSessions([earlier, yesterday, today, pinned]);
+    expect(groups.map((g) => [g.key, g.title])).toEqual([
+      ["pinned", "Pinned"],
+      ["today", "Today"],
+      ["yesterday", "Yesterday"],
+      ["earlier", "Earlier"],
+    ]);
+    expect(groups.map((g) => g.rows)).toEqual([[pinned], [today], [yesterday], [earlier]]);
+  });
+
+  it("says Earlier, never R3's Older", () => {
+    expect(groupSessions([]).map((g) => g.title)).not.toContain("Older");
+  });
+});
+
+describe("formatChatRowTime", () => {
+  // docs/design/H3-DESKTOP.md section 1.4: "12:41", "09:12", "Oct 28".
+  const localAt = (daysAgo: number, hour: number, minute: number): string => {
+    const now = new Date();
+    return new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - daysAgo,
+      hour,
+      minute,
+    ).toISOString();
+  };
+
+  it("writes today's and yesterday's start on the 24-hour clock, zero-padded", () => {
+    expect(formatChatRowTime(localAt(0, 9, 5))).toBe("09:05");
+    expect(formatChatRowTime(localAt(0, 14, 30))).toBe("14:30");
+    expect(formatChatRowTime(localAt(1, 18, 5))).toBe("18:05");
+  });
+
+  it("writes an earlier start as the English short date", () => {
+    expect(formatChatRowTime("2020-06-15T12:00:00Z")).toMatch(/^Jun \d{1,2}$/);
+  });
+
+  it("returns an empty string for an invalid date", () => {
+    expect(formatChatRowTime("not-a-date")).toBe("");
+  });
+});
 
 describe("formatSessionTime", () => {
   it("formats older dates with an English (en-US) month, not the OS locale", () => {

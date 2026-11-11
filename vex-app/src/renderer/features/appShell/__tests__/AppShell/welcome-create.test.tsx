@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -288,17 +287,10 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    // The headline is the welcome sentinel again (accepted mockup,
-    // 2026-08-20, greeting form): a time-of-day greeting, personalized only
-    // when a displayName is set. The PREVIEW wordmark retired with the Grok
-    // logo row.
-    await screen.findByRole("heading", {
-      name: (accessibleName: string) =>
-        greetingPoolForHour(new Date().getHours()).some(
-          (variant) =>
-            !variant.withName && variant.text === accessibleName,
-        ),
-    });
+    // The headline is the welcome sentinel: H3's greeting, "Ready when you
+    // are." (docs/design/H3-DESKTOP.md Appendix A.4). The PREVIEW wordmark
+    // retired with the Grok logo row.
+    await screen.findByRole("heading", { name: "Ready when you are." });
     expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
@@ -307,7 +299,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     const send = screen.getByRole("button", { name: "Send message" });
     // Enabled in welcome with a draft — it is the create entry point now.
@@ -324,7 +316,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    const draft = (await screen.findByLabelText("Ask Vex")) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await screen.findByRole("heading", { name: "New session" });

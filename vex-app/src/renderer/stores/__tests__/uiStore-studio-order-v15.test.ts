@@ -131,7 +131,9 @@ describe("the v15 migration", () => {
     expect(migrated["studioBookSectionOrder"]).toEqual([]);
     expect(migrated["bookSectionOrder"]).toEqual(["launchpads", "wallets"]);
     expect(migrated["bookTab"]).toBe("board");
-    expect(migrated["themePreference"]).toBe("celeris");
+    // v15 rewrites nothing; the theme slot moves only at v23, which lands
+    // every stored choice on the dark room.
+    expect(migrated["themePreference"]).toBe("chronos");
   });
 
   it("never overwrites an order a v15 payload already carries", () => {

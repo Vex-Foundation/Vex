@@ -1,13 +1,14 @@
 /**
- * Needs you: the item mapping per approval (expiry or since, where it was
- * raised, the action word per tool family) and per mission status, and the
- * model's honest status for a loading, failed or empty inbox, and for a
- * withdrawal check that is loading, failed, incomplete or signed out.
+ * Needs you: the item mapping per approval (the card's own sentence as the
+ * title, where it acts, expiry or since, the action word per tool family) and
+ * per mission status, and the model's honest status for a loading, failed or
+ * empty inbox, and for a withdrawal check that is loading, failed, incomplete
+ * or signed out.
  */
 
 import { describe, expect, it } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
-import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
+import type { ApprovalPendingGlobalDto, ApprovalPreview } from "@shared/schemas/approvals.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
 import {
   APPROVAL_ACTION_WORDS,
@@ -19,12 +20,14 @@ import {
   NEEDS_YOU_UNKNOWN_COPY,
   NEEDS_YOU_WITHDRAWALS_INCOMPLETE_COPY,
   NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY,
+  NEEDS_YOU_NETWORK_WORD,
   needsYouMetaText,
   needsYouModelOf,
   needsYouWithdrawalReadOf,
   type NeedsYouWithdrawalRead,
 } from "../needs-you.js";
 import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
+import { approvalSentence } from "../../appShell/ApprovalCard/approval-sentence.js";
 import { approval, session } from "./fixtures.js";
 
 const NOW = Date.parse("2026-10-17T12:30:00.000Z");
@@ -168,11 +171,65 @@ describe("approvalActionWord", () => {
   });
 });
 
+// Producer-shaped previews, as the engine binds them (the card's own fixtures
+// in features/appShell/__tests__/approval-words.test.ts use the same shapes).
+const BRIDGE_PREVIEW: ApprovalPreview = {
+  toolName: "BridgeExecute",
+  criticalArgs: {
+    fromChain: "8453",
+    toChain: "42161",
+    amountRaw: "1000000",
+    bridgeAmount: "1 USDC | 1000000 raw units | 6 decimals",
+  },
+};
+const SWAP_PREVIEW: ApprovalPreview = {
+  toolName: "swap.execute",
+  namespace: "kyberswap",
+  criticalArgs: { chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "200", slippageBps: 50 },
+};
+const SEND_PREVIEW: ApprovalPreview = {
+  toolName: "WalletSendConfirm",
+  criticalArgs: {
+    network: "eip155",
+    chain: "base",
+    to: "0x1234567890AbcdEF1234567890aBcdef12345678",
+    amount: "0.5",
+    token: "USDC",
+  },
+};
+const LIGHTER_PREVIEW: ApprovalPreview = {
+  toolName: "order.create",
+  namespace: "lighter",
+  criticalArgs: {
+    toolId: "lighter.order.create",
+    environment: "core",
+    side: "buy",
+    baseAmountDisplay: "0.0002",
+    marketSymbol: "BTC",
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
+    priceDisplay: "77199.7",
+  },
+};
+const MCP_PREVIEW: ApprovalPreview = {
+  toolName: "deepwiki / read_wiki_structure",
+  namespace: "mcp",
+  criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: "{}" },
+};
+
+/** An approval as the engine names its tool, from a preview. */
+function approvalOf(
+  preview: ApprovalPreview,
+  overrides: Partial<ApprovalPendingGlobalDto> = {},
+): ApprovalPendingGlobalDto {
+  const toolName = preview.namespace === undefined ? preview.toolName : `${preview.namespace}:${preview.toolName}`;
+  return approval({ toolName, preview, ...overrides });
+}
+
 describe("approvalNeedsYouItem", () => {
-  it("names the action, where it was raised and when it expires", () => {
-    const row = approval({
+  it("titles the row with the card's sentence, then where it acts and when it expires", () => {
+    const row = approvalOf(BRIDGE_PREVIEW, {
       id: "a1",
-      toolName: "BridgeExecute",
       sessionTitle: "Treasury chat",
       expiresAt: "2026-10-17T15:30:00.000Z",
     });
@@ -180,31 +237,72 @@ describe("approvalNeedsYouItem", () => {
     expect(item).toMatchObject({
       key: "approval:a1",
       kind: "approval",
-      title: "Approve bridge",
+      title: "Bridge 1 USDC from Base to Arbitrum.",
       go: "Review",
       where: "Treasury chat",
       sessionId: row.sessionId,
       approvalId: "a1",
       expiresAt: "2026-10-17T15:30:00.000Z",
     });
-    expect(needsYouMetaText(item)).toBe("Treasury chat · expires 15:30 UTC");
+    expect(needsYouMetaText(item)).toBe("Base to Arbitrum, real funds · expires 15:30 UTC");
     expect(item.metaTime).toBe("15:30 UTC");
   });
 
-  it("says since when it waits when there is no expiry", () => {
+  it("says the swap as the card does, and since when it waits when there is no expiry", () => {
     const item = approvalNeedsYouItem(
-      approval({ expiresAt: null, createdAt: "2026-10-17T12:05:00.000Z" }),
+      approvalOf(SWAP_PREVIEW, { expiresAt: null, createdAt: "2026-10-17T12:05:00.000Z" }),
       NOW,
     );
-    expect(needsYouMetaText(item)).toBe("Treasury chat · since 12:05 UTC");
+    expect(item.title).toBe("Swap 200 USDC for ETH on Base.");
+    expect(needsYouMetaText(item)).toBe("Base, real funds · since 12:05 UTC");
+  });
+
+  it("names a send's chain and a Lighter call's deployment", () => {
+    expect(needsYouMetaText(approvalNeedsYouItem(approvalOf(SEND_PREVIEW), NOW))).toBe(
+      "Base, real funds · since 12:00 UTC",
+    );
+    const lighter = approvalNeedsYouItem(approvalOf(LIGHTER_PREVIEW), NOW);
+    expect(lighter.title).toBe("Buy 0.0002 BTC at market.");
+    expect(needsYouMetaText(lighter)).toBe("Lighter Core, real funds · since 12:00 UTC");
+    const unnamed = Object.fromEntries(
+      Object.entries(LIGHTER_PREVIEW.criticalArgs).filter(([key]) => key !== "environment"),
+    );
+    const plain = approvalNeedsYouItem(approvalOf({ ...LIGHTER_PREVIEW, criticalArgs: unnamed }), NOW);
+    expect(needsYouMetaText(plain)).toBe("Lighter, real funds · since 12:00 UTC");
+  });
+
+  it("says Mainnet when the arguments name no chain, and the card's own fallback as the title", () => {
+    const row = approval({ toolName: "BridgeExecute", preview: null, expiresAt: null });
+    const item = approvalNeedsYouItem(row, NOW);
+    expect(item.title).toBe(approvalSentence(row));
+    expect(item.title).toMatch(/: review the signed fields$/);
+    expect(needsYouMetaText(item)).toBe(`${NEEDS_YOU_NETWORK_WORD}, real funds · since 12:00 UTC`);
+    expect(NEEDS_YOU_NETWORK_WORD).toBe("Mainnet");
+  });
+
+  it("says where a call to the user's own MCP tool was raised, and never real funds", () => {
+    const item = approvalNeedsYouItem(approvalOf(MCP_PREVIEW, { sessionTitle: "Research chat" }), NOW);
+    expect(item.title).toBe("Call read_wiki_structure on your MCP server deepwiki.");
+    expect(needsYouMetaText(item)).toBe("Research chat · since 12:00 UTC");
   });
 
   it("uses the date for an expiry on another day", () => {
     const item = approvalNeedsYouItem(
-      approval({ expiresAt: "2026-10-18T09:00:00.000Z" }),
+      approvalOf(SWAP_PREVIEW, { expiresAt: "2026-10-18T09:00:00.000Z" }),
       NOW,
     );
-    expect(needsYouMetaText(item)).toBe("Treasury chat · expires Oct 18, 09:00 UTC");
+    expect(needsYouMetaText(item)).toBe("Base, real funds · expires Oct 18, 09:00 UTC");
+  });
+
+  it("uses the card's words and never a figure the approval does not carry", () => {
+    for (const preview of [BRIDGE_PREVIEW, SWAP_PREVIEW, SEND_PREVIEW, LIGHTER_PREVIEW, MCP_PREVIEW]) {
+      const row = approvalOf(preview);
+      const item = approvalNeedsYouItem(row, NOW);
+      expect(item.title).toBe(approvalSentence(row));
+      // The place words carry no figure; the only figure on the line is the time.
+      expect(item.metaLead).not.toMatch(/\d/);
+      expect(needsYouMetaText(item)).not.toMatch(/undefined|null|NaN/);
+    }
   });
 
   it("names the project for a Studio approval and groups by it", () => {
@@ -218,13 +316,13 @@ describe("approvalNeedsYouItem", () => {
     const item = approvalNeedsYouItem(row, NOW);
     expect(item.where).toBe("payments-api");
     expect(item.groupKey).toBe("project:00000000-0000-4000-8000-0000000000aa");
-    expect(item.title).toBe("Approve transfer");
+    expect(item.title).toBe(approvalSentence(row));
     expect(item.sessionId).toBeNull();
   });
 
   it("falls back to the same labels the inbox always used", () => {
     expect(approvalNeedsYouItem(approval({ sessionTitle: null }), NOW).where).toBe(
-      "Untitled session",
+      "Untitled chat",
     );
     expect(
       approvalNeedsYouItem(approval({ sessionId: null, sessionTitle: null }), NOW).where,
@@ -240,7 +338,7 @@ describe("approvalNeedsYouItem", () => {
       NOW,
     );
     expect(item.metaTime).toBeNull();
-    expect(needsYouMetaText(item)).toBe("Treasury chat");
+    expect(needsYouMetaText(item)).toBe("Mainnet, real funds");
   });
 });
 

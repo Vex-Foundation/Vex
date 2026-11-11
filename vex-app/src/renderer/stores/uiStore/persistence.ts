@@ -7,12 +7,7 @@
  */
 
 import type { BookTab, UiState } from "../uiStore.js";
-import {
-  coerceThemePreference,
-  resolveTheme,
-  systemPrefersDark,
-  type VexTheme,
-} from "./theme.js";
+import { coerceThemePreference, VEX_THEME, type VexTheme } from "./theme.js";
 import {
   coerceRuntimeMode,
   DEFAULT_RUNTIME_MODE,
@@ -146,6 +141,7 @@ export const PERSISTED_UI_KEYS = [
   "showAvatar",
   "welcomeVexShown",
   "vexInferenceNoticeDismissed",
+  "kimmHintShown",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -290,6 +286,24 @@ export function coerceBookTab(value: unknown): BookTab {
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
 //       into a defined share rather than `undefined`.
+//   v23: H3 is DARK ONLY (the H3 revamp plan, decision 6, 2026-11-03).
+//       Celeris and the `system` choice retired, so every stored
+//       `themePreference` - `celeris`, `system`, `chronos` or anything else -
+//       is REWRITTEN to `chronos`, and a stale pre-v9 `theme` key goes with
+//       the choice it held. The rewrite, not only the merge's coercion, is
+//       what keeps a downgrade honest: an older release reading this payload
+//       finds dark rather than the light room it no longer ships here. The
+//       second hop that rewrites rather than seeds (after v19).
+//   v24: Kimm's open or closed choice REPLACES "Show avatar"
+//       (docs/design/H3-DESKTOP.md section 3.5; plan row S4-14). In a chat
+//       her section is open or folded to its strip on one choice,
+//       `vexOpenChat`; R3's separate avatar switch has nothing left to hide.
+//       So a stored `showAvatar: false` folds INTO the choice (closed: the
+//       person had hidden her figure, and keeps it hidden), and `showAvatar`
+//       is pinned true, the value under which an older build reads the
+//       choice alone. A missing or off-shape slot counts as its default
+//       (open, shown), so the hop never closes her on a guess. The third hop
+//       that rewrites rather than seeds.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -361,7 +375,22 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
     next = { ...next, sessionOrdinals: EMPTY_ORDINAL_LEDGER };
   }
   if (version < 22) next = seedR3FrameSlots(next);
+  if (version < 23) {
+    const { theme: _retired, ...rest } = next;
+    next = { ...rest, themePreference: VEX_THEME };
+  }
+  if (version < 24) next = foldShowAvatarIntoKimmChoice(next);
   return next;
+}
+
+/**
+ * v24's fold: her choice stays open only if both the stored choice and the
+ * retired avatar switch said shown; the switch is then pinned true.
+ */
+function foldShowAvatarIntoKimmChoice(stored: Record<string, unknown>): Record<string, unknown> {
+  const open = coerceBooleanPreference(stored["vexOpenChat"], true);
+  const shown = coerceBooleanPreference(stored["showAvatar"], true);
+  return { ...stored, vexOpenChat: open && shown, showAvatar: true };
 }
 
 /**
@@ -405,8 +434,10 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     persisted !== null && typeof persisted === "object"
       ? (persisted as Partial<UiState>)
       : undefined;
+  // Dark only: whatever the slot holds lands on the one room, and the room
+  // is never read from storage at all.
   const themePreference = coerceThemePreference(incoming?.themePreference);
-  const theme: VexTheme = resolveTheme(themePreference, systemPrefersDark());
+  const theme: VexTheme = VEX_THEME;
   // Anything non-boolean degrades to the TRUE default, never a crash or a
   // stray non-boolean reaching the checkbox's `checked` prop.
   const hideDustBalances: boolean =
@@ -495,5 +526,8 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
       incoming?.vexInferenceNoticeDismissed,
       current.vexInferenceNoticeDismissed,
     ),
+    // Her first-close hint's flag, added the same way (no hop): absent or
+    // off-shape degrades to the store's default, not yet shown.
+    kimmHintShown: coerceBooleanPreference(incoming?.kimmHintShown, current.kimmHintShown),
   };
 }

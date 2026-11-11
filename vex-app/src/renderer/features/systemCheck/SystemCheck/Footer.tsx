@@ -1,10 +1,11 @@
 /**
- * System Check footer - the Continue action and the logs escape hatch.
- *
- * Continue is the stock `Button` (the one blue fill on the stage, 420 wide
- * as drawn in `docs/design/R3-MINIMAL.md section 10.3`), disabled until every
- * probe resolves. When it enables, focus lands on it so Enter/Space continues
- * immediately - a real keyboard-flow win, not decoration.
+ * System Check's bottom row - the Continue key (docs/design/H3-DESKTOP.md
+ * section 4.9; the plate `stage-system-check`): the one blue key at the
+ * bottom row's right edge, where SEND stands in a chat, held (the cell fill,
+ * muted words) until every probe resolves and while the disk cannot take the
+ * first run. When it enables, focus lands on it so Enter/Space continues
+ * immediately - a real keyboard-flow win, not decoration. The logs folder is
+ * the bottom-left cell's link (`SystemCheck`).
  *
  * Pure presentation: the disabled state and the advance handler stay
  * owned by the parent component, so the state-machine transition lives
@@ -14,7 +15,7 @@
 import { useEffect, useRef, type JSX } from "react";
 
 import { Button } from "../../../components/ui/button.js";
-import { OpenLogsLink } from "../../../components/common/OpenLogsLink.js";
+import { StageActs, StageGap } from "../../../components/onboarding/StageFrame.js";
 
 interface FooterProps {
   readonly disabled: boolean;
@@ -29,17 +30,17 @@ export function Footer({ disabled, onContinue }: FooterProps): JSX.Element {
   }, [disabled]);
 
   return (
-    <div className="vex-fr-acts">
+    <StageActs>
+      <StageGap />
       <Button
         ref={continueRef}
         disabled={disabled}
         onClick={onContinue}
         aria-label="Continue setup"
-        className="w-[420px] max-w-full"
+        className="vex-pre-primary"
       >
         Continue
       </Button>
-      <OpenLogsLink className="vex-fr-link" />
-    </div>
+    </StageActs>
   );
 }

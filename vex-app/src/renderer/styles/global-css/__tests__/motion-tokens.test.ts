@@ -18,7 +18,10 @@
  *     that the day it landed;
  *  3. every motion primitive added by the B5.2 pass states its own
  *     reduced-motion collapse, so it is complete without base.css;
- *  4. the live JS/CSS timing pairs still agree.
+ *  4. the live JS/CSS timing pairs still agree;
+ *  5. the push curve (Kimm's section, docs/design/H3-DESKTOP.md section 3.1)
+ *     reproduces the five clip insets the mockup prints, which is the only
+ *     evidence it has, so a hand-edited curve fails against the design.
  */
 
 import { readFileSync } from "node:fs";
@@ -26,13 +29,29 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  CHATS_ROW_DELAY_MS,
+  CHATS_ROW_STAGGER_MS,
+  DURATION_CHATS_ROW_MS,
+  DURATION_CHATS_SCRIM_CLOSE_MS,
+  DURATION_CHATS_SCRIM_OPEN_MS,
+  cssCurve,
   DURATION_BASE_MS,
+  EASE_HOUSE,
+  DURATION_BLINK_HATCH_MS,
+  DURATION_GATE_FADE_MS,
+  DURATION_GATE_MARK_FADE_MS,
+  DURATION_GATE_MARK_MS,
+  DURATION_BLINK_MS,
   DURATION_FAST_MS,
   DURATION_INSTANT_MS,
+  DURATION_KEY_FILL_MS,
   DURATION_REVEAL_MS,
   DURATION_SLOW_MS,
+  DURATION_VEX_CLOSE_MS,
+  DURATION_VEX_OPEN_MS,
   EASE_INOUT,
   EASE_OUT,
+  EASE_PUSH,
   EASE_STANDARD,
 } from "../../../lib/motion/index.js";
 import { TOAST_EXIT_MS } from "../../../lib/notifications/notification-model.js";
@@ -65,6 +84,7 @@ const allSheets: readonly (readonly [string, string])[] = [
   "type.css",
   "ui-primitives.css",
   "ui-primitives/indicators.css",
+  "ui-primitives/gate.css",
   "ui-primitives/menu.css",
   "ui-primitives/overlays.css",
 ].map((name) => [name, read(name)] as const);
@@ -88,6 +108,14 @@ describe("motion vocabulary", () => {
       ["--vex-duration-base", DURATION_BASE_MS],
       ["--vex-duration-slow", DURATION_SLOW_MS],
       ["--vex-duration-reveal", DURATION_REVEAL_MS],
+      ["--vex-duration-vex-open", DURATION_VEX_OPEN_MS],
+      ["--vex-duration-vex-close", DURATION_VEX_CLOSE_MS],
+      ["--vex-duration-blink", DURATION_BLINK_MS],
+      ["--vex-duration-blink-hatch", DURATION_BLINK_HATCH_MS],
+      ["--vex-duration-gate-fade", DURATION_GATE_FADE_MS],
+      ["--vex-duration-gate-mark", DURATION_GATE_MARK_MS],
+      ["--vex-duration-gate-mark-fade", DURATION_GATE_MARK_FADE_MS],
+      ["--vex-duration-key-fill", DURATION_KEY_FILL_MS],
     ];
     for (const [token, ms] of pairs) {
       expect(declaration(tokensCss, token)).toBe(`${String(ms)}ms`);
@@ -102,6 +130,7 @@ describe("motion vocabulary", () => {
     expect(declaration(tokensCss, "--vex-ease-inout")).toBe(
       cubicBezier(EASE_INOUT),
     );
+    expect(declaration(tokensCss, "--vex-ease-push")).toBe(cubicBezier(EASE_PUSH));
   });
 
   it("declares the vocabulary in exactly one stylesheet", () => {
@@ -111,9 +140,18 @@ describe("motion vocabulary", () => {
       "--vex-duration-base",
       "--vex-duration-slow",
       "--vex-duration-reveal",
+      "--vex-duration-vex-open",
+      "--vex-duration-vex-close",
+      "--vex-duration-blink",
+      "--vex-duration-blink-hatch",
+      "--vex-duration-gate-fade",
+      "--vex-duration-gate-mark",
+      "--vex-duration-gate-mark-fade",
+      "--vex-duration-key-fill",
       "--vex-ease-standard",
       "--vex-ease-out",
       "--vex-ease-inout",
+      "--vex-ease-push",
     ]) {
       const declaring = allSheets.filter(([, css]) =>
         new RegExp(`^\\s*${property}:`, "m").test(css),
@@ -140,6 +178,81 @@ describe("motion vocabulary", () => {
       .filter(([, css]) => stripComments(css).includes("cubic-bezier("))
       .map(([name]) => name);
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The cubic-bezier easing function, solved the way a browser solves it: find
+ * the curve parameter whose x is the time fraction (bisection, to well under
+ * a thousandth of a pixel here), and return its y.
+ */
+function easing(curve: readonly number[]): (x: number) => number {
+  const [p1x, p1y, p2x, p2y] = curve as [number, number, number, number];
+  const at = (u: number, a: number, b: number): number =>
+    3 * a * u * (1 - u) ** 2 + 3 * b * u ** 2 * (1 - u) + u ** 3;
+  return (x) => {
+    let [low, high] = [0, 1];
+    for (let step = 0; step < 60; step += 1) {
+      const mid = (low + high) / 2;
+      if (at(mid, p1x, p2x) < x) low = mid;
+      else high = mid;
+    }
+    return at((low + high) / 2, p1y, p2y);
+  };
+}
+
+describe("Kimm's section: the push curve against the printed frames", () => {
+  // docs/design/H3-DESKTOP.md section 3.2, 1440 x 900: the section is 563
+  // high and folds to a 56 strip, so the closed clip inset is 507. Opening
+  // runs the inset 507 -> 0 over 720ms; closing 0 -> 507 over 420ms.
+  const CLOSED_INSET = 507;
+  const push = easing(EASE_PUSH);
+
+  it.each([
+    ["opening", 120, 204.053],
+    ["opening", 240, 67.5736],
+    ["opening", 480, 4.26557],
+    ["closing", 120, 413.219],
+    ["closing", 240, 496.272],
+  ] as const)("reproduces the %s inset at %sms (%s px printed)", (motion, ms, printed) => {
+    const duration = motion === "opening" ? DURATION_VEX_OPEN_MS : DURATION_VEX_CLOSE_MS;
+    const progress = push(ms / duration);
+    const inset = motion === "opening" ? CLOSED_INSET * (1 - progress) : CLOSED_INSET * progress;
+    // To the printed digits: within half a unit of the last digit shown.
+    const digits = String(printed).split(".")[1]?.length ?? 0;
+    expect(Math.abs(inset - printed)).toBeLessThanOrEqual(0.5 * 10 ** -digits + 1e-9);
+  });
+
+  it("is not the review sheet's own --ease, which misses the same frames by hundreds of px", () => {
+    // The sheet's cubic-bezier(0.625, 0.05, 0, 1) is the review page's curve.
+    const sheet = easing([0.625, 0.05, 0, 1]);
+    const inset = CLOSED_INSET * (1 - sheet(120 / DURATION_VEX_OPEN_MS));
+    expect(Math.abs(inset - 204.053)).toBeGreaterThan(200);
+  });
+
+  it("opens in 720ms and closes in 420ms", () => {
+    expect(DURATION_VEX_OPEN_MS).toBe(720);
+    expect(DURATION_VEX_CLOSE_MS).toBe(420);
+  });
+});
+
+describe("the chats panel (docs/design/H3-DESKTOP.md section 4.12)", () => {
+  it("moves on VEX Cloud's numbers: 600 and 300 for the scrim, 620 for a row after 120 + 45n", () => {
+    // MOTION-POLICY.md names these in the exception list; the panel itself
+    // slides on her section's 720 and 420 and the push curve.
+    expect(DURATION_CHATS_SCRIM_OPEN_MS).toBe(600);
+    expect(DURATION_CHATS_SCRIM_CLOSE_MS).toBe(300);
+    expect(DURATION_CHATS_ROW_MS).toBe(620);
+    expect(CHATS_ROW_DELAY_MS).toBe(120);
+    expect(CHATS_ROW_STAGGER_MS).toBe(45);
+    expect(cssCurve(EASE_PUSH)).toBe(declaration(tokensCss, "--vex-ease-push"));
+  });
+});
+
+describe("a page's re-lay (docs/design/H3-DESKTOP.md section 1.9, EC-26)", () => {
+  it("fades on the house curve, Cloud's --vx-ease-ease, which is not her section's push", () => {
+    expect(cssCurve(EASE_HOUSE)).toBe("cubic-bezier(0.625, 0.05, 0, 1)");
+    expect(cssCurve(EASE_HOUSE)).not.toBe(cssCurve(EASE_PUSH));
   });
 });
 
@@ -191,14 +304,27 @@ describe("motion primitives", () => {
 });
 
 describe("cross-file timing invariants", () => {
-  it("opens and closes the frame's columns on the track transition alone, never a JS timer", () => {
-    // A sidebar and its rail swap in one commit; only the grid tracks move,
-    // on the reveal duration, and the chat share drag pauses them.
+  it("opens and closes the desk's columns on the track transition alone, never a JS timer", () => {
+    // On the Lighter desk a sidebar and its rail swap in one commit; only the
+    // grid tracks move, on the reveal duration, and the chat share drag
+    // pauses them.
     expect(shellCss).toContain(
       "transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);",
     );
     expect(shellCss).toContain(".vex-shell-frame[data-dragging] {");
     expect(stripComments(shellCss)).not.toMatch(/vex-sidebar-(fading|rail-in)|@keyframes vex-rail/);
+  });
+
+  it("holds every transition still while the window is resized (Cloud's resize freeze)", () => {
+    const baseCss = read("base.css");
+    expect(stripComments(baseCss)).toMatch(
+      /html\[data-vex-resizing\] \*,\s*html\[data-vex-resizing\] \*::before,\s*html\[data-vex-resizing\] \*::after \{\s*transition-duration: 0s !important;\s*transition-delay: 0s !important;\s*\}/,
+    );
+  });
+
+  it("never animates a track in H3's frame (EC-26: a sliding track would carry a waiting card)", () => {
+    const rule = /\.vex-shell-frame\[data-vex-frame="h3"\] \{\s*transition: none;\s*\}/;
+    expect(stripComments(shellCss)).toMatch(rule);
   });
 
   it("keeps the toast exit pair in agreement", () => {

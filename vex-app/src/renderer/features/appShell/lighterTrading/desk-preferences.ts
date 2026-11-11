@@ -8,7 +8,8 @@ import type {
   LighterTradingEnvironment,
   LighterTradingLiveResolution,
 } from "@shared/schemas/lighter-trading.js";
-export const LIGHTER_CHAT_DEFAULT_SHARE = 0.32;
+/** The desk chat, her column on the desk: H3's 30% of the window (section 1.2). */
+export const LIGHTER_CHAT_DEFAULT_SHARE = 0.3;
 
 export const LIGHTER_RESOLUTIONS: readonly LighterTradingLiveResolution[] = [
   "1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d",
@@ -56,7 +57,8 @@ export const LIGHTER_TRADES_DEFAULT_SHARE = 0.32;
 /** S4 - the bottom dock, as a share of the desk height. */
 export const LIGHTER_BOTTOM_MIN = 120;
 export const LIGHTER_BOTTOM_MAX_SHARE = 0.6;
-export const LIGHTER_BOTTOM_DEFAULT_SHARE = 0.2;
+/** The approved desk plate's dock: its tabs, summary strip, heads and two rows. */
+export const LIGHTER_BOTTOM_DEFAULT_SHARE = 0.24;
 export const LIGHTER_BOTTOM_COLLAPSED = 32;
 /** The panels above the dock never give up more than this: the book and trades minimums plus their seam. */
 export const LIGHTER_MAIN_MIN_HEIGHT = LIGHTER_BOOK_MIN + LIGHTER_TRADES_MIN + 1;
@@ -138,6 +140,66 @@ export function resolveLighterLayout(layout: LighterLayout, frame: LighterDeskFr
     ? clampNumber(column * layout.tradesShare, LIGHTER_TRADES_MIN, tradesMax, LIGHTER_TRADES_MIN)
     : LIGHTER_TRADES_MIN;
   return { bookWidth, bookMax, ticketWidth, ticketMax, tradesHeight, tradesMax, compactBookHeight, compactBookMax, bottomHeight, bottomMax, dockSqueezed };
+}
+
+/**
+ * THE H3 DESK (docs/design/H3-DESKTOP.md section 4.9, the approved desk
+ * plate; plan row S8-09): the chart over the book at the left, the ticket at
+ * the right, the account dock across the foot.
+ *
+ * - The TICKET is a fixed 340 column (280 under a 1024 window), its review
+ *   included: "Review order" takes the same column (lighter-desk.css).
+ * - The BOOK stands under the chart, bids beside asks, five levels a side
+ *   (four under an 800-high window), so its height is its rows'.
+ * - The CHART takes what the book and the dock leave, never under
+ *   LIGHTER_DESK_CHART_MIN.
+ * - The DOCK keeps its stored share of the desk's height, its floor and its
+ *   ceiling, and folds to its bar where even its floor leaves the chart and
+ *   the book too little.
+ */
+export const LIGHTER_DESK_TICKET_WIDTH = 340;
+/** The ticket under a 1024 window, the band's width. */
+export const LIGHTER_DESK_TICKET_WIDTH_BAND = 280;
+/** The window height under which the book shows four levels a side, not five. */
+export const LIGHTER_DESK_BOOK_TALL_MIN = 800;
+/** The book's levels a side at a window this high. */
+export function deskBookRows(windowHeight: number): 4 | 5 {
+  return windowHeight > 0 && windowHeight < LIGHTER_DESK_BOOK_TALL_MIN ? 4 : 5;
+}
+/**
+ * The book's height for its levels: the 40 head row, the 30 spread row, the
+ * 22 column labels, a 22 row a level, 8 of padding and the 28 B and S row,
+ * with their rules (lighter-book.css).
+ */
+export function deskBookHeight(rows: 4 | 5): number {
+  return 40 + 30 + 22 + rows * 22 + 8 + 28 + 4;
+}
+/** The chart's floor above the book. */
+export const LIGHTER_DESK_CHART_MIN = 160;
+
+export interface LighterDeskDock {
+  readonly bottomHeight: number;
+  readonly bottomMax: number;
+  /** Even at its floor the dock leaves the chart and the book too little: it folds. */
+  readonly dockSqueezed: boolean;
+}
+
+/** The dock's height for one frame of the H3 desk. */
+export function resolveDeskDock(
+  layout: Pick<LighterLayout, "bottomShare">,
+  frame: { readonly height: number; readonly bookHeight: number },
+): LighterDeskDock {
+  const { height, bookHeight } = frame;
+  const mainMinHeight = LIGHTER_DESK_CHART_MIN + 1 + bookHeight;
+  const bottomMax = Math.max(
+    LIGHTER_BOTTOM_MIN,
+    Math.round(Math.min(height * LIGHTER_BOTTOM_MAX_SHARE, height - 1 - mainMinHeight)),
+  );
+  const bottomHeight = height > 0
+    ? clampNumber(height * layout.bottomShare, LIGHTER_BOTTOM_MIN, bottomMax, LIGHTER_BOTTOM_MIN)
+    : LIGHTER_BOTTOM_MIN;
+  const dockSqueezed = height > 0 && height - 1 - LIGHTER_BOTTOM_MIN < mainMinHeight;
+  return { bottomHeight, bottomMax, dockSqueezed };
 }
 
 /**

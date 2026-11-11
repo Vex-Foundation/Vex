@@ -310,6 +310,33 @@ describe("XtermHost lifecycle", () => {
     expect(bridge.resizes).toContainEqual({ terminalId: "t1", cols: 120, rows: 40 });
   });
 
+  it("fits again and tells the host once the WebGL renderer has attached", async () => {
+    // The first fit reads the DOM renderer's cell; WebGL attaches later with a
+    // narrower one (it floors to whole device pixels), so without a second fit
+    // the grid keeps too few columns and leaves the pane's right edge empty.
+    let attach: (attached: boolean) => void = () => undefined;
+    vi.spyOn(registry, "rendererSettled").mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        attach = resolve;
+      }),
+    );
+    render(<XtermHost terminalId="t1" visible registry={registry} />);
+    await act(async () => {
+      await settle();
+    });
+    // From here on the fit answers with the WebGL renderer's wider grid.
+    const refit = vi.spyOn(registry, "refit").mockReturnValue({ cols: 99, rows: 34 });
+    expect(bridge.resizes).not.toContainEqual({ terminalId: "t1", cols: 99, rows: 34 });
+
+    await act(async () => {
+      attach(true);
+      await settle();
+    });
+
+    expect(refit).toHaveBeenCalledWith("t1");
+    expect(bridge.resizes).toContainEqual({ terminalId: "t1", cols: 99, rows: 34 });
+  });
+
   it("keeps decorative marks outside the terminal glyph background", () => {
     const { container } = render(<XtermHost terminalId="t1" visible registry={registry} />);
     const mark = container.querySelector("svg.text-brand-mark");
@@ -387,9 +414,14 @@ describe("XtermHost and the chords Studio owns", () => {
     }
   });
 
-  it("lets the Vex toggle travel on to the window, uncancelled and unsent", () => {
-    // Cmd or Ctrl + Shift + Period is the app's own chord, not a Studio row:
-    // refused here so the document listener that toggles Vex hears it.
+  it.each([
+    ["Ctrl + Shift + B", { code: "KeyB", key: "B", keyCode: 66 }],
+    ["the retiring Ctrl + Shift + Period", { code: "Period", key: ">", keyCode: 190 }],
+  ])("lets the Vex toggle, %s, travel on to the window, uncancelled and unsent", (_name, key) => {
+    // The toggle is the app's own chord, not a Studio row (Studio's B row is
+    // Ctrl + B with Shift up): refused here so the document listener that
+    // toggles Vex hears it. The retiring Period alias is refused the same way
+    // for as long as it still toggles her.
     const captured: { handler: ((event: KeyboardEvent) => boolean) | null } = {
       handler: null,
     };
@@ -406,12 +438,12 @@ describe("XtermHost and the chords Studio owns", () => {
     const press = captured.handler;
     if (press === null) throw new Error("the host attached no key handler");
 
-    const toggle = { code: "Period", key: ">", ctrlKey: true, shiftKey: true, cancelable: true };
+    const toggle = { code: key.code, key: key.key, ctrlKey: true, shiftKey: true, cancelable: true };
     expect(press(new KeyboardEvent("keydown", toggle))).toBe(false);
     const heard = vi.fn();
     document.addEventListener("keydown", heard);
     try {
-      const event = typeChord({ ...toggle, keyCode: 190 });
+      const event = typeChord({ ...toggle, keyCode: key.keyCode });
       expect(sentToShell()).toBe("");
       expect(event.defaultPrevented).toBe(false);
       expect(heard).toHaveBeenCalledTimes(1);
@@ -710,11 +742,11 @@ describe("XtermHost on glass", () => {
     expect(root?.className).toContain("bg-transparent");
     expect(root?.className).not.toMatch(/\bbg-surface-/);
     // The registry's wrapper fills its container's box, so the inset the text
-    // keeps from the pane's edge is the container's margin: 12 above and below
-    // and 16 at the sides (docs/design/R3-MINIMAL.md section 9.5).
+    // keeps from the pane's edge is the container's margin: 16 above and below
+    // and 24 at the sides (our approved Studio plate, H3-DESKTOP.md section
+    // 4.9: a cell's text sits 24 in).
     const wrapper = container.querySelector("[data-terminal-id]");
-    expect(wrapper?.parentElement?.className).toContain("mx-4");
-    expect(wrapper?.parentElement?.className).toContain("mt-3");
-    expect(wrapper?.parentElement?.className).toContain("mb-3");
+    expect(wrapper?.parentElement?.className).toContain("mx-6");
+    expect(wrapper?.parentElement?.className).toContain("my-4");
   });
 });

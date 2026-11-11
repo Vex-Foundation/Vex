@@ -25,11 +25,14 @@
 @import "./global-css/profile-menu.css";
 @import "./global-css/title-bar.css";
 @import "./global-css/vex-sidebar.css";
+@import "./global-css/kimm.css";
+@import "./global-css/vex-console.css";
 @import "./global-css/overlay.css";
 @import "./global-css/settings.css";
 @import "./global-css/wizard.css";
 @import "./global-css/console.css";
 @import "./global-css/chronos-gate.css";
+@import "./global-css/stage.css";
 @import "./global-css/lighter-tokens.css";
 @import "./global-css/lighter-desk.css";
 @import "./global-css/lighter-market-bar.css";

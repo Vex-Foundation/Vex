@@ -1,0 +1,450 @@
+/* KIMM (docs/design/H3-DESKTOP.md sections 1.5, 1.6, 3 and 3.6): her
+ * portrait in the Vex key and her section over Vex's column. Radius 0, no
+ * shadow, no blur, tokens only (no colour is spelled here: the guard in
+ * `shell-design-guard.test.ts` reads every sheet but tokens.css).
+ *
+ *   .vex-kimm-key                 her portrait cell (KimmPortraitKey) */
+
+/* ---- her portrait in the Vex key (section 1.6) ----
+ * The box is the key's portrait cell; the sheet inside is scaled and moved
+ * so her mood's cell fills it (sizes from the component, as CSSOM). Open,
+ * the fold glyph stands on the raised fill: she has stepped down into her
+ * section. */
+.vex-kimm-key {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--vex-alias-label-primary);
+}
+.vex-kimm-key[data-kimm-key="open"] {
+  background: var(--vex-alias-cell-open);
+}
+.vex-kimm-key__sheet {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+}
+
+/* ---- held: the offer pose, dimmed (section 1.6) ----
+ * Held has no art of its own: the seam draws it from offer's cell and file
+ * (`KIMM_ART_MOOD`, kimm-assets.ts), and here it is dimmed to half its
+ * light, as Cloud lays its 50% scrim over her (the mood plate's held cell
+ * measures 0.50 of the offer cell's) and as desktop holds a locked vault.
+ * A still value, never animated: a change of mood is a change of picture. */
+.vex-kimm-key[data-kimm-mood="held"] .vex-kimm-key__sheet,
+.vex-kimm[data-kimm-mood="held"] .vex-kimm__figure {
+  opacity: 0.5;
+}
+
+/* ---- her section (sections 1.5 and 3.6) ----
+ * A box laid over Vex's column, never a row in it: absolute in the column
+ * (`.vex-vs` is its containing block), so nothing in the column moves under
+ * her and nothing about her reaches the frame's grid. Its size is a function
+ * of the window alone:
+ *   - top: the foot of the console's top block, the console's own fixed
+ *     `--vex-console-top-h` on `.vex-vs` (vex-sidebar.css): the Needs you
+ *     head (44), its row (64) and the missions row (40), each with its rule
+ *     inside, 148 under
+ *     the header, with no strategies row (section 4.1): y 224 at any window
+ *     height. A declared length, never a measure of the console's content,
+ *     so a decision arriving or a mission starting never moves her. Every
+ *     decision is listed, and the list scrolls inside the row's 64 rather
+ *     than push her down (vex-console.css), so her top holds while she
+ *     waits; VEX Cloud's 240 floor never binds here (at the 720 window
+ *     floor her box is 423 high).
+ *   - foot: the bottom row's top rule, where the column ends (the row is
+ *     72 x zoom and that rule, `--vex-h3-foot`), so she ends at 827 at
+ *     1440 x 900, as VEX Cloud's section does.
+ *   - left and width: the column's, her ground under its 1px rule at the
+ *     right, which the column draws (vex-sidebar.css) as the mockup draws it
+ *     over her. At 1440 x 900 she is 248, 224, 431 x 603 with the rule at
+ *     679, the printed 432 with the rule counted (section 1.5).
+ * She paints over the console under her; the console's rest stays where it
+ * is, under her, for the strip to uncover. */
+.vex-kimm {
+  --vex-kimm-top: var(--vex-console-top-h, 148px);
+  position: absolute;
+  z-index: 2;
+  top: var(--vex-kimm-top);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  /* Open, the whole box: where an open rests. The wipe between this and the
+   * strip is a Web Animation (`kimm-wipe.ts`, started by `KimmSection.tsx`),
+   * so the sheet states the resting insets and no transition. */
+  clip-path: inset(0 0 0 0);
+  /* Her drop into place as she opens: printed, "Kimm drops 32 px". */
+  --vex-kimm-drop: 32px;
+}
+.vex-kimm__body {
+  position: absolute;
+  inset: 0;
+}
+/* Her ground (section 1.5; VEX Cloud's `.vx-kimm`): the glyph field's baked
+ * frame, VEX Cloud's `field-still.webp`, set from her top centre to cover
+ * the box, under a fall to the page from 48% down. The field draws its own
+ * blue, so this is the one gradient H3 allows her (section 2). The frame's
+ * URL is the seam's (`KimmArtSet.field`), set on her box by
+ * `KimmSection.tsx` as `--vex-kimm-baked`; missing, the ground is the page.
+ * In the strip it is her section's own top 56. */
+.vex-kimm__ground {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, transparent 48%, var(--vex-alias-bg-base)),
+    var(--vex-kimm-baked, none) 50% 0 / cover no-repeat var(--vex-alias-bg-base);
+}
+/* From a 1600 window her box is 480 and up: the frame baked at 768 x 985
+ * (`field-still-wide.webp`) keeps the field's cell, and it holds its own
+ * fall to the page, so no gradient over it (VEX Cloud, DG-3 decision 12). */
+@media (min-width: 1600px) {
+  .vex-kimm__ground {
+    background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
+  }
+}
+/* The live field has painted (`data-kimm-field`, KimmSection.tsx): the
+ * page under it, as VEX Cloud's stage gives up its baked frame; the field
+ * draws its own fall to the page. */
+.vex-kimm[data-kimm-field] .vex-kimm__ground {
+  background: var(--vex-alias-bg-base);
+}
+/* Her glyph field (S4-17): VEX Cloud's Gradient ASCII field, a canvas the
+ * port adds to this box (`KimmField.tsx`), over her ground and under her
+ * figure, the size of her box. Decorative: it takes no pointer (the port
+ * reads the window's pointer for its trail). */
+.vex-kimm__field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.vex-kimm__field canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Her figure for her mood, framed as VEX Cloud frames her still in a
+ * desktop section (`.vx-kimm[data-vx-kimm-layout="desktop"] .vx-kimm-still`):
+ * 48 from her top over her hair, 88% of her box's width, centred, cut by
+ * her foot. The column zooms from 1760 up (`--vex-zoom`, vex-sidebar.css),
+ * so the 48 is 48 x zoom there, as Cloud's. */
+.vex-kimm__figure {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  width: 88%;
+  max-width: none;
+  height: auto;
+  transform: translateX(-50%);
+  user-select: none;
+}
+/* Her drop (S4-08), on the layer that holds her figure: in place while she
+ * is open, 32px up while she is folded. On a leg it is driven by the wipe's
+ * inset, -32 x inset / distance, on the clip's curve and duration
+ * (`kimm-wipe.ts`, which reads `--vex-kimm-drop` from her box): she drops
+ * into place as the wipe opens and rises as it closes. A transform: no
+ * layout moves. The sheet states only where she rests. */
+.vex-kimm__drop {
+  position: absolute;
+  inset: 0;
+  transform: none;
+}
+.vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
+  transform: translateY(calc(-1 * var(--vex-kimm-drop)));
+}
+
+/* ---- the scan head (section 3.2; S4-08) ----
+ * A 1px line keyed to the wipe's edge, on the open and on the close: a layer
+ * as tall as her box whose foot line is the edge, moved up by the clip's
+ * inset on its own duration and curve (`kimm-wipe.ts`). It holds its light
+ * until 92% of the leg, then fades linearly out. Its ink is Cloud's scan
+ * head, oklch(97% 0.005 264 / 0.85). At rest it is unlit. */
+.vex-kimm__scan {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.vex-kimm__scan::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--vex-alias-scan-head);
+}
+
+/* ---- closed: the strip (sections 1.5 and 3.2) ----
+ * Her section folds to its top 56 by its clip alone: inset from the foot by
+ * her box less the strip (547 at 1440 x 900), so her box, the column and the
+ * card beside it never change. What the clip leaves out takes no pointer:
+ * the console's rest under her is live again. The strip is her section's own
+ * top 56, her ground and the field holding its frame, with no file of its
+ * own; her figure is hidden once the close has ended (`data-kimm-phase`).
+ *
+ * HIDE VEX (section 3.1; S4-07): the wipe rises to the strip's edge in 420ms
+ * on the push curve, a Web Animation that lands on this inset
+ * (`kimm-wipe.ts`). Only clip-path moves. */
+.vex-kimm[data-kimm-open="false"] {
+  clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
+}
+.vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
+  visibility: hidden;
+}
+
+/* ---- her corner key (sections 1.5 and 3.3) ----
+ * The same control as the Vex key, in her section's top right whatever her
+ * state: HIDE VEX and a cross while she is open. VEX Cloud's `.kz-cell`: an
+ * opaque cell on the header's ground without its alpha (`--vx-header-solid`,
+ * #010102) and no blur, its rules on its left and its foot, 56 high; padding
+ * 0 18 0 20, a 12 gap, the words in 13px caps at the label tracking, an 18px
+ * glyph. Its width is its words': 137 open and 148 in the strip at 1440,
+ * the plates' measured 138 and 149 within their 1px. The words are sentence case in the source and caps here. Under
+ * a hovering pointer it takes the raised fill; focused from the keyboard,
+ * the 2px white ring inside the cell (section 2.4). */
+.vex-kimm__key {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  height: var(--vex-h3-strip-h);
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px 0 20px;
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  border-left: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-header-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+/* In the strip, SHOW VEX and a down chevron, in the same corner: the
+ * strip's key covers the open key's box, so the way back is under the
+ * pointer that pressed Hide Vex (section 3.3). Its foot rule is clear: the
+ * strip's own foot is the rule there. */
+.vex-kimm[data-kimm-open="false"] .vex-kimm__key {
+  border-bottom-color: transparent;
+}
+/* Its glyph at 18, Cloud's `.kz-key svg`: the line icon's 16 grid drawn at
+ * 18 by the sheet, as the line set has no 18. */
+.vex-kimm__key svg {
+  width: 18px;
+  height: 18px;
+}
+.vex-kimm__key:hover {
+  background: var(--vex-alias-interactive-solid);
+}
+.vex-kimm__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* ---- under 1024: her band (section 1.10; VEX Cloud's 768 to 1023) ----
+ * The same section, laid over the chat's top under the console line (the
+ * aside, `.vex-vs[data-vex-seat="band"]`, is its containing block): the
+ * chat's width and `--vex-band-h` high, its rule under it. No strip: closed,
+ * it folds away to nothing (`--vex-kimm-stub` 0) and, once the close has
+ * ended, there is no band at all. Her figure stands head to chest, as
+ * Cloud's still does: as wide as the band's room allows (its height less the
+ * 56 foot row and 12 over her), centred, from 12 under the band's top, cut
+ * by the foot row. The foot row holds Vex's line and the Hide Vex cell, and
+ * the whole row is the key that closes the band. */
+.vex-kimm--band {
+  --vex-kimm-stub: 0px;
+  /* Under the line's own rule, which the aside draws at its foot. */
+  top: calc(100% + 1px);
+  bottom: auto;
+  height: var(--vex-band-h);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kimm--band[data-kimm-phase="closed"] {
+  visibility: hidden;
+}
+.vex-kimm--band .vex-kimm__figure {
+  top: 12px;
+  /* Cloud's band draws its head-to-chest phone still (1040 x 589) at
+   * min(100%, (band - 68) / 0.566) wide. Desktop draws the section still
+   * (720 wide), whose top 589 rows are that crop without its side margins,
+   * so it stands at 720 / 1040 of that width and the foot row cuts it at
+   * the chest. */
+  width: calc(min(100%, calc((var(--vex-band-h) - 68px) / 0.566)) * 0.6923);
+}
+.vex-kimm__foot {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  height: var(--vex-h3-strip-h);
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 82%, transparent);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.vex-kimm__foot:hover {
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 92%, transparent);
+}
+.vex-kimm__foot:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-kimm__line {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.35em;
+  overflow: hidden;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-kimm__rest {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-kimm__cell {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 18px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-base);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* ---- her panel on the lock screen (section 4.13) ----
+ * `KimmPanel.tsx`: her glyph field edge to edge and her still for her mood,
+ * no key and no strip. The ground is the tall baked frame her stage takes
+ * (`field-still-wide.webp`, which holds its own fall to the page) at every
+ * width, until the live field has painted. Her figure stands on the panel's
+ * foot, its height the panel's less 64 so her head clears the window's top
+ * strip, centred; the foot cuts her where her still ends. */
+.vex-kimm-panel {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-base);
+  pointer-events: none;
+}
+.vex-kimm-panel__ground {
+  position: absolute;
+  inset: 0;
+  background: var(--vex-alias-bg-base) var(--vex-kimm-baked-wide, none) 50% 0 / cover no-repeat;
+}
+.vex-kimm-panel[data-kimm-field] .vex-kimm-panel__ground {
+  background: var(--vex-alias-bg-base);
+}
+.vex-kimm-panel__figure {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: auto;
+  max-width: none;
+  height: calc(100% - 64px);
+  transform: translateX(-50%);
+  user-select: none;
+}
+/* D2'S PORTRAIT CARD (docs/design/H3-DESKTOP.md section 6.3; VexPortraitCard):
+ * the panel as the top of Vex's column, the column's full width and about
+ * 360 high (280 / 0.78), flush under the header, its foot on the rule. Her
+ * figure stands as her section's settled rule has her in any box: 48 from
+ * her top, 88% of the width, centred, cut by the foot. */
+.vex-kimm-panel--card {
+  border-right: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kimm-panel--card .vex-kimm-panel__figure {
+  top: 48px;
+  bottom: auto;
+  width: 88%;
+  height: auto;
+}
+
+/* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
+ * Reduced motion and Save-Data open and close her at once. Her wipe, its
+ * scan head and her drop are Web Animations, which no sheet can collapse:
+ * under either (and while the window is resized), `KimmSection.tsx` starts
+ * none and rests her phase at the press, and the resting states above are
+ * the whole of her. The sheet moves nothing of hers with a transition; her
+ * corner key's hover fill states its own collapse (MOTION-POLICY.md, "State
+ * your own collapse"), beside the catch-alls in base.css. */
+@media (prefers-reduced-motion: reduce) {
+  .vex-kimm__key {
+    transition: none;
+  }
+}
+html[data-still] .vex-kimm__key {
+  transition: none;
+}
+
+/* ---- the first close's hint (sections 2.4 and 3.5; S4-15) ----
+ * "Show Vex" and its keycaps on the tooltip plate, as VEX Cloud's `.vx-vk-tip`
+ * draws it: under the Vex key at Cloud's top calc(100% + 8px), which here is
+ * 8px into the column (the column starts at the key's foot), and left 88 (the
+ * 76 portrait cell plus 12), over Vex's column only (the column clips it), for
+ * 2.4 seconds (`KIMM_HINT_MS`, a JS timer with no CSS twin: the hint leaves
+ * with its element). Padding 8 10, 12px at 0.02em, line height 1, no fixed
+ * height and no fade: it simply stands, in every motion setting. Its keycaps
+ * are Cloud's tooltip caps: 22 high, 11px at 0.04em, ink-2, a 1px chosen rule,
+ * 3 apart, 12 after the name. It takes no pointer. */
+.vex-kimm-hint {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  left: 88px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--vex-alias-tooltip-bg);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.vex-kimm-hint__name {
+  margin-right: 6px;
+}
+.vex-kimm-hint__caps {
+  display: flex;
+  gap: 3px;
+}
+.vex-kimm-hint__cap {
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  color: var(--vex-alias-label-secondary);
+  font: 400 11px / 1 var(--font-sans);
+  letter-spacing: 0.04em;
+}

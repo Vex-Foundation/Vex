@@ -38,13 +38,13 @@ afterEach(() => {
 describe("pre-shell gate scope", () => {
   it("stamps documentElement while a pre-shell screen is mounted", () => {
     expect(document.documentElement.matches(GATE_SELECTOR)).toBe(false);
-    render(<SetupFrame screen="unlock">body</SetupFrame>);
+    render(<SetupFrame screen="systemCheck" step="systemCheck" title="System check">body</SetupFrame>);
     expect(document.documentElement.matches(GATE_SELECTOR)).toBe(true);
   });
 
   it("a body-portaled surface resolves the gate scope from an ancestor", () => {
     const { getByTestId } = render(
-      <SetupFrame screen="unlock">
+      <SetupFrame screen="systemCheck" step="systemCheck" title="System check">
         <PortaledSurface />
       </SetupFrame>,
     );
@@ -56,7 +56,7 @@ describe("pre-shell gate scope", () => {
   });
 
   it("retracts the scope on unmount", () => {
-    const { unmount } = render(<SetupFrame screen="unlock">body</SetupFrame>);
+    const { unmount } = render(<SetupFrame screen="systemCheck" step="systemCheck" title="System check">body</SetupFrame>);
     unmount();
     expect(document.documentElement.matches(GATE_SELECTOR)).toBe(false);
   });
@@ -64,8 +64,8 @@ describe("pre-shell gate scope", () => {
   it("survives a crossfade: two frames mounted, the outgoing one leaving", () => {
     // AnimatePresence keeps the outgoing screen mounted while the incoming
     // one enters. An unguarded cleanup would retract the scope right here.
-    const outgoing = render(<SetupFrame screen="migrations">a</SetupFrame>);
-    const incoming = render(<SetupFrame screen="unlock">b</SetupFrame>);
+    const outgoing = render(<SetupFrame screen="migrations" step="database" title="Database">a</SetupFrame>);
+    const incoming = render(<SetupFrame screen="systemCheck" step="systemCheck" title="System check">b</SetupFrame>);
     outgoing.unmount();
     expect(document.documentElement.matches(GATE_SELECTOR)).toBe(true);
     incoming.unmount();
@@ -73,7 +73,7 @@ describe("pre-shell gate scope", () => {
   });
 
   it("keeps the scope on the frame itself for in-tree consumers", () => {
-    const { container } = render(<SetupFrame screen="unlock">body</SetupFrame>);
+    const { container } = render(<SetupFrame screen="systemCheck" step="systemCheck" title="System check">body</SetupFrame>);
     expect(container.querySelector(`main${GATE_SELECTOR}`)).not.toBeNull();
   });
 });

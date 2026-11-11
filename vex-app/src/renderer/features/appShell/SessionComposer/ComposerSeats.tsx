@@ -1,19 +1,24 @@
 /**
- * Composer bar seats (B18/B20/B21), R3 (docs/design/R3-MINIMAL.md section 7):
- * the ONE options control, "{model name} · Reasoning: {effort}", and the
- * legacy-plan chip, both in the bar's LEADING cluster.
+ * Composer seats (B18/B20/B21): the MODEL CELL that leads the composer row
+ * (docs/design/H3-DESKTOP.md section 1.8), and the status strip's first
+ * cell over the row, the options control ("{model} HIGH") with the
+ * legacy-plan chip.
  *
- * The options control is one 30 high frame holding two keys (`.vex-composer-
- * options`, console.css): the model's name and the reasoning effort. In a
- * resolved agent session the model key is the model menu (F06,
- * `ComposerModelMenu`: the session's own model, picked per session);
- * elsewhere (the welcome stage, a mission session) it shows the model and
- * opens Settings, with no chevron. The effort key is the
- * `ReasoningEffortSelect` menu and carries the chevron at the end of the
- * frame. The name comes from the model catalogue (`useAvailableModels`, the
- * shared cache key), else the id.
+ * THE MODEL CELL is the model choice: the model's glyph in the row's first
+ * cell (`ComposerModelGlyph`). In a resolved agent session it is the model
+ * menu (F06, `ComposerModelMenu`: the session's own model, picked per
+ * session); elsewhere (the welcome stage, a mission session) it opens
+ * Settings, where the default model and the key live. Its accessible name
+ * says the model and its provider in words either way.
  *
- * SHRINK CONTRACT (codex Bug 3). The frame and the model key may shrink
+ * THE OPTIONS CONTROL is H3's "DeepSeek V4.1 Flash 1017 HIGH": the model the
+ * next turn runs on, as words in sentence case, then the reasoning effort as
+ * its caps word, the effort key (`ReasoningEffortSelect`, named "Reasoning
+ * effort", its menu opening upward). The name comes from the model catalogue
+ * (`useAvailableModels`, the shared cache key), else the id; the label owns
+ * the ellipsis. A model with no reasoning selector shows its name alone.
+ *
+ * SHRINK CONTRACT (codex Bug 3). The frame and the name may shrink
  * (`min-w-0`, no `shrink-0`), and the model label owns the ellipsis. Labels
  * truncate FIRST; the trailing cluster never concedes.
  */
@@ -24,31 +29,17 @@ import { inferenceSettingsRoute } from "../../../stores/uiStore/shell-route.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { useAvailableModels } from "../../../lib/api/models.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
-import {
-  PROVIDER_DISPLAY_NAME,
-  ProviderMark,
-} from "../../../components/common/ProviderMark.js";
+import { PROVIDER_DISPLAY_NAME } from "../../../components/common/ProviderMark.js";
 import { providerNameSchema, type ProviderName } from "@shared/schemas/provider.js";
 import { modelDisplayName } from "./model-display-name.js";
 import { ComposerModelMenu, type ComposerModelMenuProps } from "./ComposerModelMenu.js";
+import { ComposerModelGlyph, MODEL_CELL_KEY_CLASS } from "./ComposerModelGlyph.js";
 
 // Lazy: the plan modal pulls the markdown pipeline - a heavy graph the
 // composer must not pay for until the review actually opens.
 const PlanDisplayModal = lazy(async () => ({
   default: (await import("../PlanDisplayModal.js")).PlanDisplayModal,
 }));
-
-/**
- * The keys inside the options frame: 13 sans in ink, no box of their own (the
- * frame is the box), a hover tint on the type and a visible focus ring. A
- * shrinking control must never become an unreachable or invisible focus
- * target.
- */
-const OPTIONS_KEY =
-  "inline-flex h-7 min-w-0 items-center font-sans text-[13px] leading-5 text-ink-primary transition-colors duration-100 hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
-
-/** The provider mark's box beside the 13 px model name. */
-const MARK_PX = 16;
 
 /** The legacy plan seat: 30 high, 13 sans in ink 2 on the quiet frame. */
 const SEAT_CHIP =
@@ -82,21 +73,17 @@ function useModelEntry(modelId: string): {
   };
 }
 
-export function ComposerModelChip({
-  modelId,
-}: {
-  readonly modelId: string | null;
-}): JSX.Element | null {
-  if (modelId === null) return null;
-  return <ModelKey modelId={modelId} />;
-}
-
-function ModelKey({ modelId }: { readonly modelId: string }): JSX.Element {
+/**
+ * The display-only model key, in the model cell where the model cannot be
+ * picked here (the welcome stage, a mission session): the glyph, and a press
+ * opens Settings, Inference.
+ */
+function ModelSettingsKey({ modelId }: { readonly modelId: string }): JSX.Element {
   const setShellRoute = useUiStore((s) => s.setShellRoute);
-  const { name, provider } = useModelEntry(modelId);
+  const { provider } = useModelEntry(modelId);
   // The mark shows WHO serves the model (Vex Inference or OpenRouter); the
   // accessible name and the tooltip say it in words. An unknown provider
-  // draws no mark and claims nothing.
+  // draws the line model glyph and claims nothing.
   const served = provider === null ? "" : ` on ${PROVIDER_DISPLAY_NAME[provider]}`;
   return (
     <Tooltip label={`${modelId}${served} - change it in Settings`} side="top" delayMs={300}>
@@ -104,38 +91,74 @@ function ModelKey({ modelId }: { readonly modelId: string }): JSX.Element {
         type="button"
         data-vex-area="composer-model-chip"
         aria-label={`Model: ${modelId}${served}. Opens inference settings.`}
-        className={`vex-composer-options__model gap-1.5 ${OPTIONS_KEY}`}
-        onClick={() =>
-          setShellRoute(inferenceSettingsRoute(null))
-        }
+        className={MODEL_CELL_KEY_CLASS}
+        onClick={() => setShellRoute(inferenceSettingsRoute(null))}
       >
-        {provider === null ? null : <ProviderMark provider={provider} size={MARK_PX} />}
-        <span data-vex-model-label className="min-w-0 max-w-48 flex-1 truncate">
-          {name}
-        </span>
+        <ComposerModelGlyph provider={provider} />
       </button>
     </Tooltip>
   );
 }
 
 /**
- * The options control: the model key, the muted dot and "Reasoning:", then the
- * effort key (the menu, or its quiet placeholder while the catalogue loads).
- * Renders nothing when neither half has anything to show.
+ * The model cell: the model menu for a session that can pick, else the key
+ * to Settings. With no model resolved yet the cell stands empty, so the row
+ * keeps its cells.
+ */
+export function ComposerModelCell({
+  modelId,
+  menu,
+}: {
+  readonly modelId: string | null;
+  /** The model menu (F06) for a session that can pick; absent shows the Settings key. */
+  readonly menu?: Omit<ComposerModelMenuProps, "modelId">;
+}): JSX.Element {
+  if (modelId === null) {
+    return <div aria-hidden data-vex-area="composer-model-cell" className="vex-composer-model" />;
+  }
+  return menu !== undefined ? (
+    <ComposerModelMenu modelId={modelId} {...menu} />
+  ) : (
+    <ModelSettingsKey modelId={modelId} />
+  );
+}
+
+/** The model the next turn runs on, as words: the catalogue's name, else the id. */
+function ModelName({ modelId }: { readonly modelId: string }): JSX.Element {
+  const { name } = useModelEntry(modelId);
+  return (
+    <span
+      data-vex-model-label
+      title={modelId}
+      className="vex-composer-options__model min-w-0 max-w-48 truncate font-sans text-[13px] leading-5 text-ink-primary"
+    >
+      {name}
+    </span>
+  );
+}
+
+/** The words before the effort key in D2's model cell ("Reasoning: High"). */
+export const REASONING_PREFIX = "Reasoning:";
+
+/**
+ * The options control: the model's name, then the effort key (the menu, or
+ * its quiet placeholder while the catalogue loads). D2 sets it in the bottom
+ * row's model cell (docs/design/H3-DESKTOP.md section 6.5), the name over
+ * "Reasoning: High", the effort key's own word and chevron after the words;
+ * the words stand only before a real effort key (`reasoning`), never before
+ * a value nobody has read yet. Renders nothing when neither half has
+ * anything to show.
  */
 export function ComposerOptions({
   modelId,
   effort,
-  effortResolved,
-  menu,
+  reasoning = false,
 }: {
   readonly modelId: string | null;
   /** The effort key, or `null` when the model has no reasoning selector. */
   readonly effort: ReactNode | null;
-  /** False while the catalogue is unresolved: no "Reasoning:" before a placeholder. */
-  readonly effortResolved: boolean;
-  /** The model menu (F06) for a session that can pick; absent shows the display-only key. */
-  readonly menu?: Omit<ComposerModelMenuProps, "modelId">;
+  /** `effort` is the real effort key, so "Reasoning:" may stand before it. */
+  readonly reasoning?: boolean;
 }): JSX.Element | null {
   if (modelId === null && effort === null) return null;
   return (
@@ -143,27 +166,21 @@ export function ComposerOptions({
       data-vex-area="composer-options"
       className="vex-composer-options min-w-0"
     >
-      {modelId !== null && menu !== undefined ? (
-        <ComposerModelMenu modelId={modelId} {...menu} />
-      ) : (
-        <ComposerModelChip modelId={modelId} />
-      )}
-      {effort !== null && effortResolved ? (
-        <>
-          {modelId !== null ? (
-            <span aria-hidden="true" className="vex-composer-options__key">
-              ·
+      {modelId === null ? null : <ModelName modelId={modelId} />}
+      {effort === null ? null : (
+        <span className="vex-composer-options__reasoning min-w-0">
+          {reasoning ? (
+            <span className="vex-composer-options__prefix" aria-hidden="true">
+              {REASONING_PREFIX}
             </span>
           ) : null}
-          <span aria-hidden="true" className="vex-composer-options__key">
-            Reasoning:
-          </span>
-        </>
-      ) : null}
-      {effort}
+          {effort}
+        </span>
+      )}
     </div>
   );
 }
+
 
 /**
  * Legacy Plan Mode chip: renders only for a session that still carries an

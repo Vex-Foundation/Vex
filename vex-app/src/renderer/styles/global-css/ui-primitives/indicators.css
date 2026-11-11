@@ -103,77 +103,71 @@ button.vex-disclosure-leading {
   }
 }
 
-/* ── Empty and loading block ───────────────────────────────────────────────
- * A quiet frame, padding 18, min height 150: a 12 muted scope word, a 15 / 500
- * sentence, a 13.5 / 1.5 line, a blue 13.5 / 500 next step at the foot.
- * Loading is the word beside the dot screen and the 120px quiet line. */
+/* ── Empty, error and loading block ─────────────────────────────────────────
+ * VEX Cloud's `.vx-empty` (styles/rows.css, H3 app.css .empty;
+ * docs/design/H3-DESKTOP.md section 5.7): a centred card of the page, the
+ * rule frame on the card ground, padding 40 16, gap 12. The section's glyph
+ * at 28 in muted, one 14 sentence in muted, the next step as a 44 framed key
+ * (padding 0 26 in the rule). An error is the sentence and its glyph in ink,
+ * 56 above and below. Loading holds the loading word and three parked
+ * covers. No minimum height: the card is as tall as what it says. */
 .vex-empty-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 150px;
-  padding: 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 16px;
   border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-card);
   font-family: var(--font-sans);
-  color: var(--vex-alias-label-primary);
-}
-
-.vex-empty-block__scope {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
   color: var(--vex-alias-label-tertiary);
 }
 
-.vex-empty-block__title {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.45;
+.vex-empty-block[data-tone] {
+  padding: 56px 16px;
+  color: var(--vex-alias-label-primary);
 }
 
-.vex-empty-block__state {
-  gap: 10px;
-  font-size: 14px;
-  line-height: 20px;
-  white-space: normal;
-  color: var(--vex-alias-label-secondary);
+.vex-empty-block__glyph {
+  display: inline-flex;
+  color: var(--vex-alias-label-tertiary);
 }
 
-.vex-empty-block__line {
-  width: 120px;
+.vex-empty-block[data-tone] .vex-empty-block__glyph {
+  color: var(--vex-alias-label-primary);
 }
 
+.vex-empty-block__title,
 .vex-empty-block__detail {
-  font-size: 13.5px;
-  line-height: 1.5;
+  min-width: 0;
+  max-width: 65ch;
+  margin: 0;
+}
+
+.vex-empty-block[data-tone] .vex-empty-block__detail {
   color: var(--vex-alias-label-secondary);
 }
 
-.vex-empty-block__action {
-  align-self: flex-start;
-  margin-top: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--vex-alias-accent-primary);
-  cursor: pointer;
+.vex-empty-block__covers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 320px);
 }
 
-.vex-empty-block__action:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.vex-empty-block__action:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 3px;
+/* The next step or Retry: H3's `.empty .key`, 44 high in the 1px rule on
+ * its 26 padding, whatever the key's own edge. */
+.vex-empty-block > .vex-empty-block__key {
+  height: 44px;
+  padding: 0 26px;
+  border: 1px solid var(--vex-alias-rule-quiet);
 }
 
 /* ── Ink callout ───────────────────────────────────────────────────────────
- * Never red: a 1.5px ink frame, an 8px hatch band (a 1px line every 4px at
+ * Never red: a 1px ink frame, an 8px hatch band (a 1px line every 4px at
  * 45deg) with a 1px ink rule on its inner edge, padding 12 16 12 24. Title
  * 14 / 500 with its fill, the cause 15 / 500, the hint 14 / 1.5 ink 2, a code
  * trailer in the mono face at 11.5 muted. The compact alert form tightens to
@@ -181,7 +175,7 @@ button.vex-disclosure-leading {
 .vex-callout {
   position: relative;
   padding: 12px 16px 12px 24px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-bg-base);
   font-family: var(--font-sans);
   font-size: 14px;

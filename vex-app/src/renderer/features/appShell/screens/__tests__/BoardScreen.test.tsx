@@ -82,7 +82,7 @@ describe("BoardScreen", () => {
       useBoardSurfaceStore.getState().noteBoardRow(ref("s1", 12), "settled");
     });
     mount();
-    const page = screen.getByRole("dialog", { name: "Board" });
+    const page = screen.getByRole("region", { name: "Board" });
     const grid = screen.getByTestId("grid");
     expect(page.contains(grid)).toBe(true);
     expect(grid.textContent).toBe("board 12");
@@ -186,7 +186,7 @@ describe("BoardScreen: Escape on a spotlight", () => {
     expect(useBoardSurfaceStore.getState().modalBoard).not.toBeNull();
     expect(useUiStore.getState().shellRoute.kind).toBe("board");
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "Board" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Board" })).toBeTruthy();
   });
 
   it("keeps the token chosen, so the grid returns to where the reader was", () => {

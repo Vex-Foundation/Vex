@@ -1,12 +1,13 @@
 /**
- * One wizard step's page (docs/design/R3-MINIMAL.md sections 9.6 and 10.3).
- * The same component draws the step in both hosts (`wizard-host.ts`):
+ * One wizard step's page. The same component draws the step in both hosts
+ * (`wizard-host.ts`):
  *
- *   wizard    what the shell stands above the title (`before`), the serif
- *             title (44, blue), the lead (15, ink 2), the step's body (column
- *             max 600), and a footer at the window's foot: Back (steps 2 to 7,
- *             `onBack` from the host) and the privacy link at the left, the
- *             step's actions at the right (the one primary action last).
+ *   wizard    on H3's stage (docs/design/H3-DESKTOP.md section 4.9): what the
+ *             host stands above the title (`before`: Review's editing row),
+ *             the title (sans 33 at 600), the lead (16, ink 2), the step's
+ *             body, and the step's bottom row: Back (steps 2 to 7, `onBack`
+ *             from the host) at the left, the step's way to go on without
+ *             saving in the middle, its one blue key at the right edge.
  *   settings  the Settings section head: the step's title (or the section's
  *             own name where the title is a state sentence the body repeats)
  *             at 22 / 500 with the section's status word and swatch beside
@@ -21,7 +22,7 @@
  *   2. When the step needs a `<form>`, the form wraps BOTH the body AND the
  *      actions, so the submit button stays a descendant of `<form>` (Enter
  *      submits; the testing-library form selectors hold). In the wizard the
- *      footer is inside the form and sticks to the window's foot.
+ *      bottom row is inside the form, at the work column's foot.
  *   3. The status word in Settings comes from `settingsSectionStatus`, the
  *      one pure source the Settings nav reads, from the env read the step
  *      holds (`env`), so the head and the nav row say the same word.
@@ -39,6 +40,7 @@ import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 
+import { StageActs, StageGap } from "../../components/onboarding/StageFrame.js";
 import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
@@ -144,6 +146,11 @@ function PrivacyLink({ className }: { readonly className: string }): JSX.Element
   );
 }
 
+/** The wizard's privacy link, in the stage's bottom-left cell (`WizardShell`). */
+export function WizardPrivacyLink(): JSX.Element {
+  return <PrivacyLink className="vex-wzp__meta" />;
+}
+
 export function WizardStepPanel({
   title,
   description,
@@ -167,20 +174,32 @@ export function WizardStepPanel({
 
   if (host.host === "settings") {
     const status = settingsStatusForStep(panelDataAttr.kind, env ?? null);
-    const actions = footer ? <div className="vex-wzs__actions">{footer}</div> : null;
+    // The Save band (VEX Cloud's `SaveFooter`, `.vx-savebar`; owner decision
+    // 2026-11-09, H3-DESKTOP section 4.9): a band at least 56 high under a
+    // rule, the step's keys as end cells of at least 148 with their left
+    // rule. Save keeps its own enablement: held, never blue, while it will
+    // not act.
+    const actions = footer ? (
+      <div className="vex-wzs__actions" data-vex-save-band="">
+        {footer}
+      </div>
+    ) : null;
     return (
       <div {...dataAttrs} className="vex-wzs">
+        {/* The section head as `SettingsHead` draws it (Cloud's built
+            PageHeader, H3-DESKTOP section 4.9): the name a hidden h2, the
+            status word first in the lead row. */}
         <header className="vex-set__head" data-vex-settings-head>
-          <h2 className="vex-set__title">
-            {settingsTitle ?? title}
+          <h2 className="vex-set__title sr-only">{settingsTitle ?? title}</h2>
+          <p className="vex-set__lead">
             {status === null ? null : (
               <span className="vex-set__stw" data-vex-settings-head-status>
                 <Swatch state={settingsStatusSwatch(status.tone)} size={10} />
                 {status.word}
               </span>
             )}
-          </h2>
-          <p className="vex-set__lead">{settingsDescription ?? description}</p>
+            <span data-vex-settings-head-lead>{settingsDescription ?? description}</span>
+          </p>
         </header>
         {formProps ? (
           <form
@@ -203,38 +222,53 @@ export function WizardStepPanel({
     );
   }
 
-  const head = (
-    <header className="vex-wzp__head">
-      {host.before}
-      <h1 className="vex-wzp__title">{title}</h1>
-      <p className="vex-wzp__lead">{description}</p>
-    </header>
+  // THE WIZARD'S PAGE on H3's stage (docs/design/H3-DESKTOP.md section 4.9):
+  // the body scrolls (the title in sans 33 at 600, the lead, the form) above
+  // the step's bottom row, where Back stands at the left, the step's way to go
+  // on without saving in the middle and its one blue key at the right edge
+  // (`stage.css` lays the step's own keys out by their variant, so no step
+  // names a cell). The privacy link is the frame's bottom-left cell.
+  const page = (
+    <div className="vex-pre__body vex-wzp__body">
+      <div className="vex-wzp__page">
+        <header className="vex-wzp__head">
+          {host.before}
+          <h1 className="vex-wzp__title">{title}</h1>
+          <p className="vex-wzp__lead">{description}</p>
+        </header>
+        <div className="vex-wzp__content">{children}</div>
+      </div>
+    </div>
   );
   const foot = (
-    <div className="vex-wzp__foot">
+    <StageActs className="vex-wzp__foot">
       {host.onBack ? (
         // Never a submit: inside the step's form Back must not save it.
-        <Button type="button" variant="quiet" onClick={host.onBack} data-vex-wizard-back>
+        <Button
+          type="button"
+          variant="quiet"
+          onClick={host.onBack}
+          data-vex-wizard-back
+          className="vex-pre-key"
+        >
           Back
         </Button>
       ) : null}
-      <PrivacyLink className="vex-wzp__meta" />
-      <span className="vex-wzp__sp" />
+      <StageGap />
       {footer ? <div className="vex-wzp__actions">{footer}</div> : null}
-    </div>
+    </StageActs>
   );
 
   if (formProps) {
     return (
       <div {...dataAttrs} className="vex-wzp">
-        {head}
         <form
           onSubmit={formProps.onSubmit}
           noValidate={formProps.noValidate ?? false}
           {...formExtraAttrs}
           className="vex-wzp__form"
         >
-          <div className="vex-wzp__content">{children}</div>
+          {page}
           {foot}
         </form>
       </div>
@@ -243,8 +277,7 @@ export function WizardStepPanel({
 
   return (
     <div {...dataAttrs} className="vex-wzp">
-      {head}
-      <div className="vex-wzp__content">{children}</div>
+      {page}
       {foot}
     </div>
   );

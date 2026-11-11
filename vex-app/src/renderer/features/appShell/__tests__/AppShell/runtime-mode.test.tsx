@@ -211,13 +211,19 @@ describe("AppShell runtime-mode dispatch", () => {
 
   it("mounts the status strip exactly once, across the switch", () => {
     renderShell();
+    // One header (docs/design/H3-DESKTOP.md section 1.3), the same element
+    // across the switch, and one title bar in it.
+    const header = document.querySelector('[data-vex-area="shell-head"]');
     const strips = (): number =>
       document.querySelectorAll('[data-vex-area="shell-status-strip"]').length;
-    expect(strips()).toBe(1);
+    const heads = (): number => document.querySelectorAll('[data-vex-area="shell-head"]').length;
+    expect([heads(), strips()]).toEqual([1, 1]);
     switchMode("studio");
-    expect(strips()).toBe(1);
+    expect([heads(), strips()]).toEqual([1, 1]);
+    expect(document.querySelector('[data-vex-area="shell-head"]')).toBe(header);
     switchMode("agent");
-    expect(strips()).toBe(1);
+    expect([heads(), strips()]).toEqual([1, 1]);
+    expect(document.querySelector('[data-vex-area="shell-head"]')).toBe(header);
   });
 
   it("holds exactly ONE onControlState subscription in either mode", () => {
@@ -249,7 +255,7 @@ describe("AppShell runtime-mode dispatch", () => {
     expect(document.querySelector('[data-vex-area="shell-frame"]')).toBe(frame);
   });
 
-  it("offline, the connection banner is a row of the centre column under its head, not a band over the frame", () => {
+  it("offline, the connection banner is the centre column's first row, under the header, not a band over the frame", () => {
     renderShell();
     expect(screen.queryByText("Offline: waiting for the network to come back")).toBeNull();
     act(() => {
@@ -263,10 +269,13 @@ describe("AppShell runtime-mode dispatch", () => {
     const centre = banner?.parentElement;
     expect(centre?.classList.contains("vex-shell-centre")).toBe(true);
     expect(banner?.parentElement?.getAttribute("data-vex-area")).not.toBe("shell-frame");
-    // Under the head row: the running head comes first in the column.
-    const head = centre?.querySelector('[data-vex-area="shell-status-strip"]');
-    expect(head).not.toBeNull();
-    if (head == null || banner == null) throw new Error("the head row or the banner is missing");
+    // Under the header (docs/design/H3-DESKTOP.md section 1.3): the header is
+    // the frame's own row above the columns, so the banner opens the column,
+    // and the title cell stays outside it.
+    expect(centre?.firstElementChild).toBe(banner);
+    expect(centre?.querySelector('[data-vex-area="shell-status-strip"]')).toBeNull();
+    const head = document.querySelector('[data-vex-area="shell-head"]');
+    if (head == null || banner == null) throw new Error("the header or the banner is missing");
     expect(
       head.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();

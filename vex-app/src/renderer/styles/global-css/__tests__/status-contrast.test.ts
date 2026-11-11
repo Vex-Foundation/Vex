@@ -1,26 +1,34 @@
 /**
- * STATUS IS SHOWN BY FILL, AND EVERY INK IS READABLE - a measured contrast
- * contract over the V10 alias tier, in both themes.
+ * A STATUS IS A SQUARE BESIDE A WORD, AND EVERY INK IS READABLE - a
+ * measured contrast contract over the alias tier, in the one room (the app is
+ * dark only). docs/design/H3-DESKTOP.md section 2.2 replaces R3's "status by
+ * fill, never by colour":
  *
- * V10 collapses status to fill: success and error are the ink (paper at
- * night), attention is the one blue (the periwinkle at night), and the state
- * itself is carried by a swatch's pattern, never by a hue. That collapse is
- * pinned here as an identity, so a green, amber or red cannot creep back in
- * under an old alias name.
+ *   - the WORD is ink: success, attention and error collapse onto the
+ *     primary label, pinned as an identity, so no hue can creep back into a
+ *     status word under an old alias name; a failure's word alone takes the
+ *     refusal ink (VEX Cloud's --vx-err-text), measured as a text tier;
+ *   - the SQUARE beside it has a drawing of its own per status (PD-03), and
+ *     its colours are green (filled), red (the turn error row) and the hud
+ *     (running, which blinks); each owes the 3:1 for graphics on every cell
+ *     it can sit on, and the FILLED stamp carries its white word at the body
+ *     floor;
+ *   - gains and losses in trading values take their own green and red as
+ *     TYPE, lighter than the squares, and neither pair is ever the other.
  *
  * The rest of the file MEASURES rather than pins. It reads tokens.css,
- * resolves each alias through the static tier in EACH theme, and computes the
+ * resolves each alias through the static tier, and computes the
  * WCAG 2.x contrast ratio. The floors are V10's: 4.5:1 for anything that
  * carries a sentence or a label, 3:1 for large display (counters). Status inks
  * are measured on the page ground AND inside their own wash, because the wash
  * is the binding surface: it moves the backdrop toward the ink.
  *
  * The reversed chrome plate (tooltip, hover card, toast, connection banner)
- * is measured with its own ink in both themes. The REAL FUNDS block measures
+ * is measured with its own ink. The REAL FUNDS block measures
  * the approval card's keys, its ink frame and its reversed stamp: the one
  * card that moves money must read in every state a hand can put it in. The
- * last block measures the trading pair (docs/design/R3-MINIMAL.md section 1),
- * a value colour on trading figures only and never a status.
+ * last block measures the gain and loss pair, a value colour on trading
+ * figures only and never a status.
  *
  * Deliberately OUT of scope: the sixteen `--vex-alias-term-*` ANSI slots, a
  * wire contract owned by `terminal-palette-tokens.test.ts`.
@@ -45,13 +53,12 @@ function ruleBody(css: string, selector: string): string {
 /** The static tier: `--color-ink: #0a0d18;` and friends. */
 const staticTier = ruleBody(tokensCss, "@theme");
 const chronos = ruleBody(tokensCss, ":root");
-const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 
-/** Themes in cascade order: celeris overrides :root, and inherits what it omits. */
-const THEMES = [
-  { name: "chronos", blocks: [chronos] },
-  { name: "celeris", blocks: [chronos, celeris] },
-] as const;
+/**
+ * The one room. Kept as a list of blocks in cascade order so the measuring
+ * helpers below read the same way they did for two rooms.
+ */
+const THEMES = [{ name: "the room", blocks: [chronos] }] as const;
 
 function declaredValue(body: string, token: string): string | undefined {
   const match = new RegExp(`(?:^|[\\s;])${token}:\\s*([^;]+);`).exec(body);
@@ -107,6 +114,8 @@ function contrast(a: string, b: string): number {
 const AA_BODY = 4.5;
 /** Large text: the serif counters and numerals (24px and up). */
 const AA_LARGE = 3;
+/** A graphic beside a word (WCAG 1.4.11): the status squares. */
+const AA_GRAPHIC = 3;
 
 function ratio(blocks: readonly string[], ink: string, ground: string): number {
   return Number(contrast(resolveHex(blocks, ink), resolveHex(blocks, ground)).toFixed(2));
@@ -127,7 +136,7 @@ const FAMILIES = [
     name: "warn",
     ink: ["--vex-alias-state-warn", "--vex-alias-state-warn-label"],
     wash: "--vex-alias-state-warn-wash",
-    collapsesTo: "--vex-alias-accent-primary",
+    collapsesTo: "--vex-alias-label-primary",
   },
   {
     name: "error",
@@ -141,28 +150,28 @@ describe("the resolver (load-bearing)", () => {
   it("resolves the V10 values it is measuring", () => {
     // If resolution silently degraded, every ratio below would be measured
     // against the wrong colour and still pass.
-    expect(resolveHex([chronos], "--vex-alias-bg-base")).toBe("#1b1412");
-    expect(resolveHex([chronos], "--vex-alias-state-warn")).toBe("#a3abff");
-    expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f4f7");
-    expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f4f7");
-    expect(resolveHex([chronos, celeris], "--vex-alias-bg-base")).toBe("#f3f4f7");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-warn")).toBe("#0000c0");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-success")).toBe("#0a0d18");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-error")).toBe("#0a0d18");
-    expect(resolveHex([chronos, celeris], "--vex-alias-composer")).toBe("#ffffff");
-    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#4cd685");
-    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7b7b");
-    expect(resolveHex([chronos, celeris], "--vex-alias-trade-up")).toBe("#10763a");
-    expect(resolveHex([chronos, celeris], "--vex-alias-trade-down")).toBe("#c2272e");
+    expect(resolveHex([chronos], "--vex-alias-bg-base")).toBe("#010203");
+    expect(resolveHex([chronos], "--vex-alias-state-warn")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-state-success-mark")).toBe("#1d7e3f");
+    expect(resolveHex([chronos], "--vex-alias-state-error-mark")).toBe("#c22226");
+    expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#010203");
+    expect(resolveHex([chronos], "--vex-alias-label-tertiary")).toBe("#808693");
+    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#83d494");
+    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff887c");
+    expect(resolveHex([chronos], "--vex-alias-state-error-wash")).toBe("#0c0d0f");
+    expect(resolveHex([chronos], "--vex-alias-sidebar-fill")).toBe("#010101");
+    expect(resolveHex([chronos], "--vex-alias-bg-overlay")).toBe("#030405");
   });
 });
 
-describe("status by fill, never by colour", () => {
+describe("status words are ink", () => {
   for (const theme of THEMES) {
     for (const family of FAMILIES) {
       it(`${theme.name}: the ${family.name} inks collapse onto ${family.collapsesTo}`, () => {
-        // The identity, not a likeness: done and errors ARE the ink, attention
-        // IS the one blue. A status hue would have to break this equality.
+        // The identity, not a likeness: every status word IS the ink. A
+        // status hue in a word would have to break this equality.
         for (const ink of family.ink) {
           expect(resolveHex(theme.blocks, ink), `${ink} in ${theme.name}`).toBe(
             resolveHex(theme.blocks, family.collapsesTo),
@@ -190,21 +199,64 @@ describe("status by fill, never by colour", () => {
 
       it(`${theme.name}: the ${family.name} wash sits between its ink and the ground`, () => {
         // Direction, not just magnitude: a wash on the far side of the ground
-        // would satisfy the ratio while inverting the theme's whole logic. At
-        // night ink is lighter than wash which is lighter than ground; on
-        // paper every comparison flips.
+        // would satisfy the ratio while inverting the room's whole logic. On
+        // the dark ground ink is lighter than wash which is lighter than
+        // ground.
         const ink = luminance(resolveHex(theme.blocks, family.ink[0]));
         const wash = luminance(resolveHex(theme.blocks, family.wash));
         const ground = luminance(resolveHex(theme.blocks, "--vex-alias-bg-base"));
-        if (theme.name === "celeris") {
-          expect(ink).toBeLessThan(wash);
-          expect(wash).toBeLessThan(ground);
-        } else {
-          expect(ink).toBeGreaterThan(wash);
-          expect(wash).toBeGreaterThan(ground);
-        }
+        expect(ink).toBeGreaterThan(wash);
+        expect(wash).toBeGreaterThan(ground);
       });
     }
+  }
+});
+
+/**
+ * The status squares (section 2.2) and the cells a status row can stand on:
+ * the ground, a control at rest, a key cell and the open ground.
+ */
+const STATUS_MARKS = [
+  ["filled", "--vex-alias-state-success-mark", "--color-h3-status-green"],
+  ["did not execute", "--vex-alias-state-error-mark", "--color-h3-status-red"],
+  ["running", "--vex-alias-state-running-mark", "--color-h3-hud"],
+] as const;
+const MARK_GROUNDS = [
+  "--vex-alias-bg-base",
+  "--vex-alias-bg-layer-3",
+  "--vex-alias-interactive-solid",
+  "--vex-alias-interactive-active",
+] as const;
+
+describe("status squares carry green, red and grey", () => {
+  for (const theme of THEMES) {
+    for (const [status, mark, primitive] of STATUS_MARKS) {
+      it(`${theme.name}: the ${status} square is ${primitive}`, () => {
+        expect(resolveHex(theme.blocks, mark)).toBe(resolveHex(theme.blocks, primitive));
+      });
+
+      it(`${theme.name}: the ${status} square clears ${AA_GRAPHIC}:1 on every cell it sits on`, () => {
+        const failures = MARK_GROUNDS.map((ground) => [ground, ratio(theme.blocks, mark, ground)] as const)
+          .filter(([, value]) => value < AA_GRAPHIC)
+          .map(([ground, value]) => `${ground} ${value}:1`);
+        expect(failures, mark).toEqual([]);
+      });
+    }
+
+    it(`${theme.name}: the three square colours are three colours, and none is a word's ink`, () => {
+      const marks = STATUS_MARKS.map(([, mark]) => resolveHex(theme.blocks, mark));
+      expect(new Set(marks).size).toBe(marks.length);
+      expect(marks).not.toContain(resolveHex(theme.blocks, "--vex-alias-label-primary"));
+    });
+
+    it(`${theme.name}: the FILLED stamp carries its white word at ${AA_BODY}:1`, () => {
+      expect(resolveHex(theme.blocks, "--vex-alias-stamp-filled")).toBe(
+        resolveHex(theme.blocks, "--vex-alias-state-success-mark"),
+      );
+      expect(
+        ratio(theme.blocks, "--vex-alias-stamp-filled-ink", "--vex-alias-stamp-filled"),
+      ).toBeGreaterThanOrEqual(AA_BODY);
+    });
   }
 });
 
@@ -215,18 +267,80 @@ const TEXT_TIERS = [
   "--vex-alias-label-tertiary",
   "--vex-alias-label-caption",
   "--vex-alias-accent-primary",
+  "--vex-alias-state-refusal",
 ] as const;
 
 const TEXT_GROUNDS = [
   "--vex-alias-bg-base",
+  "--vex-alias-bg-page",
   "--vex-alias-bg-deep",
   "--vex-alias-bg-layer-1",
   "--vex-alias-bg-layer-2",
   "--vex-alias-bg-layer-3",
+  "--vex-alias-bg-overlay",
+  "--vex-alias-sidebar-fill",
+  "--vex-alias-card",
   "--vex-alias-interactive-solid",
+  "--vex-alias-interactive-active",
   "--vex-alias-accent-wash",
   "--vex-alias-field",
 ] as const;
+
+/**
+ * VEX Cloud's white alphas (docs/design/H3-DESKTOP.md section 2.1): an
+ * alias spelled `rgba(255, 255, 255, a)`, laid over the ground it stands on.
+ * The composite is what the eye reads, so it is what is measured.
+ */
+function whiteAlpha(token: string): number {
+  const value = declaredValue(chronos, token);
+  const match = /^rgba\(255, 255, 255, (0?\.\d+)\)$/.exec(value ?? "");
+  if (!match) throw new Error(`${token} is "${value ?? ""}", not white at an alpha`);
+  return Number(match[1]);
+}
+
+function over(alpha: number, ground: string): string {
+  return `#${channels(ground)
+    .map((c) => Math.round(255 * alpha + c * (1 - alpha)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+describe("Cloud's white alphas read where they are laid", () => {
+  for (const theme of THEMES) {
+    it(`${theme.name}: the placeholder clears ${AA_BODY}:1 on every field and column it can sit in`, () => {
+      // Cloud raised v99's 40% to 55% to reach AA (its --vx-placeholder).
+      const placeholder = whiteAlpha("--vex-alias-label-placeholder");
+      for (const ground of [
+        "--vex-alias-field",
+        "--vex-alias-bg-layer-3",
+        "--vex-alias-sidebar-fill",
+        "--vex-alias-card",
+      ] as const) {
+        const behind = resolveHex(theme.blocks, ground);
+        expect(
+          Number(contrast(over(placeholder, behind), behind).toFixed(2)),
+          `placeholder on ${ground}`,
+        ).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the words in both bubbles clear ${AA_BODY}:1`, () => {
+      const ground = resolveHex(theme.blocks, "--vex-alias-bg-base");
+      const ink = resolveHex(theme.blocks, "--vex-alias-label-primary");
+      for (const bubble of ["--vex-alias-bubble", "--vex-alias-bubble-vex"] as const) {
+        const fill = over(whiteAlpha(bubble), ground);
+        expect(Number(contrast(ink, fill).toFixed(2)), `ink in ${bubble}`).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the dimmed mark stays decoration, under the text floor and above the ground`, () => {
+      // White at 24% (Cloud's chosen rule): a disabled mark, never a word.
+      const ground = resolveHex(theme.blocks, "--vex-alias-bg-base");
+      const dimmed = Number(contrast(over(whiteAlpha("--vex-alias-label-dimmed"), ground), ground).toFixed(2));
+      expect(dimmed).toBeLessThan(AA_GRAPHIC);
+      expect(dimmed).toBeGreaterThan(1.5);
+    });
+  }
+});
 
 describe("every text tier reads on every surface it sits on", () => {
   for (const theme of THEMES) {
@@ -267,19 +381,30 @@ describe("every text tier reads on every surface it sits on", () => {
     });
 
     it(`${theme.name}: the reversed chrome plate carries its own ink at ${AA_BODY}:1`, () => {
-      // Tooltip, hover card and toast, and the connection banner, which paints
-      // the same ink on the solid error plate. All four read in BOTH rooms now:
-      // the banner's old chronos gap (white on a light red, 2.92:1) closed
-      // when error became the ink.
+      // The connection banner, which paints the ground on the solid error
+      // plate. The banner's old gap (white on a light red, 2.92:1) closed when
+      // error became the ink.
       for (const plate of [
-        "--vex-alias-tooltip-bg",
-        "--vex-alias-toast-bg",
         "--vex-alias-state-error",
       ] as const) {
         expect(
           ratio(theme.blocks, "--vex-alias-label-on-chrome", plate),
           `on-chrome on ${plate} in ${theme.name}`,
         ).toBeGreaterThanOrEqual(AA_BODY);
+      }
+    });
+
+    it(`${theme.name}: the floating plate (the toast, the tooltip) carries ink at ${AA_BODY}:1`, () => {
+      // VEX Cloud's toast and tooltip: ink words on the top of the ground
+      // ladder (16.6:1 in Cloud's own measure), and muted (the overflow line)
+      // above the floor.
+      for (const plate of ["--vex-alias-toast-bg", "--vex-alias-tooltip-bg"] as const) {
+        for (const ink of ["--vex-alias-label-on-plate", "--vex-alias-label-tertiary"] as const) {
+          expect(
+            ratio(theme.blocks, ink, plate),
+            `${ink} on ${plate} in ${theme.name}`,
+          ).toBeGreaterThanOrEqual(AA_BODY);
+        }
       }
     });
   }
@@ -290,7 +415,7 @@ describe("every text tier reads on every surface it sits on", () => {
  * docs/design/R3-MINIMAL.md section 8.2). Approve is the one blue fill with its
  * own ink; Reject is the ink key, an ink outline on the card's paper that
  * fills with ink on hover. Every state a hand can put either key in must carry
- * its label at AA body contrast, in both rooms.
+ * its label at AA body contrast.
  */
 describe("REAL FUNDS key contrast", () => {
   for (const theme of THEMES) {
@@ -327,11 +452,11 @@ describe("REAL FUNDS key contrast", () => {
 });
 
 /**
- * THE TRADING PAIR (docs/design/R3-MINIMAL.md section 1): up and down on
- * trading values only (a signed uPnL, Long and Short, bids and asks). It
- * reads as text on every ground text sits on, carries the ink of a solid
- * Long or Short key, and is never a status: no state ink resolves to it, so
- * a state keeps its fill and its word.
+ * GAINS AND LOSSES (docs/design/H3-DESKTOP.md section 2.2): the sheet's
+ * --live and --err as type, on trading values only (a signed P&L, Long and
+ * Short, bids and asks). The pair reads as text on every ground text sits
+ * on, carries the ink of a solid Long or Short key, and is never a status:
+ * no state word and no status square resolves to it.
  */
 const TRADE_INKS = ["--vex-alias-trade-up", "--vex-alias-trade-down"] as const;
 
@@ -353,12 +478,15 @@ describe("the trading pair", () => {
       });
     }
 
-    it(`${theme.name}: no status ink is a trading colour`, () => {
+    it(`${theme.name}: no status word or square is a trading colour`, () => {
       const trade = new Set(TRADE_INKS.map((ink) => resolveHex(theme.blocks, ink)));
       for (const family of FAMILIES) {
         for (const ink of family.ink) {
           expect(trade.has(resolveHex(theme.blocks, ink)), `${ink} in ${theme.name}`).toBe(false);
         }
+      }
+      for (const [, mark] of STATUS_MARKS) {
+        expect(trade.has(resolveHex(theme.blocks, mark)), `${mark} in ${theme.name}`).toBe(false);
       }
     });
   }

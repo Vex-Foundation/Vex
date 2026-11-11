@@ -1,7 +1,9 @@
 /**
  * THE APPROVAL IN WORDS (docs/design/R3-MINIMAL.md section 8.1): the plain
  * sentence that titles the card, the readable risk tag, and the risk
- * sentences under the money lines.
+ * sentences under the money lines. The H3 frame's own words sit here too
+ * (docs/design/H3-DESKTOP.md Appendix A.7): the eyebrow that names the act
+ * ("Confirm this swap") and the consequence line under the sentence.
  *
  * Built only from what the approval carries. Every part of a sentence comes
  * from a present argument; a sentence with nothing to say falls back to
@@ -9,13 +11,18 @@
  * filled from a sample: an absent amount is left out, never a zero.
  *
  * Pure: no React, no IO. The tool family comes from the one action-word table
- * (`approvalActionWord`, features/vex/needs-you.ts), so the card's button, the
- * Needs you rows and this sentence can never disagree about what a tool is.
+ * (`approvalActionWord`, features/vex/needs-you-words.ts), so the card's
+ * button, the Needs you rows and this sentence can never disagree about what
+ * a tool is. The Needs you rows title themselves with this sentence and name
+ * the place with `approvalPlace` (docs/design/H3-DESKTOP.md Appendix A.3), so
+ * this module reads the table from its leaf, never from `needs-you.ts`, which
+ * imports this one.
  */
 
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
-import { APPROVAL_ACTION_WORDS, approvalActionWord, formatNeedsYouTime } from "../../vex/needs-you.js";
+import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
+import { APPROVAL_ACTION_WORDS, approvalActionWord, formatNeedsYouTime } from "../../vex/needs-you-words.js";
 import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
 import { lighterOrderFacts } from "./lighter-order-facts.js";
 import { isHighRisk } from "./risk.js";
@@ -115,9 +122,13 @@ function sentence(text: string): string {
 
 /** The tool's human title ("Bridge · Relay"), from the names the approval carries. */
 export function approvalToolTitle(summary: ApprovalTarget): string {
+  return resolveToolIdentity(approvalToolName(summary), null).title;
+}
+
+/** The most specific tool name the approval carries, or "" when it carries none. */
+function approvalToolName(summary: ApprovalTarget): string {
   const args = summary.preview?.criticalArgs ?? null;
-  const name = argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "";
-  return resolveToolIdentity(name, null).title;
+  return (argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "").trim();
 }
 
 function bridgeSentence(args: Args): string | null {
@@ -229,6 +240,196 @@ export function approvalSentence(summary: ApprovalTarget): string {
   return `${approvalToolTitle(summary)}: review the signed fields`;
 }
 
+// -- The card's frame in words (docs/design/H3-DESKTOP.md Appendix A.7) -------
+
+/**
+ * The eyebrow over the card, by tool family: "Confirm this swap", "Confirm
+ * this bridge", "Confirm this transfer", "Confirm this order". The family is
+ * the action-word table's, so the eyebrow, the approve key ("Approve swap")
+ * and the Needs you row can never name one card two ways. Written in sentence
+ * case; the eyebrow's style sets the caps.
+ */
+export const APPROVAL_EYEBROW_WORDS: Readonly<Record<Exclude<ApprovalFamily, "other">, string>> = {
+  bridge: "Confirm this bridge",
+  order: "Confirm this order",
+  swap: "Confirm this swap",
+  transfer: "Confirm this transfer",
+};
+
+/**
+ * The eyebrow only a card with no readable tool name keeps, where the tool's
+ * own title would be blank.
+ */
+export const APPROVAL_EYEBROW_FALLBACK = "Confirm this action";
+
+/**
+ * The card's eyebrow for this approval's family. A card outside the four
+ * families names itself by the tool's own title ("Lighter · fees approve"),
+ * as Cloud's generic card does (the money gaps sheet, DG5-01: "the tool's
+ * title"), so no two unlike cards share one eyebrow.
+ */
+export function approvalEyebrowWord(approval: ApprovalTarget): string {
+  const family = approvalFamily(approval);
+  if (family !== "other") return APPROVAL_EYEBROW_WORDS[family];
+  return approvalToolName(approval).length > 0 ? approvalToolTitle(approval) : APPROVAL_EYEBROW_FALLBACK;
+}
+
+/**
+ * H3's own consequence line, kept where it is true in full: a swap, a market
+ * order, an immediate-or-cancel order and a position close all fill (or die)
+ * the moment they are sent, so nothing is left to take back.
+ */
+export const CONSEQUENCE_PLACES_ORDER = "This places a real order on mainnet. It cannot be undone.";
+/**
+ * The same line without its second sentence, for an order that rests on the
+ * book: a limit order good till its time, a post-only order, a stop-loss or
+ * take-profit waiting on its trigger, an OCO pair. Each can still be
+ * cancelled before it fills, so "It cannot be undone." would be false.
+ */
+export const CONSEQUENCE_PLACES_RESTING_ORDER = "This places a real order on mainnet.";
+/**
+ * A transfer's line, Cloud's own words (`realFundsCopy` in the money gaps
+ * sheet, Appendix A.7): a wallet send, a Lighter deposit or withdrawal.
+ */
+export const CONSEQUENCE_TRANSFER = "This sends real funds on mainnet. A transfer cannot be reversed.";
+/** A bridge's line, Cloud's own words (Appendix A.7). */
+export const CONSEQUENCE_BRIDGE = "This moves real funds between chains. It cannot be undone.";
+
+/**
+ * A position close is a reduce-only order at its worst acceptable price,
+ * sent to fill at once: H3's full line holds for it.
+ */
+const CLOSING_TOOLS: ReadonlySet<string> = new Set(["lighter.position.close"]);
+/**
+ * An order create places an order; whether it can still be taken back
+ * depends on its own bound terms (`placedOrderConsequence`). A cancel, a
+ * modify and a cancel-all are orders too in the family table, but "places a
+ * real order" would be false for them.
+ */
+const CREATING_TOOLS: ReadonlySet<string> = new Set(["lighter.order.create"]);
+
+/**
+ * The line for a Lighter order create, read from its bound terms: the full
+ * line only when the order cannot rest on the book, which is a market order
+ * or an immediate-or-cancel limit, and never an OCO pair or a trigger order
+ * (both wait). Every other create, and one whose terms the approval does not
+ * carry, takes the line without "It cannot be undone.": the shorter line is
+ * true either way, the longer only when the terms prove it.
+ */
+function placedOrderConsequence(args: Args | null): string {
+  const orderType = argText(args, "orderType");
+  const timeInForce = argText(args, "timeInForce");
+  const grouped = argText(args, "groupingType") !== null;
+  const fillsAtOnce =
+    !grouped &&
+    (orderType === "market" || (orderType === "limit" && timeInForce === "immediate-or-cancel"));
+  return fillsAtOnce ? CONSEQUENCE_PLACES_ORDER : CONSEQUENCE_PLACES_RESTING_ORDER;
+}
+
+/** Every dotted name the approval carries for its tool, lower-cased. */
+function dottedToolNames(approval: ApprovalTarget): readonly string[] {
+  const preview = approval.preview;
+  const names = [
+    argText(preview?.criticalArgs ?? null, "toolId"),
+    preview !== null && preview.namespace !== undefined ? `${preview.namespace}.${preview.toolName}` : null,
+    approval.toolName,
+  ];
+  return names
+    .filter((name): name is string => name !== null && name.length > 0)
+    .map((name) => name.toLowerCase().replace(/:/g, "."));
+}
+
+/**
+ * The consequence line under the sentence: what pressing Approve does to real
+ * funds, and that it cannot be taken back. Only where it is true for the
+ * whole family, read from the same names the family is:
+ *   - a swap, a Lighter position close, and a Lighter order create that
+ *     fills at once (market, or immediate-or-cancel): H3's own line, "This
+ *     places a real order on mainnet. It cannot be undone.";
+ *   - a Lighter order create that can rest on the book (a limit good till
+ *     its time, post-only, a trigger order, an OCO pair): "This places a
+ *     real order on mainnet." alone, because it can still be cancelled
+ *     before it fills;
+ *   - a transfer (a wallet send, a Lighter deposit or withdrawal): "This
+ *     sends real funds on mainnet. A transfer cannot be reversed.";
+ *   - a bridge: "This moves real funds between chains. It cannot be
+ *     undone.".
+ * `null` for every other card, so it shows no line rather than a false one:
+ * a Lighter cancel or modify places nothing, a trading-fee authorization can
+ * be revoked, and a call to the user's own MCP tool signs nothing. Those
+ * cards still say what they do in their sentence and their risk sentences.
+ * Desktop is mainnet only, so "on mainnet" is true wherever a line shows.
+ */
+export function approvalConsequence(approval: ApprovalTarget): string | null {
+  if (isUserMcpApproval(approval)) return null;
+  switch (approvalFamily(approval)) {
+    case "swap":
+      return CONSEQUENCE_PLACES_ORDER;
+    case "order": {
+      const names = dottedToolNames(approval);
+      if (names.some((name) => CLOSING_TOOLS.has(name))) return CONSEQUENCE_PLACES_ORDER;
+      if (names.some((name) => CREATING_TOOLS.has(name))) {
+        return placedOrderConsequence(approval.preview?.criticalArgs ?? null);
+      }
+      return null;
+    }
+    case "transfer":
+      return CONSEQUENCE_TRANSFER;
+    case "bridge":
+      return CONSEQUENCE_BRIDGE;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The decision row's middle cell (docs/design/H3-DESKTOP.md section 4.3,
+ * Appendix A.7, proposed): the line for the card's gate, where H3 draws its
+ * tick box and its key hints, which desktop leaves out. On a card whose keys
+ * take two presses, "Two presses decide: the first arms the key for 4 s.",
+ * the window read from the card's own reset (`CONFIRM_RESET_MS`) so the line
+ * and the timer can never disagree; on any other, "Nothing signs until you
+ * approve.". Words only: the gate itself is the card's.
+ */
+export function approvalGateLine(twoPresses: boolean, armedWindowMs: number): string {
+  if (!twoPresses) return "Nothing signs until you approve.";
+  const seconds = Number((armedWindowMs / 1000).toFixed(1));
+  return `Two presses decide: the first arms the key for ${String(seconds)} s.`;
+}
+
+/** The Lighter deployment a call names, by its people name ("Lighter Core"); else `null`. */
+function lighterEnvironmentName(value: string | null): string | null {
+  if (value === null) return null;
+  const named = Object.entries(LIGHTER_ENVIRONMENT_NAMES).find(([key]) => key === value);
+  return named === undefined ? null : named[1];
+}
+
+/**
+ * Where the approval acts, as the Needs you row's meta line says it
+ * (docs/design/H3-DESKTOP.md Appendix A.3): both ends of a bridge ("Base to
+ * Arbitrum"), the Lighter deployment a Lighter call names ("Lighter Core",
+ * plain "Lighter" when it names none), else the chain its arguments name
+ * ("Base"). `null` when the arguments name no place, so the row says nothing
+ * rather than guess one. Read only from the bound arguments, as the sentence
+ * is.
+ */
+export function approvalPlace(summary: ApprovalTarget): string | null {
+  const args = summary.preview?.criticalArgs ?? null;
+  if (args === null) return null;
+  if (typeof args.toolId === "string" && args.toolId.startsWith("lighter.")) {
+    return lighterEnvironmentName(argText(args, "environment")) ?? "Lighter";
+  }
+  if (approvalFamily(summary) === "bridge") {
+    const from = chainName(argText(args, "fromChain"));
+    const to = chainName(argText(args, "toChain"));
+    if (from !== null && to !== null) return `${from} to ${to}`;
+    // A bridge acts first on the chain it leaves; with only its far end
+    // named, the sentence already says "to {chain}".
+    return from;
+  }
+  return chainName(argText(args, "chain"));
+}
+
 /**
  * The expiry as the top row says it, in UTC like every other surface that
  * names it: "Expires at 15:30 UTC" today, "Expires Oct 12, 15:30 UTC" on
@@ -239,6 +440,59 @@ export function approvalExpiryWords(expiresAt: string, nowMs: number): string | 
   const at = formatNeedsYouTime(expiresAt, nowMs);
   if (at === null) return null;
   return /^\d/.test(at) ? `Expires at ${at}` : `Expires ${at}`;
+}
+
+/** Below this the strip counts `m:ss` every second (Cloud's `CLOCK_FROM_MS`). */
+export const EXPIRY_CLOCK_FROM_MS = 120_000;
+/** At or below this the countdown is in ink (Cloud's `WARNING_FROM_MS`). */
+export const EXPIRY_WARN_FROM_MS = 60_000;
+/** Above this the strip names the clock time instead of counting minutes. */
+export const EXPIRY_MINUTES_UP_TO_MS = 60 * 60_000;
+
+export interface ApprovalExpiryCountdown {
+  /** "Expires in 14 min", "Expires in 0:45", "Expired", or the clock time. */
+  readonly text: string;
+  /** The last minute: the words in ink. */
+  readonly warn: boolean;
+  /** When the words next change, in ms from `nowMs`; null once expired. */
+  readonly nextChangeMs: number | null;
+}
+
+/**
+ * The strip's live expiry (Cloud's `TakeoverTimer` and `remainingDisplay`,
+ * H3-DESKTOP.md Appendix A.7), counted down from the approval's own bound
+ * `expiresAt`: "Expires in N min" (N rounded up) while an hour or less is
+ * left, "Expires in m:ss" for the last two minutes, in ink for the last one,
+ * and "Expired" at zero. Further out than an hour it names the clock time,
+ * as `approvalExpiryWords` does, since a count of hundreds of minutes reads
+ * worse than a time. Words only: the engine's sweep owns the deadline, and
+ * nothing here enables, disables or decides anything. `null` for an
+ * unreadable value.
+ */
+export function approvalExpiryCountdown(expiresAt: string, nowMs: number): ApprovalExpiryCountdown | null {
+  const at = Date.parse(expiresAt);
+  if (!Number.isFinite(at)) return null;
+  const remaining = at - nowMs;
+  if (remaining <= 0) return { text: "Expired", warn: false, nextChangeMs: null };
+  if (remaining > EXPIRY_MINUTES_UP_TO_MS) {
+    const words = approvalExpiryWords(expiresAt, nowMs);
+    if (words === null) return null;
+    // Wake once a minute: the day can turn, and the hour mark is coming.
+    return { text: words, warn: false, nextChangeMs: Math.min(60_000, remaining - EXPIRY_MINUTES_UP_TO_MS) };
+  }
+  if (remaining > EXPIRY_CLOCK_FROM_MS) {
+    return {
+      text: `Expires in ${Math.ceil(remaining / 60_000)} min`,
+      warn: false,
+      nextChangeMs: ((remaining - 1) % 60_000) + 1,
+    };
+  }
+  const total = Math.ceil(remaining / 1000);
+  return {
+    text: `Expires in ${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`,
+    warn: remaining <= EXPIRY_WARN_FROM_MS,
+    nextChangeMs: ((remaining - 1) % 1000) + 1,
+  };
 }
 
 // -- Risk in words -----------------------------------------------------------

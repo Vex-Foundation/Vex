@@ -1,8 +1,10 @@
 /**
- * APV-1: the title bar's "Needs you · N" control (the successor of the
- * `AWAITING n` badge), DECIDED IN A REAL WINDOW while Studio is the runtime
- * mode: the control opens its list, Review opens the Needs you page on the
- * approval's full card in place, and the decision lands.
+ * APV-1: Needs you (the successor of the `AWAITING n` badge and of R3's
+ * header "Needs you · N" control; since H3 it is the console's, its column's
+ * NEEDS YOU and its Review key, docs/design/H3-DESKTOP.md section 4.8),
+ * DECIDED IN A REAL WINDOW while Studio is the runtime mode: the console
+ * counts it, Review opens the Needs you page on the approval's full card in
+ * place, and the decision lands.
  *
  * ## The finding this exists to settle
  *
@@ -183,12 +185,15 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
   await expect(centre.getByRole("tablist", { name: "Studio terminals and files" }))
     .toBeVisible({ timeout: 60_000 });
 
-  /* ---- 1: the control is on screen, and says what it holds ------------- */
+  /* ---- 1: the console counts it, and its Review key is on screen ------ */
 
-  const badge = page.locator('[data-vex-area="needs-you-control"]');
-  await expect(badge).toBeVisible({ timeout: 60_000 });
-  await expect(badge).toHaveText(/Needs you\s*·\s*1/);
-  await expect(badge).toHaveAttribute("aria-expanded", "false");
+  const needsYou = page.locator('[data-vex-area="vex-needs-you"]');
+  await expect(needsYou.locator(".vex-console__count")).toHaveText("1", { timeout: 60_000 });
+  const badge = needsYou
+    .locator('[data-vex-area="vex-needs-you-row"]')
+    .getByRole("button", { name: /^Review:/ });
+  await expect(badge).toHaveCount(1);
+  await expect(badge).toBeVisible();
 
   /* ---- 2: THE HIT TEST, before anything is clicked --------------------- */
 
@@ -202,20 +207,13 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
     `the pixel at the badge's centre is not the badge - ${describeProbe("badge", badgeProbe)}`,
   ).toBe(true);
 
-  /* ---- 3: a real click opens the panel --------------------------------- */
+  /* ---- 3: a real click on Review ------------------------------------- */
 
   // Playwright's own actionability + hit-target check runs here; an element
-  // intercepting the pointer fails this line by name.
+  // intercepting the pointer fails this line by name. The console never
+  // decides: its Review key opens the Needs you page on the approval's full
+  // card, in place, without leaving Studio.
   await badge.click();
-  const list = page.locator('[data-vex-area="needs-you-panel"]');
-  await expect(list).toBeVisible();
-  await expect(badge).toHaveAttribute("aria-expanded", "true");
-
-  // The list never decides: its Review key opens the Needs you page on the
-  // approval's full card, in place, without leaving Studio.
-  const review = list.getByRole("button", { name: /^Review:/ });
-  await expect(review).toHaveCount(1);
-  await review.click();
   const panel = page.locator('[data-vex-area="needs-you-page"]');
   await expect(panel).toBeVisible();
   await expect(page.locator('[data-vex-runtime-mode]').first()).toHaveAttribute(
@@ -287,8 +285,8 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
     description: JSON.stringify(settlement),
   });
 
-  // At zero the control leaves the title bar (no "Needs you · 0"), and the
-  // card leaves the page once its approval is no longer pending.
+  // At zero the console's Review key leaves (it says "Nothing needs you."),
+  // and the card leaves the page once its approval is no longer pending.
   await expect(badge).toHaveCount(0, { timeout: 60_000 });
   await expect(card).toHaveCount(0);
   await expect(panel).toContainText("Nothing needs you.");

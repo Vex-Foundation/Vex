@@ -9,10 +9,19 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ToastHost } from "../toast-host.js";
 import { NotificationAnnouncer } from "../notification-announcer.js";
+import { rectsMeet, toastSeat, type ToastRect } from "../notification-toast.js";
 import { notifications } from "../../../lib/notifications/index.js";
-import { PURGE_MS, TOAST_EXIT_MS } from "../../../lib/notifications/notification-model.js";
+import { TOAST_EXIT_MS, TOAST_HOLD_MS } from "../../../lib/notifications/notification-model.js";
+
+const OVERLAYS_CSS = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../styles/global-css/ui-primitives/overlays.css"),
+  "utf8",
+);
 import type { NotificationInput } from "../../../lib/notifications/types.js";
 
 function input(overrides: Partial<NotificationInput> = {}): NotificationInput {
@@ -39,22 +48,29 @@ afterEach(() => {
 });
 
 describe("NotificationToastStack", () => {
-  it("shows severity by fill, never a hue: info bare, warning ink hatch, failure ink cross", () => {
+  it("marks severity in its status column: the info glyph, the ink hatch, the cross", () => {
     render(<ToastHost />);
-    act(() => {
-      notifications.notify(input({ severity: "info", message: "Session exported." }));
-      notifications.notify(input({ severity: "warning", message: "Nothing before this message to branch from." }));
-      notifications.notify(input({ severity: "error", message: "Vex could not lock. Try again." }));
-    });
-    const fills = [...document.querySelectorAll('[data-vex-area="notification-toast"]')].map(
-      (node) => [node.getAttribute("data-severity"), node.querySelector(".vex-swatch")?.getAttribute("data-s") ?? null],
-    );
-    expect(Object.fromEntries(fills)).toEqual({ info: null, warning: "concerned", error: "error" });
-    const stack = document.querySelector('[data-vex-area="notification-stack"]');
-    expect(stack?.innerHTML).not.toMatch(/uppercase|danger|amber|green|red-/);
+    const marks: Record<string, string | null> = {};
+    for (const [severity, message] of [
+      ["info", "Session exported."],
+      ["warning", "Nothing before this message to branch from."],
+      ["error", "Vex could not lock. Try again."],
+    ] as const) {
+      act(() => {
+        notifications.notify(input({ severity, message }));
+      });
+      const toast = document.querySelector('[data-vex-area="notification-toast"]');
+      expect(toast?.getAttribute("data-severity")).toBe(severity);
+      const mark = toast?.querySelector(".vex-notification-toast__mark");
+      marks[severity] = mark?.querySelector(".vex-swatch")?.getAttribute("data-s") ?? (mark?.querySelector("svg") ? "glyph" : null);
+      act(() => {
+        notifications.reset();
+      });
+    }
+    expect(marks).toEqual({ info: "glyph", warning: "concerned", error: "error" });
   });
 
-  it("renders the stack, reports the overflow, and dismisses on request", () => {
+  it("is one slot: the longest-waiting toast, the overflow reported under its words, dismissed on request", () => {
     render(<ToastHost />);
     act(() => {
       for (let index = 0; index < 5; index += 1) {
@@ -62,30 +78,40 @@ describe("NotificationToastStack", () => {
       }
     });
 
-    const stack = document.querySelector('[data-vex-area="notification-stack"]');
     const toasts = document.querySelectorAll('[data-vex-area="notification-toast"]');
-    const toastTexts = [...toasts].map((node) => node.textContent ?? "");
     expect({
-      messagesShown: ["m0", "m1", "m2"].map((message, index) =>
-        toastTexts[index]?.includes(message),
-      ),
-      overflow: stack?.textContent?.includes("+2 more in the notification center"),
+      shown: [...toasts].map((node) => node.querySelector(".vex-notification-toast__message")?.textContent),
+      overflow: toasts[0]?.textContent?.includes("+4 more in the notification center"),
       // Announcement is the announcer's job; the visible node claims no role.
       liveRoles: [...toasts].map((node) => node.getAttribute("role")),
-    }).toEqual({
-      messagesShown: [true, true, true],
-      overflow: true,
-      liveRoles: [null, null, null],
-    });
+    }).toEqual({ shown: ["m0"], overflow: true, liveRoles: [null] });
 
     act(() => {
       fireEvent.click(screen.getByRole("button", { name: "Dismiss notification: m0" }));
     });
     expect(
-      [...document.querySelectorAll('[data-vex-area="notification-toast"]')].map(
-        (node) => node.textContent?.includes("m0"),
+      [...document.querySelectorAll('[data-vex-area="notification-toast"] .vex-notification-toast__message')].map(
+        (node) => node.textContent,
       ),
-    ).toEqual([false, false, false]);
+    ).toEqual(["m1"]);
+  });
+
+  it("draws an action as a key cell, never blue, and runs it", () => {
+    const run = vi.fn();
+    render(<ToastHost />);
+    act(() => {
+      notifications.notify(
+        input({ severity: "error", message: "Could not refresh.", actions: [{ id: "retry", label: "Retry", rank: "primary", run }] }),
+      );
+    });
+    const key = screen.getByRole("button", { name: "Retry" });
+    expect(key.className).toBe("vex-notification-act");
+    expect(key.className).not.toMatch(/accent|blue/);
+    act(() => {
+      fireEvent.click(key);
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-vex-area="notification-toast"]')).toBeNull();
   });
 
   it("pauses the purge while the pointer is over a toast", () => {
@@ -97,13 +123,13 @@ describe("NotificationToastStack", () => {
     expect(toast).not.toBeNull();
 
     fireEvent.mouseEnter(toast as Element);
-    act(() => vi.advanceTimersByTime(PURGE_MS.info * 3));
+    act(() => vi.advanceTimersByTime(TOAST_HOLD_MS * 3));
     const whileHovered = document.querySelectorAll(
       '[data-vex-area="notification-toast"]',
     ).length;
 
     fireEvent.mouseLeave(toast as Element);
-    act(() => vi.advanceTimersByTime(PURGE_MS.info + TOAST_EXIT_MS));
+    act(() => vi.advanceTimersByTime(TOAST_HOLD_MS + TOAST_EXIT_MS));
 
     expect({
       whileHovered,
@@ -156,8 +182,147 @@ describe("NotificationToastStack", () => {
 
     expect({
       whileModal: whileModal.map((text) => text?.includes("urgent")),
-      afterModalCount: afterModal.length,
-    }).toEqual({ whileModal: [true], afterModalCount: 2 });
+      // The urgent one stood outside the one slot; the deferred one takes
+      // the slot once the dialog closes.
+      afterModal: afterModal.map((text) => text?.includes("urgent")),
+    }).toEqual({ whileModal: [true], afterModal: [true, false] });
+  });
+});
+
+/**
+ * THE SEAT (docs/design/H3-DESKTOP.md section 5.1): 12 under the header,
+ * centred on the content column, and never over a waiting approval card. The
+ * real browser's proof is `e2e/h3-card-proof.spec.ts`; this holds the pure
+ * decision to the rule at the boxes the H3 harness measures.
+ */
+describe("the toast's seat", () => {
+  const head: ToastRect = { x: 0, y: 0, width: 1280, height: 76 };
+  const titleCell: ToastRect = { x: 632, y: 0, width: 408, height: 75 };
+  const column: ToastRect = { x: 632, y: 76, width: 648, height: 644 };
+  const toast = { width: 420, height: 46 };
+  const viewport = { width: 1280, height: 720 };
+
+  it("floats 12 under the header, centred on the content column", () => {
+    expect(toastSeat({ viewport, head, titleCell, column, toast, cards: [] })).toEqual({
+      seat: "float",
+      top: 88,
+      left: 632 + 324 - 210,
+    });
+  });
+
+  it("clamps 12 from the window's edges", () => {
+    const wide = { width: 640, height: 46 };
+    const seat = toastSeat({ viewport, head, titleCell, column, toast: wide, cards: [] });
+    expect(seat).toEqual({ seat: "float", top: 88, left: 1280 - 12 - 640 });
+  });
+
+  it("keeps floating over a card with room above it (1440 x 900)", () => {
+    const card: ToastRect = { x: 692, y: 351, width: 730, height: 394 };
+    const seat = toastSeat({
+      viewport: { width: 1440, height: 900 },
+      head: { x: 0, y: 0, width: 1440, height: 76 },
+      titleCell: { x: 680, y: 0, width: 520, height: 75 },
+      column: { x: 680, y: 76, width: 760, height: 824 },
+      toast,
+      cards: [card],
+    });
+    expect(seat.seat).toBe("float");
+    if (seat.seat === "float") {
+      expect(rectsMeet({ x: seat.left, y: seat.top, width: toast.width, height: toast.height }, card)).toBe(false);
+    }
+  });
+
+  it("takes the header's message slot when a card starts at the header's rule (1280 x 720)", () => {
+    const card: ToastRect = { x: 644, y: 102, width: 618, height: 463 };
+    const seat = toastSeat({ viewport, head, titleCell, column, toast, cards: [card] });
+    expect(seat).toEqual({ seat: "header", box: titleCell });
+    if (seat.seat === "header") expect(rectsMeet(seat.box, card)).toBe(false);
+  });
+
+  it("steps aside when a card would come within 8 of its foot", () => {
+    // The floating foot is 88 + 46 = 134; a card at 140 is 6 under it.
+    const card: ToastRect = { x: 700, y: 140, width: 500, height: 300 };
+    expect(toastSeat({ viewport, head, titleCell, column, toast, cards: [card] }).seat).toBe("header");
+    const clear: ToastRect = { ...card, y: 142 };
+    expect(toastSeat({ viewport, head, titleCell, column, toast, cards: [clear] }).seat).toBe("float");
+  });
+
+  it("ignores a card it does not meet sideways (the desk's ticket)", () => {
+    // The floating box runs 746 to 1166; a card from 1180 does not meet it.
+    const card: ToastRect = { x: 1180, y: 90, width: 90, height: 400 };
+    expect(toastSeat({ viewport, head, titleCell, column, toast, cards: [card] }).seat).toBe("float");
+  });
+
+  it("places the region from the host, header seat included", () => {
+    const rect = (r: ToastRect) => (): DOMRect =>
+      ({ ...r, top: r.y, left: r.x, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => r }) as DOMRect;
+    const headNode = document.createElement("header");
+    headNode.setAttribute("data-vex-area", "shell-head");
+    headNode.getBoundingClientRect = rect(head);
+    const cellNode = document.createElement("div");
+    cellNode.setAttribute("data-vex-head-cell", "title");
+    cellNode.getBoundingClientRect = rect(titleCell);
+    const cardNode = document.createElement("section");
+    cardNode.setAttribute("data-vex-area", "approval-card");
+    cardNode.getBoundingClientRect = rect({ x: 644, y: 102, width: 618, height: 463 });
+    const columnNode = document.createElement("section");
+    columnNode.className = "vex-shell-centre";
+    columnNode.getBoundingClientRect = rect(column);
+    document.body.append(headNode, cellNode, cardNode, columnNode);
+    // jsdom lays nothing out: the toast's floating size is stood in for.
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(toast.width);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(toast.height);
+    try {
+      render(<ToastHost />);
+      act(() => {
+        notifications.notify(input({ severity: "error", message: "Could not refresh the Lighter account." }));
+      });
+      const region = document.querySelector<HTMLElement>('[data-vex-area="notification-stack"]');
+      expect({
+        seat: region?.getAttribute("data-vex-toast-seat"),
+        box: [region?.style.left, region?.style.top, region?.style.width, region?.style.height],
+        // a window drag region under the header never swallows its keys
+        noDrag: region?.classList.contains("vex-no-drag"),
+      }).toEqual({ seat: "header", box: ["632px", "0px", "408px", "75px"], noDrag: true });
+    } finally {
+      headNode.remove();
+      cellNode.remove();
+      cardNode.remove();
+      columnNode.remove();
+    }
+  });
+
+  it("raw-CSS contract: Cloud's plate, rule, key cells and motion", () => {
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-notification-toast \{[^}]*min-height: 44px;[^}]*border: 1px solid var\(--vex-alias-rule-chosen\);[^}]*background: var\(--vex-alias-toast-bg\);[^}]*color: var\(--vex-alias-label-on-plate\);[^}]*animation: vex-notification-toast-in 620ms var\(--vex-ease-push\);/,
+    );
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-notification-toast\[data-severity="error"\] \{[^}]*var\(--vex-alias-refusal-tint\)[^}]*var\(--vex-alias-card\);/,
+    );
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-notification-act \{[^}]*padding: 0 20px;[^}]*font-size: 13px;[^}]*text-transform: uppercase;/,
+    );
+    const toastRules = OVERLAYS_CSS.slice(OVERLAYS_CSS.indexOf("/* ── The toast"), OVERLAYS_CSS.indexOf("/* ── Tooltip")).replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(toastRules).not.toMatch(/button-accent|blue|box-shadow/);
+  });
+
+  it("raw-CSS contract: in the header's slot the words clamp to three lines and never scroll (VEX Cloud's IN_SLOT_TEXT)", () => {
+    const slotText =
+      /\.vex-notification-stack\[data-vex-toast-seat="header"\] \.vex-notification-toast__text \{([^}]*)\}/.exec(
+        OVERLAYS_CSS,
+      )?.[1] ?? "";
+    expect(slotText).toContain("-webkit-line-clamp: 3;");
+    expect(slotText).toContain("-webkit-box-orient: vertical;");
+    expect(slotText).toContain("display: -webkit-box;");
+    expect(slotText).toContain("overflow: hidden;");
+    expect(slotText).toContain("font-size: 12px;");
+    expect(slotText).not.toMatch(/overflow-y: auto/);
+    expect(OVERLAYS_CSS).toMatch(
+      /\.vex-notification-stack\[data-vex-toast-seat="header"\] \.vex-notification-act \{[^}]*padding: 0 12px;/,
+    );
   });
 });
 

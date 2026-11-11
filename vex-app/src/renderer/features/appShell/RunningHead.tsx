@@ -1,64 +1,71 @@
 /**
- * THE TITLE BAR: the centre column's 44px head row, and the window's drag
- * region (docs/design/R3-MINIMAL.md section 3). Two cells:
+ * THE TITLE BAR: the header's title cell (docs/design/H3-DESKTOP.md section
+ * 1.3; its contents are still R3-MINIMAL.md section 3's). The cells after it
+ * (Needs you, the network, the VEX cell over Vex's column) are the header's
+ * own (`ShellHeader`).
  *
- *   - the LEFT cell says where you are: the session title with its mode
- *     ("Agent · Restricted", and the mission badge for a mission), the page
- *     name when a page is open ("Portfolio", "Needs you" with its count, and
- *     for a subpage its crumb, "Portfolio / Agent Scan", each parent a link
- *     up to it: `screens/page-crumbs.ts`), or the Studio project with its
- *     access. The page itself draws no crumb or close row;
- *   - the RIGHT cluster (gap 8): the page keys (a page's own keys such as
- *     Portfolio's refresh, through `pageKeysSlot.tsx`; export; a close key for
- *     a page with no other way back), the Studio host status, Notices (only
- *     while notices exist), "Needs you · N" (while something waits or the
- *     read failed), then the token chip ("Vex chat" and its state), which
- *     also shows and hides the Vex sidebar.
+ *   - the TITLE cell, over the chat, says where you are: the session title
+ *     with its mode ("Agent · Restricted", and the mission badge for a
+ *     mission), the page name when a page is open ("Portfolio", "Needs you"
+ *     with its count, and for a subpage its crumb, "Portfolio / Agent Scan",
+ *     each parent a link up to it: `screens/page-crumbs.ts`), or the Studio
+ *     project with its access. The page itself draws no crumb or close row.
+ *     The cell ends in the cluster (gap 8): the page keys (a page's own keys
+ *     such as Portfolio's refresh, through `pageKeysSlot.tsx`; export; a
+ *     close key for a page with no other way back), the Studio host status
+ *     and Notices (only while notices exist). Needs you is not in this cell:
+ *     D2 gives it a cell of its own after the title (`NeedsYouHeadCell`,
+ *     docs/design/H3-DESKTOP.md section 6.2), and this cell says a rise
+ *     (`NeedsYouAnnouncer`).
  *
- * The row is a window drag region (`.vex-drag`); every control inside it opts
- * out on its own (window-chrome.css). Its right padding reserves the Windows
- * and Linux caption buttons wherever the Vex column under them is narrower
- * than they are (title-bar.css). On the welcome the row has no title and no
- * chip (Vex is in the centre there), and its rule is clear (`empty`).
+ * The header (`ShellHeader.tsx`) lays the cells out and reserves the window
+ * chrome; the title cell is a window drag region (`.vex-drag`) and every
+ * control inside it opts out on its own (window-chrome.css). On the welcome
+ * the title cell has no title (`empty`).
  *
- * Mounted ONCE by the frame for an invariant, not for tidiness:
+ * Mounted ONCE by the header for an invariant, not for tidiness:
  * `GlobalApprovalsSync` owns `useGlobalApprovalsLiveSync`, which subscribes to
  * the engine bridge, and preload allows at most one subscriber per event kind
  * per window. A head per shell would mount a second sync across a mode switch
- * and the app-wide inbox would silently lose its live sync. So the FRAME
- * mounts this once, above the mode dispatch. The sync sits outside the right
- * cluster, so the cluster moving into Lighter's bar never remounts it.
+ * and the app-wide inbox would silently lose its live sync. So the header
+ * mounts this once, above the mode dispatch, and renders it as a fragment
+ * whose first child is the sync in every mode: the cells after it change
+ * with the mode, the sync never does. The sync sits outside the cluster, so
+ * the cluster moving into Lighter's bar never remounts it.
  *
  * `MissionRail`, `SessionExportControl` and the session title are
  * SESSION-scoped, and the session they scope to belongs to the agent shell.
  * `activeSessionId` survives a mode switch (switching back returns to it), so
  * in Studio they are handed `null`, which each of them treats as "no session"
- * (render nothing, fire no session IPC). Needs you is deliberately NOT gated:
- * it is one app-wide list, visible in whichever mode the user is in.
+ * (render nothing, fire no session IPC). The Needs you announcer is
+ * deliberately NOT gated: it says one app-wide list, in whichever mode the
+ * user is in.
  * `RunningHead.test.tsx` asserts all of this rather than trusting it.
  *
- * `NotificationCenter` and `NotificationAnnouncer` live here for the same
- * once-per-window reason: two centers would fork one list, and two announcers
- * would speak every message twice. The announcer renders only screen-reader
- * live regions (no pixels).
+ * `NotificationCenter`, `NotificationAnnouncer` and `NeedsYouAnnouncer` live
+ * here for the same once-per-window reason: two centers would fork one list,
+ * and two announcers would speak every message twice. The announcers render
+ * only screen-reader live regions (no pixels).
  *
- * Lighter has no head row of its own: the desk's top bar is its title bar,
- * and the right cluster rides at its right end through a portal
- * (`lighterTrading/shellStripSlot.ts`). The row collapses; the cluster only
- * moves in the DOM. `data-vex-area="shell-status-strip"` stays the test seam.
+ * ON THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved
+ * desk plate) the title cell holds the desk's own head (`deskHead`: where
+ * you are and the desk's three keys, `LighterSidebar`), and the cluster
+ * keeps only what the desk can need there: a page's keys and close key while
+ * a page stands over the desk, and Notices while notices exist. Needs you
+ * is the console's on the desk as everywhere, and the desk chat's export is
+ * not in the desk's row. `data-vex-area="shell-status-strip"` stays the test seam: the
+ * title cell in every mode.
  */
 
 import { Fragment, type JSX, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import { LineClose } from "../../components/icons/line/index.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { ErrorBoundary } from "../../components/ui/error-boundary.js";
 import { useProject } from "../../lib/api/projects.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
-import { NeedsYouControl } from "../vex/NeedsYouControl.js";
-import { VexTokenChip } from "../vex/VexTokenChip.js";
+import { NeedsYouAnnouncer } from "../vex/NeedsYouAnnouncer.js";
 import { useNeedsYou } from "../vex/useVexPresence.js";
 import { GlobalApprovalsSync } from "./GlobalApprovals.js";
 import { MissionRail } from "./MissionRail.js";
@@ -66,7 +73,6 @@ import { NotificationCenter } from "./NotificationCenter.js";
 import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 import { getSessionTitle } from "./sessionListModel.js";
-import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
 import { setPageKeysSlot } from "./pageKeysSlot.js";
 import { assetsPageTitle, titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
 import { assetsRouteScope } from "../../stores/uiStore/shell-route.js";
@@ -78,6 +84,8 @@ export { titleBarPageOf };
 export interface VexToggle {
   readonly open: boolean;
   readonly onToggle: () => void;
+  /** Her band rests under 1024: the reason, said instead of acting. */
+  readonly held?: string | null;
 }
 
 export interface RunningHeadProps {
@@ -87,10 +95,12 @@ export interface RunningHeadProps {
   readonly empty?: boolean;
   /**
    * The Vex toggle. The frame passes the open state it solved (a column the
-   * narrow tier closed is not open); `null` means there is no Vex column to
-   * toggle (the welcome, Zen). Omitted, the chip reads the stored choice.
+   * desk's solve closed is not open); `null` means there is no Vex column to
+   * toggle (Zen). Omitted, the chip reads the stored choice.
    */
   readonly vex?: VexToggle | null;
+  /** The Lighter desk's head, which the desk's title cell holds. */
+  readonly deskHead?: ReactNode;
 }
 
 /** The access word of a session or a project. */
@@ -265,30 +275,15 @@ function TitleCellBoundary({
   );
 }
 
-/** The stored choice, for a head mounted without the frame's solve. */
-function useStoredVexToggle(): VexToggle {
-  const open = useUiStore(selectVexOpen);
-  const setVexOpen = useUiStore((s) => s.setVexOpen);
-  return { open, onToggle: () => setVexOpen(!open) };
-}
-
 export function RunningHead({
   runtimeMode,
   activeSessionId,
   empty = false,
-  vex,
+  deskHead = null,
 }: RunningHeadProps): JSX.Element {
   // See the module note: the session-scoped parts belong to the agent shell.
   const sessionScopedId = runtimeMode === "studio" ? null : activeSessionId;
   const lighter = runtimeMode === "lighter";
-  const lighterSlot = useShellStripSlot();
-  const stored = useStoredVexToggle();
-  const toggle = vex === undefined ? stored : vex;
-  // The welcome has Vex in the centre: no column, so no toggle.
-  const chip =
-    toggle === null || (empty && !lighter) ? null : (
-      <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />
-    );
 
   const flank = (
     <div className="vex-running-head__flank">
@@ -296,41 +291,52 @@ export function RunningHead({
        * the cluster, before export and the close key. */}
       <div className="vex-tb-pagekeys" data-vex-area="title-bar-page-keys" ref={setPageKeysSlot} />
       <PageCloseKey runtimeMode={runtimeMode} />
-      <SessionExportControl activeSessionId={sessionScopedId} />
+      {lighter ? null : <SessionExportControl activeSessionId={sessionScopedId} />}
       {runtimeMode === "studio" ? <StudioHostStatusWord /> : null}
       {/* Session-LESS failures (memory maintenance) reach the user here too:
        * they are notifications, so the center is their surface. Renders null
        * while there are none. */}
       <NotificationCenter />
-      <NeedsYouControl />
-      {chip}
+      {/* Needs you is the console's, in every mode (H3-DESKTOP.md section
+       * 4.8): its column, the page strip, or the console line under 1024.
+       * What the header keeps is its voice: a rise is said here, once. */}
       <NotificationAnnouncer />
+      <NeedsYouAnnouncer />
     </div>
   );
 
+  // A fragment in every mode, the sync its first child: across a mode switch
+  // only what follows the sync changes, so the sync itself is never
+  // remounted (its subscription would otherwise be dropped and taken again).
   return (
-    <header
-      className={lighter ? "contents" : "vex-running-head vex-drag"}
-      data-vex-area="shell-status-strip"
-      data-collapsed={lighter || undefined}
-      data-empty={(!lighter && empty) || undefined}
-    >
+    <>
       <GlobalApprovalsSync />
-      {lighter ? (
-        lighterSlot === null ? <div hidden>{flank}</div> : createPortal(flank, lighterSlot)
-      ) : (
-        <>
-          <div className="vex-running-head__start">
-            {empty ? null : (
-              <TitleCellBoundary runtimeMode={runtimeMode} sessionId={sessionScopedId}>
-                <TitleBarContext runtimeMode={runtimeMode} sessionId={sessionScopedId} />
-              </TitleCellBoundary>
-            )}
-            <MissionRail activeSessionId={sessionScopedId} />
-          </div>
-          {flank}
-        </>
-      )}
-    </header>
+      <div
+        data-vex-head-cell="title"
+        className="vex-running-head vex-drag"
+        data-vex-area="shell-status-strip"
+        data-vex-desk-head={lighter ? "" : undefined}
+        data-empty={empty || undefined}
+      >
+        {lighter ? (
+          <>
+            <div className="vex-running-head__start">{deskHead}</div>
+            {flank}
+          </>
+        ) : (
+          <>
+            <div className="vex-running-head__start">
+              {empty ? null : (
+                <TitleCellBoundary runtimeMode={runtimeMode} sessionId={sessionScopedId}>
+                  <TitleBarContext runtimeMode={runtimeMode} sessionId={sessionScopedId} />
+                </TitleCellBoundary>
+              )}
+              <MissionRail activeSessionId={sessionScopedId} />
+            </div>
+            {flank}
+          </>
+        )}
+      </div>
+    </>
   );
 }

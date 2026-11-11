@@ -20,10 +20,11 @@
  */
 
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
-import type { PortfolioDto } from "@shared/schemas/portfolio.js";
+import type { PortfolioDto, PortfolioReadInput } from "@shared/schemas/portfolio.js";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import { usePortfolio, useWalletPortfolio } from "../../../../lib/api/portfolio.js";
+import { useKeptRead } from "../../screens/kept-read.js";
 import type { PortfolioWallet } from "./wallet-scope.js";
 import {
   GLOBAL_PORTFOLIO_SCOPE,
@@ -165,6 +166,19 @@ export function cardScopeOf(scope: PortfolioPageScope): PortfolioCardScope {
 }
 
 /**
+ * The `PortfolioReadInput` a page scope reads its figures with: the card
+ * scope's input (`portfolioReadInputFor(cardScopeOf(scope))`), except that one
+ * inventory wallet is the global read narrowed by its address, exactly what
+ * `useWalletPortfolio` sends. The equity chart hands this same input to the
+ * history read, so the chart covers the wallets the figures beside it cover.
+ */
+export function pageScopeReadInput(scope: PortfolioPageScope): PortfolioReadInput {
+  return scope.kind === "wallet"
+    ? { scope: "global", walletAddress: scope.wallet.address }
+    : portfolioReadInputFor(cardScopeOf(scope));
+}
+
+/**
  * THE read behind the page's figures for a scope. Both hooks are called on
  * every render (stable hook order); the wallet read is disabled by its null
  * address outside the wallet scope, and the scope read for a single wallet is
@@ -178,6 +192,48 @@ export function usePageScopePortfolio(
     scope.kind === "wallet" ? scope.wallet.address : null,
   );
   return scope.kind === "wallet" ? wallet : scoped;
+}
+
+/** The page's read with its last good figures kept (`useKeptRead`). */
+export interface KeptPortfolioRead {
+  /** Nothing has answered yet for this scope. */
+  readonly loading: boolean;
+  /** The figures to draw: the newest good read, or the one kept before a failure. */
+  readonly portfolio: PortfolioDto | null;
+  /** When `portfolio` was read (epoch ms), 0 when there is none. */
+  readonly at: number;
+  /** The newest read failed: refused by main, timed out or thrown. */
+  readonly failed: boolean;
+  /** A read is running now (the first, a poll, a Retry). */
+  readonly fetching: boolean;
+  /** Runs the read again. */
+  readonly retry: () => Promise<unknown>;
+}
+
+/**
+ * The page-scope read as the page draws it: a failed refresh keeps the
+ * figures already shown and says so (H3-DESKTOP section 1.9), never a wipe.
+ * Each caller keeps its own copy, all of the one cached read.
+ */
+export function useKeptPageScopePortfolio(scope: PortfolioPageScope): KeptPortfolioRead {
+  const query = usePageScopePortfolio(scope);
+  const result = query.data;
+  const fresh = result?.ok === true ? result.data : null;
+  const failed = (result !== undefined && !result.ok) || query.isError;
+  const kept = useKeptRead(
+    JSON.stringify(pageScopeReadInput(scope)),
+    fresh,
+    query.dataUpdatedAt,
+    failed,
+  );
+  return {
+    loading: query.isLoading,
+    portfolio: kept.value,
+    at: kept.at,
+    failed: kept.failed,
+    fetching: query.isFetching,
+    retry: query.refetch,
+  };
 }
 
 /** "wallet" or "wallets". */

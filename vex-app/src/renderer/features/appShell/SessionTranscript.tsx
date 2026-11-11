@@ -30,7 +30,7 @@
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
- * shows a top "couldn't load older" strip. Content rendering is delegated to
+ * shows the earlier-messages band's failure with its Retry. Content rendering is delegated to
  * `TranscriptMessage` (assistant = safe markdown, others = plain text).
  *
  * S3 entry settle: only rows appended LIVE after the session's first completed
@@ -38,8 +38,8 @@
  * (initial load + load-older prepends) enter with a hard cut.
  */
 
-import { useMemo, useRef, type JSX } from "react";
-import { LineChevronDown } from "../../components/icons/line/index.js";
+import { useCallback, useMemo, useRef, type JSX } from "react";
+import { LineArrowDown } from "../../components/icons/line/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -52,6 +52,10 @@ import {
   useStreamPreview,
 } from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
+import {
+  settledTurnAnchor,
+  useTurnClockStore,
+} from "./TurnIsland/turnClock.js";
 import { findWorkingAgentEntryKey } from "./agentActivity.js";
 import {
   groupTranscriptRows,
@@ -64,8 +68,8 @@ import {
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
 import {
-  OlderPageErrorStrip,
-  OlderPageLoadingStrip,
+  EarlierBand,
+  type EarlierBandState,
   TranscriptEmptyState,
   TranscriptErrorState,
   TranscriptLoadingState,
@@ -112,6 +116,23 @@ export function SessionTranscript({
   // A14/A18 - branch + edit hover keys on prose rows.
   const forkActions = useMessageForkActions({ sessionId, rows });
 
+  // THE LIVE TURN'S CLOCK, kept past the turn (`TurnIsland/turnClock.ts`):
+  // when the live frame settles it hands up its clock's reading, filed here
+  // under the person's message the turn answered, so the turn's thinking row
+  // can say "Thought for 2.8 s". The rows are read through a ref at that
+  // moment, so the callback stays stable and the turn's answer row, which
+  // may land in the same frame, does not re-create it.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const recordTurnClock = useTurnClockStore((s) => s.record);
+  const onTurnSettled = useCallback(
+    (thoughtMs: number, startedAtMs: number) => {
+      const anchorId = settledTurnAnchor(rowsRef.current, startedAtMs);
+      if (anchorId !== null) recordTurnClock(sessionId, anchorId, thoughtMs);
+    },
+    [recordTurnClock, sessionId],
+  );
+
   // S5 - pending approvals drive two quiet signals: per-step "Waiting for
   // approval" links (matched by toolCallId) and the live row's freeze.
   // Shares ApprovalsRegion's query key: no new IPC.
@@ -146,6 +167,23 @@ export function SessionTranscript({
   const olderError =
     items.length > 0 &&
     ((pages?.some((page) => !page.ok) ?? false) || query.isError);
+  // The earlier-messages band (`EarlierBand`): loading while an older page
+  // reads, the failure with its Retry, and "Start of the chat" only once the
+  // reader paged back to the chat's first message; a single page, or the
+  // page cap, says nothing.
+  const lastPage = pages?.at(-1);
+  const earlierState: EarlierBandState | null = query.isFetchingNextPage
+    ? "loading"
+    : olderError
+      ? "error"
+      : (pages?.length ?? 0) > 1 && lastPage !== undefined && lastPage.ok && !lastPage.data.hasMore
+        ? "end"
+        : null;
+  // Retry reads the pages again, the failed one with its own cursor (an
+  // infinite query refetches every page it holds).
+  const retryEarlier = (): void => {
+    void query.refetch();
+  };
 
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
@@ -261,12 +299,11 @@ export function SessionTranscript({
           unchanged. */}
       {/* The reading column (`.vex-reading-col`, docs/design/R3-MINIMAL.md
           section 6): centred, at most 760, the same column as the docked
-          composer below it. The 18px column gap is the ONE vertical rhythm -
-          no per-row margins. */}
+          composer below it. Its rows carry their own gaps, VEX Cloud's
+          6 / 12 / 16 flow rhythm (`SessionTranscript/flowRhythm.ts`). */}
       <div data-vex-transcript-column="" className="vex-reading-col">
-      <div ref={columnRef} className="relative flex flex-col gap-[18px]">
-        {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
-        {olderError ? <OlderPageErrorStrip /> : null}
+      <div ref={columnRef} data-vex-flow="" className="relative flex flex-col">
+        <EarlierBand state={earlierState} onRetry={retryEarlier} />
         <TranscriptRows
           rows={rows}
           sessionId={sessionId}
@@ -274,6 +311,7 @@ export function SessionTranscript({
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
           forkActions={forkActions}
+          live={preview !== null}
         />
         {/* A17 — the settled turn's tail wears its usage stats. Mounted only
             between turns; a user-tail (message sent, reply not begun) or a
@@ -287,6 +325,7 @@ export function SessionTranscript({
             awaitingApproval={hasPendingApproval}
             leaseHeld={leaseHeld}
             turnMark={liveMark}
+            onTurnSettled={onTurnSettled}
           />
         ) : null}
         </div>
@@ -301,14 +340,28 @@ export function SessionTranscript({
           content sits below the fold. */}
       {showLatest ? (
         <div data-vex-latest-slot>
+          {/* VEX Cloud's `BackToBottom`: a 44 square at the right end of the
+              column, raised on the chosen rule, the down arrow in ink, fading
+              in over 160 ms. It leaves once the floor is reached; if it held
+              the focus, the focus goes on to the draft field rather than to
+              the page. */}
           <button
             type="button"
             data-vex-latest-pill
-            onClick={jumpToLatest}
-            aria-label="Jump to latest message"
-            className="pointer-events-auto -mt-8 inline-flex h-8 w-8 items-center justify-center border border-rule bg-surface-base text-accent-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onClick={(event) => {
+              const held = document.activeElement === event.currentTarget;
+              jumpToLatest();
+              if (held) {
+                event.currentTarget
+                  .closest("[data-vex-area='session-panel']")
+                  ?.querySelector<HTMLTextAreaElement>("[data-vex-area='chat-composer'] textarea")
+                  ?.focus({ preventScroll: true });
+              }
+            }}
+            aria-label="Scroll to latest"
+            className="vex-latest"
           >
-            <LineChevronDown size={16} />
+            <LineArrowDown size={20} />
           </button>
         </div>
       ) : null}

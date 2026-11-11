@@ -13,10 +13,19 @@
  * whose state must survive a tab switch. Both are additive: omitting them
  * reproduces the original behaviour exactly.
  *
- * Two looks (docs/design/R3-MINIMAL.md section 9): `underline` (default), a
- * row of sentence case tabs over a quiet rule with the active one underlined
- * in the blue; `segmented`, keys joined in one rule frame with the active key
- * on the selection wash. Behaviour and ARIA are the same for both.
+ * Three looks; behaviour and ARIA are the same for all:
+ *   - `cells` (the default; VEX Cloud's tabs, `components/ui/underline-tabs.tsx`
+ *     and `styles/rows.css`; docs/design/H3-DESKTOP.md section 5.8): square
+ *     cells cut by the 7% rule, 13 caps tracked in ink 2, the chosen one on
+ *     the open ground in ink, no underline, no blue. `density` sets the row:
+ *     56 for a page's sections (`nav`), 48 for a section's panels (`panel`,
+ *     the default), 40 for a panel's own strip (`compact`, 12 caps);
+ *   - `underline` (R3, docs/design/R3-MINIMAL.md section 9): sentence case
+ *     tabs over a quiet rule, the active one underlined in the blue; kept
+ *     for the approved plates that draw it (the wizard's wallets, Studio's
+ *     tab strip, section 4.9);
+ *   - `segmented`: keys joined in one rule frame, the active key on the
+ *     selection wash.
  */
 
 import {
@@ -45,9 +54,14 @@ interface TabsContextValue {
   readonly keepMounted: boolean;
   /** See {@link TabsProps.variant}. */
   readonly variant: TabsVariant;
+  /** See {@link TabsProps.density}. */
+  readonly density: TabsDensity;
 }
 
-export type TabsVariant = "underline" | "segmented";
+export type TabsVariant = "cells" | "underline" | "segmented";
+
+/** The cells' row: 56 (a page's sections), 48 (a section's panels), 40 (a panel's own strip). */
+export type TabsDensity = "nav" | "panel" | "compact";
 
 const TabsContext = createContext<TabsContextValue | null>(null);
 
@@ -87,8 +101,10 @@ export interface TabsProps {
    * subscriptions that should stop while nobody is looking.
    */
   readonly keepMounted?: boolean;
-  /** The look: underlined tabs (default) or a segmented control. */
+  /** The look: Cloud's cells (default), R3's underline or a segmented control. */
   readonly variant?: TabsVariant;
+  /** The cells' row height (cells only): `panel` (48) by default. */
+  readonly density?: TabsDensity;
 }
 
 export function Tabs({
@@ -99,7 +115,8 @@ export function Tabs({
   className,
   idScope,
   keepMounted = false,
-  variant = "underline",
+  variant = "cells",
+  density = "panel",
 }: TabsProps): JSX.Element {
   const [internal, setInternal] = useState<string>(defaultValue ?? "");
   const isControlled = value !== undefined;
@@ -110,7 +127,7 @@ export function Tabs({
   };
   const idPrefix = idScope === undefined ? "" : `${idScope}-`;
   return (
-    <TabsContext.Provider value={{ value: current, setValue, idPrefix, keepMounted, variant }}>
+    <TabsContext.Provider value={{ value: current, setValue, idPrefix, keepMounted, variant, density }}>
       <div className={cn("flex flex-col", className)}>{children}</div>
     </TabsContext.Provider>
   );
@@ -119,18 +136,29 @@ export function Tabs({
 export const TabsList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => {
     // Read without the throwing guard: a list outside a root keeps rendering
-    // as it always has, in the default look.
-    const variant = useContext(TabsContext)?.variant ?? "underline";
+    // in the default look.
+    const ctx = useContext(TabsContext);
+    const variant = ctx?.variant ?? "cells";
+    const density = ctx?.density ?? "panel";
     return (
       <div
         ref={ref}
         role="tablist"
-        // Underline: a quiet rule under the row, tabs 22 apart. Segmented:
-        // one rule frame around the joined keys.
+        data-vex-tabs={variant}
+        data-density={variant === "cells" ? density : undefined}
+        // Cells: the row at its density, the 7% rule under it and at its
+        // left (the first cell's edge), scrolling sideways with no bar when
+        // it outgrows its box. Underline: a quiet rule under the row, tabs
+        // 22 apart. Segmented: one rule frame around the joined keys.
         className={cn(
           variant === "segmented"
             ? "inline-flex items-stretch self-start border border-rule text-ink-secondary"
-            : "flex items-stretch gap-[22px] border-b border-rule-quiet text-ink-secondary",
+            : variant === "underline"
+              ? "flex items-stretch gap-[22px] border-b border-rule-quiet text-ink-secondary"
+              : cn(
+                  "flex flex-none items-stretch overflow-x-auto border-b border-l border-rule-quiet text-ink-secondary [scrollbar-width:none]",
+                  density === "nav" ? "h-14" : density === "compact" ? "h-10" : "h-12",
+                ),
           className
         )}
         {...props}
@@ -211,11 +239,22 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
         onKeyDown={handleKeyDown}
-        // Sentence case at 13.5, a 38px row, a 1.5px underline that sits on
-        // the list's quiet rule when active; focus is the outline, never a
-        // shadow ring.
+        // Cells: a square cell the row's height, the rule at its right, 13
+        // caps tracked in ink 2 (12 compact), the chosen one on the open
+        // ground in ink, the pointer's on the hover wash; focus the white
+        // ring inside the cell. Underline: sentence case at 13.5, a 38px row,
+        // a 1px underline that sits on the list's quiet rule when active.
+        // Focus is the outline, never a shadow ring.
         className={cn(
-          ctx.variant === "segmented"
+          ctx.variant === "cells"
+            ? cn(
+                "relative inline-flex flex-none items-center gap-2 whitespace-nowrap border-r border-rule-quiet font-normal uppercase leading-none tracking-[var(--tracking-label)] transition-colors duration-[var(--vex-duration-fast)] ease-[var(--vex-ease-standard)] motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
+                ctx.density === "compact" ? "px-4 text-[12px]" : "px-[22px] text-[13px]",
+                isActive
+                  ? "bg-interactive-active text-ink-primary"
+                  : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
+              )
+            : ctx.variant === "segmented"
             ? cn(
                 "inline-flex h-[30px] items-center gap-1.5 whitespace-nowrap border-r border-rule px-3 text-[13px] last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
                 isActive
@@ -223,7 +262,7 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
                   : "text-ink-secondary hover:text-ink-primary",
               )
             : cn(
-                "-mb-px inline-flex h-[38px] items-center gap-1.5 whitespace-nowrap border-b-[1.5px] text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+                "-mb-px inline-flex h-[38px] items-center gap-1.5 whitespace-nowrap border-b text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
                 isActive
                   ? "border-accent-primary font-medium text-accent-primary"
                   : "border-transparent text-ink-secondary hover:text-ink-primary",

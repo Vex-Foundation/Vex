@@ -7,7 +7,7 @@
  * from Protect. They collapse into a single ✕ that opens this card, where the
  * two questions a close actually asks (how much, and at what kind of price)
  * are asked together and answered in one place. The card is a flat popover:
- * paper, a 1.5px ink frame, never a shadow (docs/design/R3-MINIMAL.md
+ * paper, a 1px ink frame, never a shadow (docs/design/R3-MINIMAL.md
  * section 12).
  *
  * NOTHING HERE DECIDES ANYTHING. Both keys call the same `AccountActions`

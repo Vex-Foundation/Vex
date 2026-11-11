@@ -70,12 +70,30 @@ export function selectVexOpen(
  * current class's slot only (the Lighter desk writes `vexOpenLighter`, never
  * the table pages' slot).
  *
- * Opening also clears the narrow override, because under the medium tier an
- * open Vex folds the left sidebar to its rail (docs/design/R3-MINIMAL.md
- * section 2); in Lighter the same flag is the top bar's drawer, which an open
- * chat closes as it always has. `bookOpen` mirrors the last write: it is the
- * legacy slot that `vexOpenChat` was seeded from, and the Lighter desk still
- * watches it to focus the composer once the chat has mounted.
+ * THE CHOICE IS SPLIT (docs/design/H3-DESKTOP.md section 3.5; VEX Cloud's
+ * PD-12): chats remember theirs (`vexOpenChat`, open by default), the table
+ * pages theirs (`vexOpenPages`, closed by default), and under 1024 her band
+ * keeps the session's own (`vexOpenNarrow`, closed on every visit, never
+ * persisted, written by the frame with `setVexOpenNarrow`): this patch never
+ * writes it, and the frame never calls this under 1024.
+ *
+ * WHAT THE SLOTS MEAN (docs/design/H3-DESKTOP.md sections 1.9 and 3.5). In
+ * the agent shell and Studio `vexOpenChat` now shows or hides her plate
+ * inside a column that always stands in a chat, and `vexOpenPages` folds the
+ * table pages' column to its strip or opens it. Both keep their stored
+ * values: a person who hid her keeps her hidden, now as the plate folded
+ * rather than the column gone, so no saved value is migrated. The desk's
+ * `vexOpenLighter` keeps R3's meaning.
+ *
+ * On the desk opening also closes the top bar's drawer (the same ephemeral
+ * flag), as an open chat always has. In the agent shell and Studio it no
+ * longer touches that flag, R3's narrow-tier override: H3 never folds the
+ * chats column for her (section 3.6, "H3 has no derived close"), and under
+ * the wide tier the chats are the rail with their panel over her column
+ * (section 4.12), never a wider track. `bookOpen`
+ * mirrors the last write: it is the legacy slot that `vexOpenChat` was seeded
+ * from, and the Lighter desk still watches it to focus the composer once the
+ * chat has mounted.
  */
 export function vexOpenPatch(
   state: Pick<UiState, "runtimeMode" | "shellRoute">,
@@ -86,10 +104,12 @@ export function vexOpenPatch(
     "vexOpenChat" | "vexOpenPages" | "vexOpenLighter" | "bookOpen" | "sidebarNarrowExpanded"
   >
 > {
-  const slot = { [VEX_OPEN_SLOT[vexPageClass(state)]]: open };
-  return open
+  const pageClass = vexPageClass(state);
+  const slot = { [VEX_OPEN_SLOT[pageClass]]: open };
+  if (!open) return { ...slot, bookOpen: false };
+  return pageClass === "lighter"
     ? { ...slot, bookOpen: true, sidebarNarrowExpanded: false }
-    : { ...slot, bookOpen: false };
+    : { ...slot, bookOpen: true };
 }
 
 /** A persisted boolean preference: anything that is not a boolean degrades. */
@@ -163,12 +183,15 @@ export function clampBookWidth(px: number): number {
 export const STUDIO_RAIL_EXPLORER_SHARE_MIN = 0.2;
 export const STUDIO_RAIL_EXPLORER_SHARE_MAX = 0.8;
 /**
- * 0.6, raised from 0.55 when the Watchlist joined the nav: the nav sits above
- * the Studio body, so each nav row takes height from this split, and at a
- * 900px window 0.55 left the explorer just under the 200px the rail-parity
- * e2e (I6) holds it to. A saved share is the user's and is kept.
+ * 0.7, the split our approved Studio plate draws (docs/design/H3-DESKTOP.md
+ * section 4.9): the nav folds to its Studio row there, so the body under it
+ * keeps most of the column, and three project rows with their head and
+ * "Show all N" fill the 30% above the rule at a 900px window. It was 0.6
+ * while the nine nav rows stood above the body (0.55 before the Watchlist
+ * joined the nav, which left the explorer under the 200px the rail-parity
+ * e2e, I6, holds it to). A saved share is the user's and is kept.
  */
-export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.6;
+export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.7;
 
 /**
  * Clamp a live drag of the rail's vertical seam.

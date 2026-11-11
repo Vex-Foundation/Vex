@@ -24,4 +24,16 @@ describe("MarkdownContent fallback", () => {
     expect(container.textContent).toBe("raw **text** stays");
     expect(container.querySelector("strong")).toBeNull();
   });
+
+  it("keeps the reading register's container, so a chat answer still stands in Vex's bubble", () => {
+    // chat-transcript.css draws her bubble on the parts of `.vex-chat-prose`
+    // (bubble runs); a bare paragraph would stand outside it.
+    const { container } = render(
+      createElement(MarkdownContent, { text: "plain words" }),
+    );
+    const prose = container.querySelector(".vex-chat-prose");
+    expect(prose).not.toBeNull();
+    expect(prose?.firstElementChild?.tagName).toBe("P");
+    expect(prose?.textContent).toBe("plain words");
+  });
 });

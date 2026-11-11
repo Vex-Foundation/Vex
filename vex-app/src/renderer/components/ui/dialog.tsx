@@ -21,6 +21,16 @@
  * `::backdrop` pseudo-element via the `.vex-dialog` rules in
  * `global-css/ui-primitives/overlays.css`, so we don't need a sibling div.
  *
+ * THE H3 DIALOG (docs/design/H3-DESKTOP.md section 5.2; VEX Cloud's `.vx-dlg`,
+ * DG-2 D2-32 and D2-33): one width, 560, on the card ground in the chosen
+ * rule; a 44 head band with Close, a 44 glyph cell, at its end; the title
+ * 22/600; a foot of cell keys where the foot is keys alone; and a danger
+ * confirm drawn as the strong ink key beside a frameless Cancel. All of it is
+ * LOOK: which key acts, the order the keys take focus in and what Esc does
+ * are the call site's, unchanged. Close takes no Tab stop (the keys keep the
+ * order they had) and closes through the very path Esc takes: it raises the
+ * dialog's own `cancel` event.
+ *
  * Sub-components mirror shadcn naming so application code reads the
  * same as the rest of the project (`<DialogContent>`, `<DialogHeader>`,
  * `<DialogTitle>`, etc.). They are pure Tailwind wrappers, no Radix
@@ -43,6 +53,7 @@ import {
   type Ref,
   type RefCallback,
 } from "react";
+import { IconClose } from "../icons/index.js";
 import { Swatch } from "./swatch.js";
 import { cn } from "../../lib/utils.js";
 
@@ -101,7 +112,10 @@ export function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Eleme
 export type DialogSize = "default" | "board" | "sheet";
 
 const DIALOG_BOX_CLASS: Readonly<Record<DialogSize, string>> = {
-  default: "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden",
+  // 560 wide, the window less 32 under it: the width itself is stated in
+  // overlays.css (`[data-vex-dialog-size="default"]`), unlayered, so an old
+  // call site's `max-w-*` no longer decides it (one width, Cloud's D2-33).
+  default: "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[560px] overflow-hidden",
   board: "fixed inset-0 m-auto max-h-[85vh] w-[90vw] max-w-[1280px] overflow-hidden",
   sheet: "vex-sheet fixed m-0 max-h-none max-w-none overflow-hidden",
 };
@@ -259,6 +273,19 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
    * component routes the close through `onOpenChange(false)`.
    */
   readonly onCancel?: ReactEventHandler<HTMLDialogElement>;
+  /**
+   * The head band's word (Cloud's `kicker`): the page the decision belongs
+   * to, after the ink square of a decision that waits. Omitted, the band
+   * holds Close alone. Only the default size draws the band.
+   */
+  readonly kicker?: string;
+  /**
+   * The head band's tag (Cloud's `tag`, `.vx-dlg-tag`): at the band's end,
+   * before Close, gap 8 and 12 each side. It holds a money dialog's network
+   * word and its solid REAL FUNDS tag, so a money dialog wears its mark in
+   * the head. Omitted, nothing is drawn. Only the default size draws the band.
+   */
+  readonly tag?: ReactNode;
 }
 
 /**
@@ -287,6 +314,8 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
       closeOnBackdropClick = true,
       size = "default",
       backdrop = "scrim",
+      kicker,
+      tag,
       ...rest
     },
     ref,
@@ -365,6 +394,14 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
       [onCancel, onOpenChange],
     );
 
+    // Close (the head band's glyph cell) closes exactly as Esc does: it
+    // raises the dialog's own cancel event, so `onCancel` and the
+    // `onOpenChange(false)` route above run unchanged, and a surface that
+    // ignores a close while it is busy ignores this one too.
+    const requestClose = useCallback((): void => {
+      internalRef.current?.dispatchEvent(new Event("cancel", { cancelable: true }));
+    }, []);
+
     // Backdrop click: native `<dialog>` receives a click whose target
     // is the dialog itself when the click lands on the backdrop.
     const handleClick = useCallback(
@@ -389,6 +426,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         data-vex-backdrop={backdrop === "none" ? "none" : undefined}
+        data-vex-dialog-size={size}
         onCancel={handleCancel}
         onClick={handleClick}
         className={cn(
@@ -397,15 +435,36 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // currentTarget check above is reliable). A sheet is placed by
           // its owner instead.
           DIALOG_BOX_CLASS[size],
-          // R3 chrome: the paper, square, a 1.5px ink frame, no shadow. The
-          // flat scrim behind it rides the .vex-dialog class in
+          // H3 chrome: the card ground, square, the chosen rule (24%), no
+          // shadow. The flat scrim behind it rides the .vex-dialog class in
           // ui-primitives/overlays.css (native ::backdrop).
-          "vex-dialog border-[1.5px] border-rule-ink bg-surface-2 p-0 text-ink-primary",
+          "vex-dialog border border-rule-chosen bg-surface-card p-0 text-ink-primary",
           "open:flex open:flex-col",
           className,
         )}
         {...rest}
       >
+        {size === "default" ? (
+          <div className="vex-dialog-head" data-vex-dialog-head="">
+            {kicker === undefined ? null : <span className="vex-dialog-kicker">{kicker}</span>}
+            {tag === undefined || tag === null ? null : (
+              <span className="vex-dialog-tag" data-vex-dialog-tag="">
+                {tag}
+              </span>
+            )}
+            <button
+              type="button"
+              className="vex-dialog-x"
+              aria-label="Close"
+              // No Tab stop: the dialog's keys keep the focus order they had;
+              // Esc and Cancel are the keyboard's way out.
+              tabIndex={-1}
+              onClick={requestClose}
+            >
+              <IconClose size={16} />
+            </button>
+          </div>
+        ) : null}
         {children}
       </dialog>
     );
@@ -420,9 +479,9 @@ export const DialogHeader = forwardRef<
   <div
     ref={ref}
     className={cn(
-      // Asymmetric header: 22 top / 14 right (close-control seat) / 12
-      // bottom / 24 left; no divider - whitespace separates.
-      "flex shrink-0 flex-col gap-1.5 pt-[22px] pr-3.5 pb-3 pl-6",
+      // Under the head band: the title 22 down and 24 in (H3's `.dlg h2`),
+      // the description 12 under it; no divider - whitespace separates.
+      "flex shrink-0 flex-col gap-3 pt-[22px] pr-6 pb-3 pl-6",
       className,
     )}
     {...props}
@@ -439,9 +498,9 @@ export const DialogTitle = forwardRef<
     <h2
       ref={ref}
       id={id ?? ctx.titleId}
-      // The panel title: sans 21 / 500 (docs/design/R3-MINIMAL.md section
-      // 1.3); the serif stays for display sizes.
-      className={cn("text-[21px] font-medium leading-[1.3] tracking-[-0.005em]", className)}
+      // H3's dialog title: sans 22 / 600, tracked in (docs/design/H3-DESKTOP.md
+      // section 5.2).
+      className={cn("text-[22px] font-semibold leading-[1.2] tracking-[-0.02em]", className)}
       {...props}
     />
   );
@@ -457,7 +516,7 @@ export const DialogDescription = forwardRef<
     <p
       ref={ref}
       id={id ?? ctx.descriptionId}
-      className={cn("text-sm text-ink-secondary", className)}
+      className={cn("text-[15px] leading-[1.5] text-ink-primary", className)}
       {...props}
     />
   );
@@ -636,8 +695,10 @@ export const DialogFooter = forwardRef<
   <div
     ref={ref}
     // The panel foot: the keys at the right, 10 apart, 20 from the frame.
+    // Where it holds keys and nothing else it is H3's foot of cell keys,
+    // 64 high under its rule (overlays.css, `.vex-dialog-foot`).
     className={cn(
-      "flex shrink-0 flex-row justify-end gap-2.5 px-6 pt-3 pb-5",
+      "vex-dialog-foot flex shrink-0 flex-row justify-end gap-2.5 px-6 pt-3 pb-5",
       className,
     )}
     {...props}

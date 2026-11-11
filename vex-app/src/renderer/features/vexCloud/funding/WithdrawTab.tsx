@@ -475,7 +475,7 @@ function OutcomeUnknown({
     checkRef.current?.focus();
   }, []);
   return (
-    <section className="flex flex-col gap-3 border-[1.5px] border-rule-ink p-4" aria-label="Withdrawal status unknown" data-testid="withdraw-outcome-unknown">
+    <section className="flex flex-col gap-3 border border-rule-ink p-4" aria-label="Withdrawal status unknown" data-testid="withdraw-outcome-unknown">
       <StateWord state="error" word={checking ? "Checking status" : STATUS_UNKNOWN} size={12} live />
       <p className="m-0 text-[14px] leading-[1.5] text-ink-secondary">{OUTCOME_UNKNOWN_DETAIL}</p>
       <p className="m-0 text-[13px] text-ink-tertiary">

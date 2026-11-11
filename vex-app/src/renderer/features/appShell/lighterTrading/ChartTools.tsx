@@ -15,7 +15,7 @@ import {
 import { parseChartPreferences } from "./chart-preferences.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { ChartDrawings } from "./ChartDrawings.js";
-import { LineCamera } from "../../../components/icons/line/index.js";
+import { LineCamera, LineChevronDown } from "../../../components/icons/line/index.js";
 
 /** An unresolved token reads as an empty string; the library keeps its own default then. */
 const colorOption = (color: string): { color?: string } => (color === "" ? {} : { color });
@@ -227,14 +227,18 @@ export function ChartTools({
       aria-label="Chart analysis"
     >
       {leading}
-      <select
-        aria-label="Chart type"
-        value={chartType}
-        onChange={(event) => setPreferences((current) => ({ ...current, chartType: event.target.value as "candles" | "line" }))}
-      >
-        <option value="candles">Candles</option>
-        <option value="line">Line</option>
-      </select>
+      {/* The chart type, a cell with its chevron (H3-DESKTOP.md section 4.9). */}
+      <span className="lit-chart-type">
+        <select
+          aria-label="Chart type"
+          value={chartType}
+          onChange={(event) => setPreferences((current) => ({ ...current, chartType: event.target.value as "candles" | "line" }))}
+        >
+          <option value="candles">Candles</option>
+          <option value="line">Line</option>
+        </select>
+        <LineChevronDown size={14} className="lit-chart-type__chevron" />
+      </span>
       <details className="lit-study-menu" onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -245,6 +249,27 @@ export function ChartTools({
       }}>
         <summary>Indicators{studies.length ? ` · ${studies.length}` : ""}</summary>
         <div className="lit-study-popover">
+          {/* Volume, Fills and Log fold into Indicators (the approved desk
+            * plate): what the chart shows beside the candles. */}
+          <div className="lit-study-show" role="group" aria-label="Show on the chart">
+            <button
+              type="button"
+              aria-pressed={showVolume}
+              onClick={() => setPreferences((current) => ({ ...current, volume: !current.volume }))}
+            >Volume</button>
+            <button
+              type="button"
+              aria-pressed={showFills}
+              title="Mark the account's fills on the chart"
+              onClick={() => setPreferences((current) => ({ ...current, fills: !current.fills }))}
+            >Fills</button>
+            <button
+              type="button"
+              aria-pressed={scale === "log"}
+              title="Logarithmic price scale"
+              onClick={() => setPreferences((current) => ({ ...current, scale: current.scale === "log" ? "linear" : "log" }))}
+            >Log</button>
+          </div>
           {STUDIES.map((study) => <div className="lit-study-row" key={study.id}>
             <label>
               <input
@@ -274,23 +299,6 @@ export function ChartTools({
           <p>Calculated from the loaded bars; scroll left to load older history. Early values require a full warm-up period. VWAP begins at the first loaded bar if the session starts outside this window.</p>
         </div>
       </details>
-      <button
-        type="button"
-        aria-pressed={showVolume}
-        onClick={() => setPreferences((current) => ({ ...current, volume: !current.volume }))}
-      >Volume</button>
-      <button
-        type="button"
-        aria-pressed={showFills}
-        title="Mark the account's fills on the chart"
-        onClick={() => setPreferences((current) => ({ ...current, fills: !current.fills }))}
-      >Fills</button>
-      <button
-        type="button"
-        aria-pressed={scale === "log"}
-        title="Logarithmic price scale"
-        onClick={() => setPreferences((current) => ({ ...current, scale: current.scale === "log" ? "linear" : "log" }))}
-      >Log</button>
       <span className="lit-study-active" aria-label="Active indicators">
         {studies.map(studyLabel).join(" · ")}
       </span>

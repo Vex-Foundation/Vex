@@ -240,7 +240,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   await expect(creator.getByRole("heading", { name: "What Vex did" })).toBeVisible();
   await expect(creator.getByRole("heading", { name: "Project files" })).toBeVisible();
   await shot(page, "05-creator-report");
-  await creator.getByRole("button", { name: "Close" }).click();
+  await creator.locator(".vex-dialog-foot").getByRole("button", { name: "Close" }).click();
   await expect(creator).toBeHidden();
 
   /* ---- 06: a refusal, by name ----------------------------------------- */
@@ -362,37 +362,15 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
 /* ========================= UX-1: the terminal surface ======================= */
 
 /**
- * Switch the app to one explicit theme, so a capture pass photographs the theme
- * it says it does. The box's own default is not a theme this spec may assume:
- * the audit's light-theme findings were only visible because the machine that
- * ran it happened to default to celeris.
+ * The app's one theme. Since plan row S1-04 the app is dark only
+ * (docs/design/H3-DESKTOP.md section 4.5): Celeris and the Appearance row are
+ * retired, so there is no theme to pick. Each section asserts the one room the
+ * document root carries instead, and a capture pass names its shots by it.
  */
-async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void> {
-  // The diagnostic tour docks bottom-left over the profile button; the QA pass
-  // hides it before opening the menu, so this does too.
-  await page.evaluate(() => {
-    const tour = document.querySelector("[data-vex-setup-tour]");
-    if (tour instanceof HTMLElement) tour.style.display = "none";
-  });
-  await page.getByRole("button", { name: /Open menu/ }).click();
-  await page.getByRole("menuitem", { name: /Settings/ }).click();
-  await expect(page.locator("[data-vex-settings-preferences]")).toBeVisible();
-  await page.locator("[data-vex-settings-appearance]").scrollIntoViewIfNeeded();
-  await page.locator(`[data-vex-theme-cube="${theme}"]`).click();
-  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", theme);
-  await page.keyboard.press("Escape");
-  // THE SCREEN IS GONE, not merely covered. `ShellScreen` renders the Settings
-  // surface as a `role="dialog"` fixed over the shell and its host animates it
-  // OUT (~0.3s), so "the app shell is visible" was true the whole time Settings
-  // was still on top of it - and every click the section below makes would have
-  // landed on the screen instead of the shell. The count assertion waits for
-  // the exit rather than racing it.
-  await expect(page.locator('[data-vex-area="shell-screen"]')).toHaveCount(0);
-  await expect(page.locator('[data-vex-screen="appShell"]')).toBeVisible();
-  await page.evaluate(() => {
-    const tour = document.querySelector("[data-vex-setup-tour]");
-    if (tour instanceof HTMLElement) tour.style.display = "";
-  });
+const THEME = "chronos";
+
+async function expectTheOneTheme(page: Page): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", THEME);
 }
 
 /** The alpha channel of a computed colour, or 1 for an opaque form. */
@@ -469,7 +447,7 @@ async function settled(page: Page, selector: string): Promise<void> {
  *    `transparent`, which xterm's own parser rejects, so the canvas painted
  *    opaque black in both themes. The renderer's own paint is what settles it.
  *
- * `VEX_UX_THEME` picks the theme; a capture pass runs it once per theme.
+ * The app is dark only, so every assertion and capture is of its one theme.
  */
 test("UX-1 terminal surface: the card, the tab, the cluster and the picker", async ({
   vexDb,
@@ -481,8 +459,8 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
   const reached = await enterStudio(page);
   test.skip(!reached, TOUR_SKIP_REASON);
 
-  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-  await pickTheme(page, theme);
+  const theme = THEME;
+  await expectTheOneTheme(page);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   const centre = page.locator('[data-vex-area="studio-center"]');
@@ -523,9 +501,13 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
 
   /* ---- 15: three terminals, told apart by name ------------------------ */
 
-  await tabs.getByRole("button", { name: "New terminal" }).click();
+  // The + key is a cell of the tabs row beside the tablist since H3 (a tablist
+  // holds tabs only), so it is found in the centre, where N2 proves it is the
+  // one control of that name.
+  const newTerminal = centre.getByRole("button", { name: "New terminal" });
+  await newTerminal.click();
   await expect(tabs.getByRole("tab", { name: /Terminal 2/ })).toBeVisible();
-  await tabs.getByRole("button", { name: "New terminal" }).click();
+  await newTerminal.click();
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toBeVisible();
   // The strip at rest is a list of NAMES: no split control sits beside a tab.
   await expect(tabs.getByRole("button", { name: /^Split/ })).toHaveCount(0);
@@ -582,7 +564,7 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
  *    is that pressing the word in the real strip puts the reason and the next
  *    step on screen, at the strip's own height, over the shell.
  *
- * `VEX_UX_THEME` picks the theme, as in the UX-1 section.
+ * The app's one theme is asserted, as in the UX-1 section.
  */
 test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   vexDb,
@@ -603,8 +585,8 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
       "rebuild WITHOUT `VITE_VEX_STUDIO_HOST_PREVIEW` and rerun",
   );
 
-  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-  await pickTheme(page, theme);
+  const theme = THEME;
+  await expectTheOneTheme(page);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   const welcome = page.locator('[data-vex-area="studio-welcome"]');
@@ -625,13 +607,14 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
   // The way back is a real control, not a sentence about one: the left
-  // sidebar nav's Chat row, beside this welcome (docs/design/R3-MINIMAL.md
-  // section 4). No capsule anywhere, and the stand-in button is gone.
+  // sidebar nav, folded to its Studio row, unfolds the Chat row in place
+  // (our approved Studio plate, docs/design/H3-DESKTOP.md section 4.9). No
+  // capsule anywhere, and the stand-in button is gone.
   await expect(
     page
       .locator('[data-vex-area="studio-sidebar"]')
       .getByRole("navigation", { name: "Main" })
-      .getByRole("button", { name: "Chat" }),
+      .getByRole("button", { name: "Show every page" }),
   ).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
@@ -682,9 +665,13 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   });
   await page.getByRole("button", { name: /Done|Close/ }).first().click();
 
-  // Back to the welcome through the rail's own row, which is the path a user
-  // has: creating a project leaves the user in its workspace.
-  await sidebar.getByRole("button", { name: "Welcome", exact: true }).click();
+  // Back to the welcome through the nav's Studio row, pressed where it is the
+  // current one, which is the path a user has: creating a project leaves the
+  // user in its workspace.
+  await sidebar
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio", exact: true })
+    .click();
   await expect(welcome).toBeVisible();
   const row = welcome.getByRole("button", { name: new RegExp(projectName) });
   await expect(row.first()).toBeVisible();
@@ -733,8 +720,8 @@ test("UX-3 host status: a card for every wire cause", async ({
       "VITE_VEX_SETUP_TOUR=1 pnpm --dir vex-app build` and rerun",
   );
 
-  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-  await pickTheme(page, theme);
+  const theme = THEME;
+  await expectTheOneTheme(page);
   await expect(panel).toBeVisible();
 
   const cases = panel.locator("[data-vex-host-preview-case]");
@@ -779,7 +766,7 @@ test("UX-3 host status: a card for every wire cause", async ({
 
 // The rail lane's section lives in its own module and is registered here, so
 // the discovered spec path (and every CI grep over it) stays the same.
-registerRailParityScenarios(test, { shot, pickTheme, shotsDir: SHOTS_DIR });
+registerRailParityScenarios(test, { shot, expectTheOneTheme, theme: THEME, shotsDir: SHOTS_DIR });
 
 /* ===================== UX-5: the Studio keyboard table ===================== */
 
@@ -804,8 +791,8 @@ registerRailParityScenarios(test, { shot, pickTheme, shotsDir: SHOTS_DIR });
  * one row that stays unbound - Studio has no panel to fold away - and asserting
  * that its key does nothing would freeze that gap into a contract.
  *
- * `VEX_UX_THEME` picks the theme, as in the UX-1 section: the watermark state
- * below is a rendered surface and is captured in both.
+ * The app's one theme is asserted, as in the UX-1 section: the watermark state
+ * below is a rendered surface and is captured in it.
  */
 test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", async ({
   vexDb,
@@ -817,8 +804,8 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   const reached = await enterStudio(page);
   test.skip(!reached, TOUR_SKIP_REASON);
 
-  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-  await pickTheme(page, theme);
+  const theme = THEME;
+  await expectTheOneTheme(page);
 
   const shell = page.locator('[data-vex-screen="appShell"]');
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
@@ -1669,8 +1656,8 @@ test("HL-1 viewer: a line that outruns the highlight budget is reported, not hid
   const reached = await enterStudio(page);
   test.skip(!reached, TOUR_SKIP_REASON);
 
-  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-  await pickTheme(page, theme);
+  const theme = THEME;
+  await expectTheOneTheme(page);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   const centre = page.locator('[data-vex-area="studio-center"]');
@@ -1907,7 +1894,7 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   // same defect as the open, one surface along.
   await expect
     .poll(() => activeElementLabel(page), { timeout: 30_000 })
-    .toBe("textarea:Session draft");
+    .toBe("textarea:Ask Vex");
   await shot(page, "restore2-03-agent-mode-focus-in-draft");
 
   await page

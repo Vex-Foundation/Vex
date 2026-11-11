@@ -1,10 +1,14 @@
 /**
- * Wizard Step 2 - Wallets (M8; R3 Minimal restyle).
+ * Wizard Step 2 - Wallets (M8; H3 on the stage).
  *
  * Two chains (EVM + Solana), three actions per chain (Generate, Import,
- * Restore from backup). Layout: Tabs split. Each tab carries a swatch beside
- * its word: the solid fill when that chain's wallet is ready, the empty
- * outline when it is not.
+ * Restore from backup). In the wizard (docs/design/H3-DESKTOP.md section 4.9;
+ * the plate `stage-wizard-wallets`) the chains are two cells side by side,
+ * each with its state (NOT SET, or READY with the green square) and its
+ * choices; the note under the lead carries an ink square; the bottom row is
+ * Back, "Continue without a wallet" and a blue Continue that is held until a
+ * wallet exists (it then advances exactly as the key beside it does). In
+ * Settings the Tabs split stays, each tab with a swatch beside its word.
  *
  * Skip-to-continue logic: in the forward setup flow, when both chains have a
  * wallet, render a summary panel + Continue. Otherwise render the Tabs
@@ -48,10 +52,16 @@ import {
 } from "../../../lib/api/wizard.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
+import { StageSquare, StageStatus } from "../../../components/onboarding/StageFrame.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
+import { useWizardHost } from "../wizard-host.js";
 import { ChainActions } from "./wallets/ChainActions.js";
 import { ExportAllWallets } from "./wallets/ExportAllWallets.js";
 import { RestoreFromArchive } from "./wallets/RestoreFromArchive.js";
+import { chainLabel } from "./wallets/wallet-copy.js";
+
+/** The two chains, in the order the cells stand. */
+const CHAINS: readonly WalletChain[] = ["evm", "solana"];
 
 interface ChainState {
   readonly evm?: string;
@@ -72,6 +82,7 @@ export function WalletsStep({
   const envQuery = useEnvState();
   const availableWallets = useAvailableWallets();
   const stepAdvance = useStepAdvance();
+  const host = useWizardHost(flowMode).host;
 
   const [lastGenerated, setLastGenerated] = useState<ChainState>({});
   const [lastBackupDir, setLastBackupDir] = useState<ChainState>({});
@@ -266,16 +277,29 @@ export function WalletsStep({
             {stepAdvance.isPending ? "Closing…" : "Done"}
           </Button>
         ) : showConfigureLater ? (
-          <Button
-            variant="quiet"
-            onClick={() => {
-              void advanceToApiKeys();
-            }}
-            disabled={stepAdvance.isPending}
-            data-vex-wallets-configure-later
-          >
-            {stepAdvance.isPending ? "Continuing…" : continueLaterLabel}
-          </Button>
+          <>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                void advanceToApiKeys();
+              }}
+              disabled={stepAdvance.isPending}
+              data-vex-wallets-configure-later
+            >
+              {stepAdvance.isPending ? "Continuing…" : continueLaterLabel}
+            </Button>
+            {/* The plate's one blue key (`stage-wizard-wallets`): held until a
+              * wallet exists, then the same advance as the key beside it. */}
+            <Button
+              onClick={() => {
+                void advanceToApiKeys();
+              }}
+              disabled={!anyWallet || stepAdvance.isPending}
+              data-vex-wallets-continue
+            >
+              Continue
+            </Button>
+          </>
         ) : null
       }
     >
@@ -283,18 +307,52 @@ export function WalletsStep({
         <p
           role="status"
           data-vex-wallets-configure-later-alert
-          className={cn(
-            "mb-4 py-0.5 text-sm text-warning",
-            RAIL_WARNING_CHROME,
-          )}
+          className={
+            host === "wizard"
+              ? "vex-wz-note-sq"
+              : cn("mb-4 py-0.5 text-sm text-warning", RAIL_WARNING_CHROME)
+          }
         >
-          {anyWallet
-            ? "With only one chain, Vex can only trade or act on that chain."
-            : "Without a wallet, Vex can't trade or take any on-chain action. "}
-          You can add or import wallets later from Settings.
+          {host === "wizard" ? <StageSquare kind="ink" /> : null}
+          <span>
+            {anyWallet
+              ? "With only one chain, Vex can only trade or act on that chain."
+              : "Without a wallet, Vex can't trade or take any on-chain action. "}
+            You can add or import wallets later from Settings.
+          </span>
         </p>
       ) : null}
-      <Tabs defaultValue="evm">
+      {host === "wizard" ? (
+        // The wizard: the two chains as cells side by side, each with its
+        // state and its three choices (the plate `stage-wizard-wallets`).
+        <div className="vex-wz-chains">
+          {CHAINS.map((chain) => {
+            const ready = chain === "evm" ? evmReady : solanaReady;
+            return (
+              <section
+                key={chain}
+                aria-label={`${chainLabel(chain)} wallet`}
+                className="vex-wz-chain"
+                data-vex-wallet-cell={chain}
+              >
+                <div className="vex-wz-chain__head">
+                  <span className="vex-wz-chain__name">{chainLabel(chain)}</span>
+                  <StageStatus kind={ready ? "done" : "none"} word={ready ? "Ready" : "Not set"} />
+                </div>
+                <ChainActions
+                  chain={chain}
+                  address={chain === "evm" ? evmAddress : solanaAddress}
+                  backupDir={lastBackupDir[chain] ?? null}
+                  onAddressSet={handleAddressSet}
+                />
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+      // R3's underline tabs: the approved wallets plate draws them
+      // (docs/design/H3-DESKTOP.md section 4.9).
+      <Tabs defaultValue="evm" variant="underline">
         <TabsList>
           <TabsTrigger value="evm" className="gap-[7px]">
             <Swatch
@@ -330,7 +388,8 @@ export function WalletsStep({
           />
         </TabsContent>
       </Tabs>
-      <div className="mt-6 flex flex-wrap items-start gap-2">
+      )}
+      <div className="vex-wz-wallet-more mt-6 flex flex-wrap items-start gap-2">
         {anyWallet ? <ExportAllWallets /> : null}
         <RestoreFromArchive />
       </div>

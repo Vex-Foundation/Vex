@@ -10,12 +10,15 @@
  * 40 x 40 keys centred under the Expand key and a short quiet rule, the
  * account box at the foot.
  *
- * The selection wash and the search mark are R3 values with no alias yet:
- * blue at 7.5% and 14% by day, periwinkle at 10% and 22% at night. */
+ * The column stands on the rail (VEX Cloud's --vx-rail, #010101). A chosen
+ * row and the row under the pointer take Cloud's one row gradient,
+ * `--vex-alias-row-selected` (#1A1B1C at the row's left edge fading to
+ * transparent), and the search mark the chosen rule's white
+ * (docs/design/H3-DESKTOP.md section 2.1). */
 
 .vex-ls {
-  --ls-sel: rgba(163, 171, 255, 0.1);
-  --ls-mark: rgba(163, 171, 255, 0.22);
+  --ls-sel: var(--vex-alias-row-selected);
+  --ls-mark: var(--vex-alias-rule-chosen);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -24,15 +27,11 @@
   height: 100%;
   min-height: 0;
   border-right: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--vex-alias-bg-base);
+  background: var(--vex-alias-sidebar-fill);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
-}
-[data-vex-theme="celeris"] .vex-ls {
-  --ls-sel: rgba(0, 0, 192, 0.075);
-  --ls-mark: rgba(0, 0, 192, 0.14);
 }
 /* Keyboard focus: the focus ring, inside the control so the column's edge
  * never clips it. The search field keeps its own blue border. */
@@ -76,23 +75,76 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   color: var(--vex-alias-label-primary);
 }
 
-/* BODY: padding 10 10 0; only the sessions scroll. */
+/* THE LOGO CELL AND THE SIDEBAR KEY (docs/design/H3-DESKTOP.md section 1.3):
+ * the header's cells over the chats column (AgentSidebarHeader). The header
+ * (title-bar.css) draws the row's 76 height and the rule under it; these
+ * rules draw the two cells. At 1440, measured: LOGO 0 to 171, the mark set
+ * 24 in (92 on macOS, after the traffic lights at 20 to 72); SIDEBAR KEY
+ * 171 to 248, a 76 x 76 key behind a rule, the panel icon in ink centred.
+ * The chats cell ends in the column's own rule, so the column's right edge
+ * runs up through the header; over the rail the logo cell stands alone and
+ * ends in the same rule. Qualified by the cell attribute so the header's own
+ * cell rules (`.vex-shell-head > [data-vex-head-cell]`) never outrank these
+ * on import order. */
+.vex-shell-head > .vex-ls-head[data-vex-head-cell] {
+  align-items: stretch;
+  gap: 0;
+  padding-inline-end: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
+  padding-inline-start: 24px;
+}
+.vex-shell-head > .vex-shell-head__rail[data-vex-head-cell] {
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-head > .vex-shell-head__logo {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.vex-ls-head > .vex-shell-head__key {
+  flex: none;
+  justify-content: center;
+  width: 77px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+/* The key is the whole cell: a hover fills it, and the focus ring is the
+ * 2px white ring drawn inside the cell (section 2.4). */
+.vex-ls-hkey {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-hkey:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* BODY: the column's cells stand edge to edge (docs/design/H3-DESKTOP.md
+ * section 1.4), so the body has no inset of its own; only the sessions
+ * scroll. Studio's own panes keep R3's 10 inset (the Studio section below)
+ * until Studio's plate restyles them. */
 .vex-ls-body {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 10px 10px 0;
+  padding: 0;
 }
 .vex-ls-gap {
   flex: none;
   height: 12px;
 }
 
-/* NAV ROWS (New chat, Search and the nav): 34 high, padding 0 10, gap 11, a
- * 16px icon in ink 2. Selected: the selection wash, blue type, weight 500,
- * a blue icon. */
+/* ROWS: New chat, Search chats and the nav are one row shape (`NavKey`), the
+ * H3 cell row (docs/design/H3-DESKTOP.md section 1.4), measured at 1440 in
+ * `h3-merged__welcome-closed-1440`: edge to edge across the column, the icon
+ * in a 20 box set 24 in (as every cell's content is, section 2.4), the word
+ * at 58 (24 + 20 + 14). The icon draws in muted at rest; its box is sized
+ * here, so a caller's line icon at any size lands on the same 20 (the stroke
+ * scales with it, 1.88 at 20, as the line family draws). */
 .vex-ls-nav__list {
   margin: 0;
   padding: 0;
@@ -103,25 +155,28 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 11px;
+  gap: 14px;
   width: 100%;
   min-width: 0;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.2;
   text-align: left;
   white-space: nowrap;
   color: var(--vex-alias-label-primary);
 }
 .vex-ls-nrow:hover {
-  background: var(--vex-alias-interactive-hover);
+  background: var(--vex-alias-row-selected);
 }
 .vex-ls-nrow__i {
   flex: none;
-  color: var(--vex-alias-label-secondary);
+  width: 20px;
+  height: 20px;
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-ls-nrow__label {
   min-width: 0;
@@ -130,51 +185,122 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
 }
 .vex-ls-nrow[data-selected] {
   background: var(--ls-sel);
-  font-weight: 500;
   color: var(--vex-alias-accent-primary);
 }
 .vex-ls-nrow[data-selected] .vex-ls-nrow__i {
   color: var(--vex-alias-accent-primary);
 }
+/* NEW CHAT (section 1.4): the column's first cell, 55 high on the cell fill
+ * (a control at rest, section 2.4; #050407 measured against the ground's
+ * #010203), behind the rule under it. The word is a key's: 13, caps,
+ * tracked, in ink 2 with its icon (VEX Cloud's `.lc-new`); the pointer
+ * lights both to ink. The source stays "New chat" (or "New mission" on the
+ * Mission tab); the caps are the class's. */
 .vex-ls-nrow--new {
-  font-weight: 500;
+  height: 55px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-layer-3);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
 }
-/* New chat's signing stroke (chronos-motion.css runs it) and its glint. */
+.vex-ls-nrow--new .vex-ls-nrow__i {
+  color: currentColor;
+}
+.vex-ls-nrow--new:hover {
+  color: var(--vex-alias-label-primary);
+}
+/* SEARCH CHATS (section 1.4): 48 high on the ground behind its rule, the
+ * search icon and "Search chats" in sentence case at 14 (VEX Cloud's
+ * `.lc-search input`), both muted: it reads as the field it opens. */
+.vex-ls-nrow--search {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 14px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-nrow--search:hover {
+  color: var(--vex-alias-label-secondary);
+}
+/* THE NAV (sections 1.4 and 4.6): nine rows on the 40 pitch, the block 6 in
+ * from the rule above it and from its own rule under it (at 1440 H3's seven
+ * rows fill 179 to 472; desktop's nine run on to about 552). Each word is a
+ * label: 13, caps, tracked, in ink 2, its icon muted (VEX Cloud's
+ * `.lc-sec a`). The selected row and the row under the pointer take the one
+ * row gradient, from #1A1B1C at the row's left edge to transparent at its
+ * right, and the selected row's word and icon turn ink; the pointer lights
+ * the word to ink. */
+.vex-ls-nav {
+  flex: none;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-nrow--nav {
+  height: 40px;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-nrow--nav:hover {
+  background: var(--vex-alias-row-selected);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-nrow--nav[data-selected] {
+  background: var(--vex-alias-row-selected);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-nrow--nav[data-selected] .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
+}
+/* New chat's signing stroke (chronos-motion.css runs it) and its glint,
+ * under the word and at the cell's right edge. */
 .vex-ls-new__stroke {
   position: absolute;
-  right: 10px;
-  bottom: 5px;
-  left: 37px;
+  right: 20px;
+  bottom: 12px;
+  left: 58px;
   height: 1.5px;
   background: currentColor;
 }
 .vex-ls-new__glint {
   position: absolute;
   top: 50%;
-  right: 10px;
+  right: 20px;
   width: 6px;
   height: 6px;
   margin-top: -3px;
   background: currentColor;
 }
 
-/* SEARCH MODE: the 38px field with a blue border, then the tabs. */
+/* THE SEARCH FIELD: a 48 cell, the icon and the text 24 in, the rule under
+ * it. A field in H3 sits on the ground inside its rules (section 2.1); while
+ * it holds the focus the chosen rule draws inside the cell. Studio's search
+ * mode (`.vex-ls-find`, the Esc keycap) shares the cell. */
 .vex-ls-find {
   flex: none;
 }
 .vex-ls-search {
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--vex-alias-accent-primary);
+  gap: 14px;
+  height: 48px;
+  padding: 0 20px 0 24px;
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
   background: var(--vex-alias-field);
   font-size: 14px;
 }
+.vex-ls-search:focus-within {
+  outline: 1px solid var(--vex-alias-rule-chosen);
+  outline-offset: -1px;
+}
 .vex-ls-search__i {
   flex: none;
-  color: var(--vex-alias-accent-primary);
+  width: 20px;
+  height: 20px;
+  color: var(--vex-alias-label-primary);
 }
 .vex-ls-search__input {
   flex: 1;
@@ -188,7 +314,7 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   outline: none;
 }
 .vex-ls-search__input::placeholder {
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-placeholder);
 }
 .vex-ls-search__input::-webkit-search-cancel-button {
   display: none;
@@ -204,22 +330,46 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   background: transparent;
   color: var(--vex-alias-label-tertiary);
 }
-/* The keycap is the mouse's way out of the search, so it answers the pointer. */
+/* THE CHATS SEARCH (section 1.4; VEX Cloud's `.vx-lc-search`): always open,
+ * the icon in the muted ink, the whole cell carrying the 2px focus ring, and
+ * "Clear search" (a 24 key, its 16 glyph muted, 6 into the cell's padding)
+ * only while there is a query. */
+.vex-ls-search--chats .vex-ls-search__i {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search--chats:focus-within {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-ls-search__clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search__clear:hover {
+  color: var(--vex-alias-label-primary);
+}
+/* Studio's keycap is the mouse's way out of its search, so it answers the
+ * pointer. */
 .vex-ls-search__kbd:hover {
   border-color: var(--vex-alias-rule-ink);
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* New chat stands above the field in the search mode too. */
-.vex-ls-find .vex-ls-nrow--new {
-  margin-bottom: 8px;
-}
-/* All, Agent, Mission: gap 16, 13, the active one blue 500 with a 1.5px
- * underline; counts in mono 11 muted. */
+/* All, Agent, Mission: gap 16, 13, the active one in ink with a 1px
+ * underline; counts in mono 11 muted, at the figures' 0.04em. The row's words start 24 in, under the
+ * field's icon. */
 .vex-ls-tabs {
   display: flex;
   gap: 16px;
-  padding: 10px 2px 0;
+  padding: 10px 24px 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
 .vex-ls-tabs__tab {
@@ -229,7 +379,7 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   margin-bottom: -1px;
   padding: 0 0 7px;
   border: 0;
-  border-bottom: 1.5px solid transparent;
+  border-bottom: 1px solid transparent;
   background: transparent;
   font-size: 13px;
   line-height: 1.3;
@@ -244,17 +394,44 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
 .vex-ls-tabs__n {
   font-size: 11px;
   font-weight: 400;
+  letter-spacing: var(--tracking-figure);
   line-height: 1.2;
   color: var(--vex-alias-label-tertiary);
 }
 
-/* SESSIONS: group heads 12 / 500 muted at padding 14 10 4, rows 34 high. */
+/* THE CHATS (docs/design/H3-DESKTOP.md section 1.4), measured at 1440 in
+ * `h3-merged__welcome-closed-1440` from the nav's rule: CHATS centred 25
+ * under it, the first group head 40 under CHATS, its first row 31 under the
+ * head, then rows on the 36 pitch, and each later head 34 under the row
+ * above it. Every word is set 24 in, the row's right end 20 in.
+ *
+ * CHATS is a section head, the eyebrow's register: 12, 600, caps, tracked,
+ * in ink (VEX Cloud's `.head`). It stands above the scroller, so it stays
+ * while the list scrolls. */
+.vex-ls-chats {
+  flex: none;
+  margin: 0;
+  padding: 18px 20px 16px 24px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+/* A group head (TODAY, YESTERDAY, EARLIER, and desktop's PINNED): the
+ * caption's register, 11, 400, caps, tracked, muted (VEX Cloud's `.lc-day`) (#8B8D91 measured, the
+ * sheet's muted). The muted ink on a caps caption is H3's own: these are
+ * sheet rules, not `.vex-micro-label` call sites, so the micro label's ink
+ * floor (shell-design-guard) does not reach them. */
 .vex-ls-group {
   margin: 0;
-  padding: 14px 10px 4px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
+  padding: 10px 20px 5px 24px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-ls-group__rows {
@@ -262,16 +439,20 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   padding: 0;
   list-style: none;
 }
+/* A chat row: 36 high, the title at 14 / 1.3 in ink 2 with an ellipsis
+ * (VEX Cloud's `.lc-chat a`); the open chat's title is ink. The open chat
+ * and the row under the pointer take the row gradient (Cloud's
+ * `.vx-lc-row[data-current]` and `:hover`). */
 .vex-ls-row {
   position: relative;
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 36px;
   min-width: 0;
 }
 .vex-ls-row:hover,
 .vex-ls-row:has(:focus-visible) {
-  background: var(--vex-alias-interactive-hover);
+  background: var(--vex-alias-row-selected);
 }
 .vex-ls-row[data-selected] {
   background: var(--ls-sel);
@@ -283,12 +464,15 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   gap: 10px;
   min-width: 0;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.3;
   text-align: left;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-row:hover .vex-ls-row__select {
   color: var(--vex-alias-label-primary);
 }
 .vex-ls-row__t {
@@ -299,50 +483,121 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   white-space: nowrap;
 }
 .vex-ls-row[data-selected] .vex-ls-row__t {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-label-primary);
+}
+/* THE LIST'S STATES (section 1.4; VEX Cloud's `.vx-lc-msg` and
+ * `.vx-lc-error`): one sentence at 14 / 1.4 in the muted ink, set 24 in where
+ * a row's title starts, padding 6 24 10, its mark 10 before it. Loading
+ * leads with the stepping hatch, a failure with the cross over its Retry key
+ * (40 high, 4 24 round it); the empty and no-match lines stand alone. */
+.vex-ls-msg,
+.vex-ls-fail__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 24px 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-fail__line {
+  align-items: flex-start;
+}
+.vex-ls-fail__line > .vex-sq {
+  margin-top: 0.4em;
+}
+.vex-ls-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.vex-ls-fail__retry {
+  margin: 4px 24px;
+}
+/* The stepping hatch (Cloud's `.vx-stripes`): a 14 square of ink 2 strokes
+ * that steps on and off on two steps, one cycle in two blinks; still under
+ * reduced motion and Save-Data. */
+.vex-ls-msg__hatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-alias-label-secondary) 0 1px,
+    transparent 1px 4px
+  );
+  animation: vex-sq-blink calc(var(--vex-duration-blink) * 2) steps(2, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-ls-msg__hatch {
+    animation: none;
+  }
+}
+html[data-still] .vex-ls-msg__hatch {
+  animation: none;
 }
 .vex-ls-row__t mark {
   background: var(--ls-mark);
   color: inherit;
 }
+/* The row's right end (section 1.4): its time, or H3's tag while a mission
+ * has a state. The time is the caption's size, 11, muted, in the sans with
+ * tabular figures and the figures' 0.04em (VEX Cloud's `.lc-time`), never
+ * in caps ("Oct 28"). */
 .vex-ls-row__time {
   flex: none;
-  font-size: 11.5px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-figure);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
+/* The tag: the status square, 6px, 6 before the word; the word in caps 11,
+ * tracked, in ink (section 2.2; VEX Cloud's `.lc-state`). The square is the
+ * shared state square (`StateSquare`, `session-row-state.ts`): RUNNING
+ * blinks, WAITING is the target, so no rule here draws it. */
 .vex-ls-row__state {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-primary);
 }
-.vex-ls-row__state .vex-swatch {
-  color: var(--vex-alias-accent-primary);
-}
-/* Pin and Remove (24 x 24) take the time's place on hover and focus. */
+/* Pin and Remove (24 x 24) take the trailing cell's place on hover and focus
+ * (VEX Cloud's `.vx-lc-rowmenu`): the time or the tag leaves the row
+ * (`display: none`) and the title's right padding narrows to 8, so the title
+ * gains the room; the keys stand in the row's flow, 8 from its right edge.
+ * At rest they take no width (max-width 0) but stay in the tab order, so Tab
+ * and Shift+Tab both reach them and focus opens them. */
 .vex-ls-row__actions {
-  position: absolute;
-  top: 50%;
-  right: 6px;
   display: flex;
+  flex: none;
+  align-items: center;
   gap: 2px;
+  max-width: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateY(-50%);
 }
 .vex-ls-row:hover .vex-ls-row__actions,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__actions {
+  max-width: 58px;
+  padding-right: 8px;
   opacity: 1;
+}
+.vex-ls-row:hover .vex-ls-row__select,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__select {
+  padding-right: 8px;
 }
 .vex-ls-row:hover .vex-ls-row__time,
 .vex-ls-row:hover .vex-ls-row__state,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__time,
 .vex-ls-row:has(:focus-visible) .vex-ls-row__state {
-  visibility: hidden;
+  display: none;
 }
 .vex-ls-row[data-editing] {
   padding: 0 4px;
@@ -360,10 +615,31 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   outline: none;
 }
 .vex-ls-hint {
-  margin: 14px 10px 12px;
+  margin: 14px 20px 12px 24px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
+}
+
+/* WIDE: the column never zooms (docs/design/H3-DESKTOP.md section 1.11);
+ * from 1920 its words step up instead, as VEX Cloud's do (`styles/left.css`,
+ * H3 section 16): New chat and the nav to 14; the day heads, the tags and the
+ * times to 12; the chat rows and the search field to 15. The account name's
+ * step is in profile-menu.css. */
+@media (min-width: 1920px) {
+  .vex-ls-nrow--new,
+  .vex-ls-nrow--nav {
+    font-size: 14px;
+  }
+  .vex-ls-group,
+  .vex-ls-row__state,
+  .vex-ls-row__time {
+    font-size: 12px;
+  }
+  .vex-ls-row__select,
+  .vex-ls-search__input {
+    font-size: 15px;
+  }
 }
 
 /* FOOT: the account row behind a quiet rule. */
@@ -391,49 +667,88 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
 html[data-os="mac"] .vex-ls-railhead {
   display: none;
 }
+/* THE RAIL IN H3 CELLS (docs/design/H3-DESKTOP.md sections 1.10 and 4.12):
+ * 76 wide under the header's logo cell, the open column's cells in its order,
+ * each the rail's whole width with its icon centred: the Expand key (the
+ * sidebar key's twin, the panel icon in ink) 48 high behind its rule; NEW
+ * CHAT 55 high on the cell fill; Search chats 48; the nav keys on the 40
+ * pitch, the block 6 in from its rules, the selected key on the row
+ * gradient; the account cell's disc centred at the foot. The rail scrolls
+ * when a short window cannot hold the nine nav keys (section 4.6 leaves the
+ * short heights open). Studio's rail and the Lighter desk's share these
+ * cells. */
 .vex-ls[data-rail] .vex-ls-body {
-  align-items: center;
-  padding: 8px 0 0;
+  padding: 0;
   overflow-y: auto;
-}
-.vex-ls[data-rail] .vex-ls-nav {
-  display: flex;
-  justify-content: center;
 }
 .vex-ls[data-rail] .vex-ls-nrow {
   justify-content: center;
-  width: 40px;
-  height: 40px;
   padding: 0;
 }
-.vex-ls[data-rail] .vex-ls-new__stroke {
-  right: 8px;
-  bottom: 4px;
-  left: 8px;
+.vex-ls-nrow--expand {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
-/* The Expand key heads the rail, the collapse key's twin (the panel icon), and
- * a short quiet rule sets it apart from the keys that go somewhere. */
-.vex-ls-rule {
-  flex: none;
-  width: 24px;
-  height: 1px;
-  margin: 6px 0;
-  background: var(--vex-alias-rule-quiet);
+.vex-ls-nrow--expand .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls[data-rail] .vex-ls-new__stroke {
+  right: 18px;
+  bottom: 12px;
+  left: 18px;
+}
+.vex-ls[data-rail] .vex-ls-new__glint {
+  right: 8px;
 }
 .vex-ls[data-rail] .vex-prof {
-  width: 100%;
-  padding: 12px 0 14px;
+  padding: 0;
 }
 
-/* STUDIO (docs/design/R3-MINIMAL.md section 4, "Studio"): the same column
- * in Studio mode. The body under the nav holds New project, the "Projects"
- * group (rows 34 high, the selected one in blue on the selection wash, the
- * outlined "Full access" tag at the right), the Welcome row, then the
- * explorer pane ("Explorer · {project}" head; rows 28 high, 13.5, line icons
- * 14 in ink 2), with a quiet 1px seam between the two panes. */
+
+/* STUDIO IN H3 CELLS (our approved Studio plate, docs/design/H3-DESKTOP.md
+ * section 4.9; `StudioSidebar.tsx`): the same column in Studio mode, its
+ * cells in the chats column's grammar (section 1.4). Top to bottom: NEW
+ * PROJECT in the 55 New chat cell and "Search files" in the 48 search cell
+ * (the shared `.vex-ls-nrow--new` and `--search` above); the nav folded to
+ * its Studio row with a chevron key; PROJECTS, a 44 head, rows on the 36
+ * pitch, a RUNNING tag, "Show all N" on a 32 row; the draggable rule; the
+ * EXPLORER, a 44 head with its keys, the tree on the 30 pitch. Every word is
+ * set 24 in, a row's right end 20 in. No blue anywhere: the selected project
+ * takes the nav's one row gradient, a hover the cell hover. */
+
+/* THE NAV'S FOLD: folded, the block is the Studio row alone between its
+ * rules; the chevron key stands at the row's right end (48 wide, its 16
+ * icon muted, centred 24 in from the column's edge), beside the row's own
+ * key, never inside it. Unfolded it stays beside the Studio row. */
+.vex-ls-nav__keyed {
+  position: relative;
+}
+.vex-ls-nav__keyed > .vex-ls-nrow {
+  padding-right: 48px;
+}
+.vex-ls-nav__fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-nav__fold:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
+/* SEARCH MODE in Studio: the field takes the search cell, New project stays
+ * above it, edge to edge. The results keep R3's inset until their own pass. */
 .vex-st-find {
   flex: none;
-  margin-bottom: 8px;
 }
 .vex-st-search__clear {
   display: inline-flex;
@@ -460,27 +775,55 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-st-body {
   width: 100%;
 }
+.vex-st:not([data-rail]) .vex-ls-body > .vex-scroll {
+  padding-inline: 10px;
+}
+/* The draggable rule between the projects and the explorer: the quiet rule
+ * at rest, the chosen rule while it is hovered or dragged. */
 .vex-st-body [role="separator"] {
   background: var(--vex-alias-rule-quiet);
 }
 .vex-st-body [role="separator"]:hover,
 .vex-st-body [role="separator"][data-dragging] {
-  background: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-rule-chosen);
 }
-.vex-st-pane,
 .vex-st-xpane {
   padding-bottom: 8px;
+}
+
+/* A 44 head: PROJECTS and EXPLORER, the CHATS register (12, 600, caps,
+ * tracked, ink), set 24 in. */
+.vex-st-head,
+.vex-st-xhead__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 20px 0 24px;
 }
 .vex-st-rows {
   margin: 0;
   padding: 0;
   list-style: none;
 }
+/* A project row: 36 high, the name at 14 in ink, the chats list's size; the
+ * open project on the selected row's fade (the nav's gradient, from #1A1B1C
+ * at the row's left edge to transparent); a hover the cell hover. */
 .vex-st-proj {
   position: relative;
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 36px;
   min-width: 0;
 }
 .vex-st-proj:hover,
@@ -489,20 +832,20 @@ html[data-os="mac"] .vex-ls-railhead {
   background: var(--vex-alias-interactive-hover);
 }
 .vex-st-proj[data-selected] {
-  background: var(--ls-sel);
+  background: var(--vex-alias-row-selected);
 }
 .vex-st-proj__select {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.3;
   text-align: left;
   color: var(--vex-alias-label-primary);
 }
@@ -513,15 +856,24 @@ html[data-os="mac"] .vex-ls-railhead {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.vex-st-proj[data-selected] .vex-st-proj__t {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
 .vex-st-proj__state {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 8px;
+}
+/* RUNNING: the blinking state square (`StateSquare`) 6 before the word;
+ * the word 11, caps, tracked, ink, as the chats list's tags (section 1.4). */
+.vex-st-proj__run {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
   gap: 6px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
 }
 .vex-st-proj__drift,
 .vex-st-perm-mark {
@@ -534,7 +886,7 @@ html[data-os="mac"] .vex-ls-railhead {
   height: 20px;
   font-size: 10px;
 }
-/* The ellipsis takes no room at rest, so the tag keeps the row's right edge;
+/* The ellipsis takes no room at rest, so the row's tags keep its right edge;
  * it opens on hover, on keyboard focus and while its menu is open. */
 .vex-st-proj__acts {
   display: flex;
@@ -547,7 +899,7 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-st-proj:focus-within .vex-st-proj__acts,
 .vex-st-proj__acts--pinned {
   max-width: 40px;
-  padding-right: 6px;
+  padding-right: 12px;
   opacity: 1;
 }
 .vex-st-dots {
@@ -565,30 +917,36 @@ html[data-os="mac"] .vex-ls-railhead {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
+/* SHOW ALL N: a 32 row, the caption's register (11, caps, tracked, muted). */
 .vex-st-more {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 28px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 12.5px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
   text-align: left;
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-st-more:hover {
   color: var(--vex-alias-label-primary);
 }
-.vex-st-welcome {
-  margin-top: 6px;
+/* The list's own states (loading, empty) and the cleanup notices, set 24 in
+ * like a row's name. */
+.vex-st-pane > div:not(.vex-st-fail),
+.vex-st-pane > section:not(.vex-st-projects) {
+  padding-inline: 24px 20px;
 }
 .vex-st-fail {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 8px 20px 8px 24px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--vex-alias-label-primary);
@@ -602,82 +960,159 @@ html[data-os="mac"] .vex-ls-railhead {
   align-items: center;
   padding: 10px 0;
 }
+/* A link is ink with an underline, never blue (section 2.3). */
 .vex-st-link {
   padding: 0;
   border: 0;
   background: transparent;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-st-link:hover {
+  color: var(--vex-alias-label-primary);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* The explorer head: the group head register with the keys at the right. */
+/* THE EXPLORER's 44 head: EXPLORER, then its four keys at the right, 28
+ * square, their 16 icons muted. */
 .vex-st-xhead {
   display: flex;
   flex: none;
   align-items: center;
   gap: 2px;
+  box-sizing: border-box;
+  height: 44px;
   min-width: 0;
-  padding: 14px 4px 4px 10px;
+  padding: 0 12px 0 24px;
 }
 .vex-st-xhead__t {
   flex: 1;
   min-width: 0;
-  margin: 0;
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
 }
 .vex-st-xkey {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-st-xkey:hover {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* The Studio rail: a 40 x 40 folder key per project, centred like the nav. */
-.vex-st[data-rail] .vex-st-pane {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+
+/* THE RAIL'S PROJECTS AND FILES KEY, under 1024: a 48 cell under the nav
+ * block's rule, its folder icon in ink; while its drawer stands open, the
+ * key takes the raised fill. */
+.vex-ls-nrow--files {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
-.vex-st-proj[data-rail] {
-  justify-content: center;
-  width: 40px;
-  height: 40px;
+.vex-ls-nrow--files .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
 }
-.vex-st-proj[data-rail] .vex-st-proj__select {
-  justify-content: center;
-  padding: 0;
+.vex-ls-nrow--files[data-open] {
+  background: var(--vex-alias-interactive-active);
 }
-.vex-st-proj__key {
-  position: relative;
-  display: inline-flex;
-}
-.vex-st-proj__overlay {
+
+/* THE DRAWER: the projects and the explorer, 248 wide over the centre's
+ * left edge, from under the band (its top is set inline to the band's
+ * height) to the window's foot, the bottom row's height under the rail's
+ * own foot. On the ground behind a rule, as the column is. */
+.vex-ls.vex-st-drawer {
   position: absolute;
-  right: -7px;
-  bottom: -5px;
-  display: inline-flex;
-  gap: 1px;
-  background: var(--vex-alias-bg-base);
+  z-index: 30;
+  bottom: calc(-1 * var(--vex-h3-foot));
+  left: 100%;
+  width: var(--vex-h3-chats-w);
+  height: auto;
 }
-.vex-st-proj__overlay:empty {
-  display: none;
+
+/* THE CHATS PANEL (docs/design/H3-DESKTOP.md section 4.12; ChatsPanel.tsx):
+ * under 1280 the rail's key slides the 248 chats panel out of the rail's
+ * right edge, from under the header to the window's foot, VEX Cloud's
+ * history panel. It is a frame child laid OVER the chat (D2, section 6: the
+ * chat stands beside the rail), never a track, so the frame's grid is the
+ * same open or closed and a waiting card in the chat never moves (section
+ * 3.6). It stacks over the chat and Vex's column (10) and under the chats
+ * column (20), so the rail's own layers stay above it. Closed it is hidden and inert; Web Animations slide it
+ * (transform) and fade its scrim (opacity), and nothing else moves.
+ *
+ * Its ground is a step above the rail, VEX Cloud's --vx-history-panel,
+ * oklch(8% 0.006 264), which lands on the ground's own #010203 in sRGB, so it
+ * takes the ground token; its edge the 24% chosen rule.
+ *
+ * The scrim lies beside it over the rest of the window: in the shell the
+ * panel always covers what is read (`data-covers`), so it runs to the
+ * window's edge and the chat and Vex's column rest behind it. The width
+ * rule without it is H3's, kept for a panel that covers nothing read. It is Cloud's --vx-scrim, oklch(3% 0.004 264 / 50%): the ground at
+ * half (an alias composed in place, as the sheets may name no primitive). A
+ * press on it closes the panel. */
+.vex-shell-frame > .vex-chats-panel {
+  position: absolute;
+  z-index: 19;
+  top: var(--head-h);
+  bottom: 0;
+  left: var(--vex-h3-rail-w);
+  width: var(--vex-h3-chats-w);
+  height: auto;
+  border-right-color: var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-bg-base);
+  transform: translate3d(-100%, 0, 0);
+  visibility: hidden;
+}
+.vex-shell-frame > .vex-chats-panel[data-open] {
+  transform: none;
+  visibility: visible;
+}
+.vex-chats-panel__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-chats-panel__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-chats-panel__list {
+  padding: 6px 0 12px;
+}
+.vex-shell-frame > .vex-chats-scrim {
+  position: absolute;
+  z-index: 18;
+  top: var(--head-h);
+  bottom: 0;
+  left: calc(var(--vex-h3-rail-w) + var(--vex-h3-chats-w));
+  width: max(0px, calc(var(--vex-vex-track) - var(--vex-h3-chats-w)));
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--vex-alias-bg-base) 50%, transparent);
+  cursor: default;
+  opacity: 0;
+  visibility: hidden;
+}
+.vex-shell-frame > .vex-chats-scrim[data-covers] {
+  right: 0;
+  width: auto;
+}
+.vex-shell-frame > .vex-chats-scrim[data-open] {
+  opacity: 1;
+  visibility: visible;
+}
+/* While it closes nothing in it takes a press: the slide is on its way out. */
+.vex-shell-frame > :is(.vex-chats-panel, .vex-chats-scrim)[data-closing] {
+  pointer-events: none;
 }

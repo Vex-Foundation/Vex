@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import {
   QueryClient,
   QueryClientProvider,
@@ -244,15 +244,63 @@ afterEach(() => {
   cleanup();
 });
 
+/** A chain's cell in the wizard (the plate `stage-wizard-wallets`): its own state and choices. */
+function cellOf(view: ReturnType<typeof render>, chain: "EVM" | "Solana"): ReturnType<typeof within> {
+  return within(view.getByRole("region", { name: `${chain} wallet` }));
+}
+
 describe("WalletsStep", () => {
-  it("renders setup card when neither chain has a wallet", () => {
+  it("renders the two chain cells side by side when neither chain has a wallet, each NOT SET with its three choices", () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({ evm: "missing", solana: "missing" })
     );
-    const { getByText, getByRole } = renderStep();
-    expect(getByText(/Set up wallets/i)).toBeTruthy();
-    expect(getByRole("tab", { name: /EVM/i })).toBeTruthy();
-    expect(getByRole("tab", { name: /Solana/i })).toBeTruthy();
+    const view = renderStep();
+    expect(view.getByText(/Set up wallets/i)).toBeTruthy();
+    for (const chain of ["EVM", "Solana"] as const) {
+      const cell = cellOf(view, chain);
+      expect(cell.getByText("Not set")).toBeTruthy();
+      for (const choice of [/Generate new/i, /Import existing/i, /Restore from backup/i]) {
+        expect(cell.getByRole("button", { name: choice })).toBeTruthy();
+      }
+    }
+    // The wizard draws cells, not Settings' tabs.
+    expect(view.queryByRole("tab")).toBeNull();
+  });
+
+  it("holds the blue Continue until a wallet exists, then it advances as the key beside it does", async () => {
+    mockUseEnvState.mockReturnValue(
+      envQueryFor({ evm: "missing", solana: "missing" })
+    );
+    const empty = renderStep(["keystore"]);
+    const held = empty.container.querySelector<HTMLButtonElement>("[data-vex-wallets-continue]");
+    expect(held?.disabled).toBe(true);
+    cleanup();
+
+    mockUseEnvState.mockReturnValue(
+      envQueryFor({
+        evm: "present",
+        solana: "missing",
+        addresses: { evm: evmAddress, solana: null },
+      })
+    );
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "apiKeys",
+        completedSteps: ["keystore", "wallets"],
+        completed: false,
+      },
+    });
+    const one = renderStep(["keystore"]);
+    const go = one.container.querySelector<HTMLButtonElement>("[data-vex-wallets-continue]");
+    expect(go?.disabled).toBe(false);
+    expect(cellOf(one, "EVM").getByText("Ready")).toBeTruthy();
+    expect(cellOf(one, "Solana").getByText("Not set")).toBeTruthy();
+    if (go) fireEvent.click(go);
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("apiKeys");
+    });
   });
 
   it("first-pass with no wallet: surfaces the configure-later alert + 'Continue without a wallet' and advances (optional model)", async () => {
@@ -334,7 +382,7 @@ describe("WalletsStep", () => {
       data: { address: evmAddress },
     });
     const view = renderStep();
-    fireEvent.click(view.getByRole("button", { name: /Generate new/i }));
+    fireEvent.click(cellOf(view, "EVM").getByRole("button", { name: /Generate new/i }));
     await waitFor(() => {
       expect(mockGenerateMutate).toHaveBeenCalled();
     });
@@ -362,7 +410,7 @@ describe("WalletsStep", () => {
         })
     );
     const view = renderStep();
-    fireEvent.click(view.getByRole("button", { name: /Import existing/i }));
+    fireEvent.click(cellOf(view, "EVM").getByRole("button", { name: /Import existing/i }));
     const input = (await view.findByLabelText(
       /EVM private key/i
     )) as HTMLInputElement;
@@ -392,7 +440,7 @@ describe("WalletsStep", () => {
       },
     });
     const view = renderStep();
-    fireEvent.click(view.getByRole("button", { name: /Restore from backup/i }));
+    fireEvent.click(cellOf(view, "EVM").getByRole("button", { name: /Restore from backup/i }));
     await view.findByText(/Backup created/i);
     expect(view.getByRole("button", { name: /Open backup folder/i })).toBeTruthy();
   });
@@ -413,7 +461,7 @@ describe("WalletsStep", () => {
       },
     });
     const view = renderStep();
-    fireEvent.click(view.getByRole("button", { name: /Restore from backup/i }));
+    fireEvent.click(cellOf(view, "EVM").getByRole("button", { name: /Restore from backup/i }));
     await waitFor(() => {
       expect(mockRestoreMutate).toHaveBeenCalled();
     });
@@ -437,22 +485,19 @@ describe("WalletsStep", () => {
       },
     });
     const view = renderStep();
-    fireEvent.click(view.getByRole("button", { name: /Restore from backup/i }));
+    fireEvent.click(cellOf(view, "EVM").getByRole("button", { name: /Restore from backup/i }));
     await view.findByText(/Wrong password/i);
   });
 
-  it("Solana tab - switching shows Solana action menu", async () => {
+  it("Solana's cell carries its own action menu beside EVM's", () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({ evm: "missing", solana: "missing" })
     );
     const view = renderStep();
-    fireEvent.click(view.getByRole("tab", { name: /Solana/i }));
-    await waitFor(() => {
-      const solanaPanel = view.container.querySelector(
-        '[data-vex-wallet-chain="solana"][data-vex-wallet-state="empty"]'
-      );
-      expect(solanaPanel).not.toBeNull();
-    });
+    const solanaPanel = view.container.querySelector(
+      '[data-vex-wallet-cell="solana"] [data-vex-wallet-chain="solana"][data-vex-wallet-state="empty"]'
+    );
+    expect(solanaPanel).not.toBeNull();
   });
 
   it("EVM existing-only (Solana missing) does NOT show skip card", () => {
@@ -463,10 +508,10 @@ describe("WalletsStep", () => {
         addresses: { evm: evmAddress, solana: null },
       })
     );
-    const { queryByText, getByRole } = renderStep();
-    expect(queryByText(/Wallets configured/i)).toBeNull();
-    // Setup card with tabs is rendered.
-    expect(getByRole("tab", { name: /EVM/i })).toBeTruthy();
+    const view = renderStep();
+    expect(view.queryByText(/Wallets configured/i)).toBeNull();
+    // The setup cells are rendered, EVM's ready.
+    expect(cellOf(view, "EVM").getByText("Ready")).toBeTruthy();
   });
 
   it("back-edit + both wallets present (legacy addresses null) shows inventory-sourced management + Done affordance", () => {

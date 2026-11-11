@@ -1,7 +1,11 @@
 /**
- * PositionBlock - the Portfolio page's total (docs/design/R3-MINIMAL.md
- * section 9.1): what the total includes, the money headline, the snapshot it
- * compares with and when the figures were loaded.
+ * PositionBlock - the Portfolio page's tiles (docs/design/H3-DESKTOP.md
+ * sections 1.9 and 4.1 item 12): the lead line with the REAL FUNDS stamp, and
+ * one tile per real figure (the wallet total, the change since the snapshot
+ * before, and for All wallets the Lighter equity and unrealized PnL), never a
+ * cell for a figure desktop has no source for. The scope tabs, the refresh key and "Updated {time}"
+ * stand in the page's tabs row (docs/design/H3-DESKTOP.md sections 1.9 and
+ * 4.8), pinned in `PortfolioScreen.test.tsx`.
  *
  * Pins:
  *   - SCOPE IS THE ONLY INPUT and it is never widened: global, session and
@@ -10,11 +14,11 @@
  *   - the headline is the full USD figure ("$12,345.67", Intl, never compact)
  *     and the line over it names what the total includes, per scope,
  *   - the per-scope empty notes, the Add wallet route, the loading and error
- *     lines, and the refresh key + the chips the page hands in always stand,
+ *     lines; the block itself draws neither the refresh key nor the tabs,
  *   - the snapshot line says what the DTO says (the delta is `pnlVsPrev`, never
  *     a live gain), prints the snapshot's AGE, and past 24 hours mutes the
  *     delta (`data-stale`); no age when the DTO carries no (or a future)
- *     timestamp; "loaded HH:MM" is the query's own fetch time,
+ *     timestamp; no fetch time is printed here (the tabs row's stamp has it),
  *   - chain read problems stay beside the cached total.
  *
  * The query hooks are mocked: this suite owns the block's display rules and
@@ -29,6 +33,7 @@ import type {
   PortfolioReadInput,
 } from "@shared/schemas/portfolio.js";
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
+import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
@@ -58,6 +63,40 @@ vi.mock("../../../lib/api/portfolio.js", () => ({
   useActivityProgressInvalidation: mockProgressInvalidation,
   usePortfolioRefresh: () => ({ refresh: async () => ({ status: "refreshed" }) }),
 }));
+
+// The Lighter account read behind the Lighter tiles: the Lighter section's own
+// query, stubbed here to its answer.
+const mockUseLighterTradingAccount = vi.hoisted(() =>
+  vi.fn<(environment: string, enabled: boolean, sessionId?: string | null) => unknown>(),
+);
+vi.mock("../../../lib/api/lighter-trading.js", () => ({
+  useLighterTradingAccount: mockUseLighterTradingAccount,
+}));
+
+/** A ready Lighter account on core: equity 1,020.00 (1,000 + 20), uPnL +20.00. */
+const LIGHTER_READY: LighterTradingAccount = {
+  environment: "core",
+  retrievedAt: 0,
+  status: "ready",
+  unavailableReason: null,
+  accountIndex: 7,
+  openOrdersAvailable: true,
+  openOrdersTruncated: false,
+  summary: { collateral: "1000", availableBalance: "600", unrealizedPnl: "20" },
+  assets: [],
+  positions: [],
+  marginTerms: [],
+  exchangeFees: { makerTicks: 0, takerTicks: 350, source: "account" },
+  openOrders: [],
+};
+
+function mockLighter(account: LighterTradingAccount | null): void {
+  mockUseLighterTradingAccount.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: account === null ? undefined : ok(account),
+  });
+}
 
 /** A full error envelope, as main would hand the renderer on a failed read. */
 const READ_FAILED: VexError = {
@@ -141,8 +180,35 @@ function maybeArea(name: string): HTMLElement | null {
   return found instanceof HTMLElement ? found : null;
 }
 
+function maybeTile(id: string): HTMLElement | null {
+  const found = document.querySelector(`[data-vex-tile="${id}"]`);
+  return found instanceof HTMLElement ? found : null;
+}
+
+function tile(id: string): HTMLElement {
+  const found = maybeTile(id);
+  if (found === null) throw new Error(`missing tile: ${id}`);
+  return found;
+}
+
+/** The tiles drawn, in order. */
+function tileIds(): readonly (string | null)[] {
+  return [...document.querySelectorAll("[data-vex-tile]")].map((node) =>
+    node.getAttribute("data-vex-tile"),
+  );
+}
+
+function tileLabel(node: HTMLElement): string | null {
+  return node.querySelector(".vex-pf-tile__l")?.textContent ?? null;
+}
+
+function tileFigure(node: HTMLElement): string | null {
+  return node.querySelector(".vex-pf-tile__fig")?.textContent ?? null;
+}
+
+/** The snapshot tile's muted line (the change tile, or Last snapshot). */
 function subLine(): HTMLElement {
-  const found = document.querySelector(".vex-pf-top__sub");
+  const found = document.querySelector('[data-vex-area="position-snapshot"] .vex-pf-tile__sub');
   if (!(found instanceof HTMLElement)) throw new Error("missing snapshot line");
   return found;
 }
@@ -150,7 +216,7 @@ function subLine(): HTMLElement {
 function renderBlock(
   scope: Parameters<typeof PositionBlock>[0]["scope"] = { kind: "global" },
 ) {
-  return render(<PositionBlock scope={scope} chips={null} />);
+  return render(<PositionBlock scope={scope} />);
 }
 
 beforeEach(() => {
@@ -159,6 +225,7 @@ beforeEach(() => {
   useUiStore.setState({ shellRoute: { kind: "none" } });
   mockScopeRead(portfolio());
   mockUseWalletPortfolio.mockReturnValue(NO_READ);
+  mockLighter(null);
 });
 
 afterEach(() => {
@@ -238,14 +305,18 @@ describe("PositionBlock - the headline", () => {
     expect(screen.queryByText(/K\b/)).toBeNull();
   });
 
-  it("sets the headline in the block's header seam, in mono", () => {
+  it("sets the total as the first tile, Wallet total, in the block's header seam", () => {
     mockScopeRead(portfolio({ liveTotalUsd: 12345.67 }));
     renderBlock();
     const header = area("portfolio-total");
     expect(header.tagName).toBe("HEADER");
-    const big = header.querySelector(".vex-pf-top__big");
-    expect(big?.textContent).toBe("$12,345.67");
-    expect(big?.classList.contains("vex-num")).toBe(true);
+    expect(tileIds()[0]).toBe("total");
+    const total = tile("total");
+    expect(header.contains(total)).toBe(true);
+    expect(tileLabel(total)).toBe("Wallet total");
+    expect(total.querySelector(".vex-pf-top__big")?.textContent).toBe("$12,345.67");
+    // The settled balances: the live total counts no money in transit.
+    expect(total.querySelector(".vex-pf-tile__sub")?.textContent).toBe("Settled balances");
   });
 
   it("a real zero total reads $0.00, a non-finite one says Not available", () => {
@@ -393,7 +464,12 @@ describe("PositionBlock - empty, loading and error", () => {
     });
     renderBlock();
 
-    expect(screen.getByText("Loading your portfolio…")).not.toBeNull();
+    // One status named by the words; the wallet total's tile keeps its label
+    // and parks a cover where the figure will stand.
+    expect(screen.getByRole("status", { name: "Loading your portfolio…" })).not.toBeNull();
+    const tile = document.querySelector('[data-vex-tile="total"]');
+    expect(tile?.textContent).toBe("Wallet total");
+    expect(tile?.querySelector(".vex-cover")).not.toBeNull();
     expect(document.querySelector(".vex-pf-top__big")).toBeNull();
     expect(screen.queryByText("Not available")).toBeNull();
   });
@@ -441,57 +517,109 @@ describe("PositionBlock - empty, loading and error", () => {
   });
 });
 
-describe("PositionBlock - the refresh key and the chips stand in every state", () => {
-  const chips = <div role="group" aria-label="Portfolio scope">chips</div>;
-
-  function renderWithChips() {
-    return render(<PositionBlock scope={{ kind: "global" }} chips={chips} />);
-  }
-
-  it("renders the refresh key and the handed chips beside a total", () => {
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    expect(
-      document.querySelector(".vex-pf-top__side")?.contains(
-        screen.getByRole("group", { name: "Portfolio scope" }),
-      ),
-    ).toBe(true);
+describe("PositionBlock - the tiles are real figures only (H3 section 4.1, item 12)", () => {
+  it("draws the quiet hatch and Mainnet, the lead, and no solid stamp, PAPER or LIVE key (PD-05)", () => {
+    renderBlock();
+    const lead = area("portfolio-total").querySelector(".vex-pf-lead");
+    // A page shows real money and decides none: the quiet mark, not the solid stamp.
+    expect(lead?.querySelector(".vex-rf")?.textContent).toBe("Mainnet");
+    expect(lead?.querySelector(".vex-stamp")).toBeNull();
+    expect(lead?.textContent).toContain("Real money on mainnet.");
+    expect(screen.queryByText(/paper/i)).toBeNull();
+    expect(screen.queryByText(/^live/i)).toBeNull();
   });
 
-  it("keeps both through loading, error and empty", () => {
+  it("draws one tile per figure the reads carry, and no cell for the rest", () => {
+    mockScopeRead(portfolio({ snapshotTotalUsd: 100, pnlVsPrev: 1, snapshotAt: null }));
+    renderBlock();
+    expect(tileIds()).toEqual(["total", "change"]);
+    expect(area("portfolio-total").querySelector(".vex-pf-tiles")?.getAttribute("data-count")).toBe("2");
+    // H3's tiles with no desktop source are never drawn, not even empty.
+    const words = area("portfolio-total").textContent ?? "";
+    for (const absent of ["Today", "7 days", "All time", "Drawdown", "Running", "allocated", "strateg"]) {
+      expect(words.toLowerCase()).not.toContain(absent.toLowerCase());
+    }
+  });
+
+  it("adds Lighter equity and the unrealized PnL from a ready account, for All wallets", () => {
+    mockLighter({
+      ...LIGHTER_READY,
+      positions: [
+        {
+          marketId: 1,
+          symbol: "ETH",
+          side: "long",
+          size: "0.5",
+          entryPrice: "2000",
+          value: "1100",
+          unrealizedPnl: "20",
+          liquidationPrice: "1500",
+          initialMarginFraction: 1000,
+          marginMode: "cross",
+          allocatedMargin: null,
+        },
+      ],
+    });
+    renderBlock({ kind: "global" });
+    expect(tileIds()).toEqual(["total", "lighter-equity", "lighter-pnl"]);
+    expect(tileFigure(tile("lighter-equity"))).toBe("1,020.00 USDC");
+    expect(tile("lighter-equity").querySelector(".vex-pf-tile__sub")?.textContent).toBe(
+      "Not in the wallet total",
+    );
+    const pnl = tile("lighter-pnl");
+    expect(tileFigure(pnl)).toBe("+20.00 USDC");
+    // The PnL IS a trading value: it takes the gain colour.
+    expect(pnl.querySelector('[data-trade="up"]')).not.toBeNull();
+    expect(pnl.querySelector(".vex-pf-tile__sub")?.textContent).toBe("1 open Lighter position");
+    // The tiles read the Lighter section's own unscoped account, enabled.
+    const [, enabled, sessionId] = mockUseLighterTradingAccount.mock.calls[0] ?? [];
+    expect(enabled).toBe(true);
+    expect(sessionId).toBeUndefined();
+  });
+
+  it("draws no Lighter tile while the page is narrowed, and never reads it then", () => {
+    mockLighter(LIGHTER_READY);
+    mockUseWalletPortfolio.mockReturnValue(ready(portfolio({ walletCount: 1 })));
+    renderBlock({ kind: "wallet", wallet: EVM_WALLET });
+    expect(tileIds()).toEqual(["total"]);
+    cleanup();
+
+    mockScopeRead(portfolio({ scope: "session", walletCount: 1 }));
+    renderBlock({ kind: "session", sessionId: SESSION });
+    expect(tileIds()).toEqual(["total"]);
+    for (const [, enabled] of mockUseLighterTradingAccount.mock.calls) {
+      expect(enabled).toBe(false);
+    }
+  });
+
+  it("draws no Lighter tile for an account that is not ready, or a figure the read lacks", () => {
+    mockLighter({ ...LIGHTER_READY, status: "unavailable", unavailableReason: "not_onboarded", summary: null });
+    renderBlock();
+    expect(tileIds()).toEqual(["total"]);
+    cleanup();
+
+    mockLighter({ ...LIGHTER_READY, summary: { collateral: "1000", availableBalance: "600", unrealizedPnl: null } });
+    renderBlock();
+    // Equity is collateral plus a missing PnL counted as none; the PnL tile goes.
+    expect(tileIds()).toEqual(["total", "lighter-equity"]);
+  });
+});
+
+describe("PositionBlock - the frame's parts are not the block's", () => {
+  it("draws neither the refresh key nor the scope tabs, in any state", () => {
+    renderBlock();
+    expect(screen.queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
+    cleanup();
+
     mockUsePortfolio.mockReturnValue({
       isLoading: true,
       isError: false,
       data: undefined,
       dataUpdatedAt: 0,
     });
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    cleanup();
-
-    mockUsePortfolio.mockReturnValue({
-      isLoading: false,
-      isError: true,
-      data: undefined,
-      dataUpdatedAt: 0,
-    });
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    cleanup();
-
-    mockScopeRead(portfolio({ walletCount: 0 }));
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-  });
-
-  it("renders no chip group when the page hands none", () => {
     renderBlock();
-    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
   });
 });
 
@@ -539,19 +667,28 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
     expect(delta.getAttribute("style")).toBeNull();
   });
 
-  it("prints the whole line: snapshot age, figure, delta against the one before, loaded time", () => {
+  it("the tile: the change against the one before, the snapshot's figure and its age", () => {
     mountSnapshot("2026-09-04T11:55:00.000Z");
-    expect(subLine().textContent).toBe(
-      `Snapshot 5 min ago $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
-    );
+    const change = tile("change");
+    expect(tileLabel(change)).toBe("Since the snapshot before");
+    expect(tileFigure(change)).toBe("+$0.41");
+    expect(subLine().textContent).toBe("Snapshot $100.62, 5 min ago");
   });
 
   it("the delta is the DTO's snapshot-against-snapshot change, never a live gain", () => {
     // Live $62.71 against a $100.62 snapshot would read -$37.91; the DTO says
-    // +$0.41 against the snapshot BEFORE, and that is what the line carries.
+    // +$0.41 against the snapshot BEFORE, and that is what the tile carries.
     mountSnapshot("2026-09-04T11:55:00.000Z");
-    expect(subLine().textContent).not.toContain("37.91");
-    expect(subLine().textContent).toContain("since the snapshot before");
+    expect(area("portfolio-total").textContent).not.toContain("37.91");
+    expect(tileLabel(tile("change"))).toBe("Since the snapshot before");
+  });
+
+  it("is a change in wallet value, not trading P&L: it never takes a trading colour", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: 12.5 });
+    expect(tile("change").querySelector("[data-trade]")).toBeNull();
+    cleanup();
+    mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: -12.5 });
+    expect(tile("change").querySelector("[data-trade]")).toBeNull();
   });
 
   it("a STALE snapshot (31 days) states its age and MUTES the delta - not a live gain", () => {
@@ -580,9 +717,7 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
     mountSnapshot(null);
 
     expect(maybeArea("position-snapshot-age")).toBeNull();
-    expect(subLine().textContent).toBe(
-      `Snapshot $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
-    );
+    expect(subLine().textContent).toBe("Snapshot $100.62");
     expect(screen.getByLabelText("Change from the snapshot before +$0.41")).not.toBeNull();
   });
 
@@ -604,34 +739,28 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
     );
   });
 
-  it("a snapshot without a comparison (pnlVsPrev null) prints the figure and no delta", () => {
+  it("a snapshot without a comparison (pnlVsPrev null) is the Last snapshot tile, with no delta", () => {
     mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: null });
 
-    expect(subLine().textContent).toBe(
-      `Snapshot 5 min ago $100.62 · loaded ${LOADED_CLOCK}`,
-    );
-    expect(subLine().textContent).not.toContain("since the snapshot before");
+    const last = tile("snapshot");
+    expect(tileLabel(last)).toBe("Last snapshot");
+    expect(tileFigure(last)).toBe("$100.62");
+    expect(subLine().textContent).toBe("5 min ago");
+    expect(maybeTile("change")).toBeNull();
     expect(document.querySelector(".vex-pf-top__pnl")).toBeNull();
   });
 
-  it("with no snapshot at all the line carries only when the figures were loaded", () => {
+  it("with no snapshot at all there is no snapshot tile, only the total", () => {
     mountSnapshot(null, { snapshotTotalUsd: null, pnlVsPrev: null });
 
     expect(maybeArea("position-snapshot")).toBeNull();
-    expect(subLine().textContent).toBe(`Loaded ${LOADED_CLOCK}`);
+    expect(tileIds()).toEqual(["total"]);
   });
 
-  it("prints no loaded time when the query has no fetch time", () => {
-    mockScopeRead(portfolio({ snapshotTotalUsd: 100.62, pnlVsPrev: 0.41 }), 0);
-    renderBlock();
-    expect(subLine().textContent).not.toContain("loaded");
-    expect(subLine().textContent).toContain("Snapshot");
-
-    cleanup();
-    mockScopeRead(portfolio(), 0);
-    renderBlock();
-    // Nothing to say beneath the headline: no snapshot and no loaded time.
-    expect(document.querySelector(".vex-pf-top__sub")).toBeNull();
+  it("never prints the fetch time: the tabs row's Updated stamp carries it", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z");
+    expect(area("portfolio-total").textContent).not.toContain("loaded");
+    expect(area("portfolio-total").textContent).not.toContain(LOADED_CLOCK);
   });
 });
 

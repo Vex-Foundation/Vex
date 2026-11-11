@@ -12,7 +12,9 @@
  * the header renders the LABEL and adds nothing of its own.
  *
  * The SECOND is that the shell picker is operable without a pointer, which
- * rule 08 makes product behavior rather than polish. VS Code's terminal tab
+ * rule 08 makes product behavior rather than polish. The picker is the tabs
+ * row's last cell in H3 (`ShellPicker`, exported from the header's module),
+ * so this suite renders it beside the header, as the workspace shows both. VS Code's terminal tab
  * list (`terminalTabsList.ts`) is the reference for deriving an option's
  * accessible name from the same identity the row renders from, which is why
  * "not installed" is asserted on the accessible NAME and not on the text node.
@@ -21,7 +23,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TerminalShellOption } from "@shared/schemas/terminal.js";
-import { TerminalPanelHeader } from "../TerminalPanelHeader.js";
+import type { TerminalShellId } from "@shared/schemas/terminal.js";
+import { ShellPicker, TerminalPanelHeader } from "../TerminalPanelHeader.js";
 
 const SHELLS: readonly TerminalShellOption[] = [
   { id: "system_default", label: "Default shell", available: true },
@@ -31,25 +34,29 @@ const SHELLS: readonly TerminalShellOption[] = [
 ];
 
 function renderHeader(
-  overrides: Partial<React.ComponentProps<typeof TerminalPanelHeader>> = {},
+  overrides: Partial<React.ComponentProps<typeof TerminalPanelHeader>> & {
+    readonly shellId?: TerminalShellId;
+  } = {},
 ) {
   const onSelectShell = vi.fn();
   const onSplit = vi.fn();
   const onKill = vi.fn();
   const onRename = vi.fn();
+  const { shellId = "bash", ...header } = overrides;
   const view = render(
-    <TerminalPanelHeader
-      title="Terminal 1"
-      displayCwd="src/lib"
-      shellLabel="bash"
-      shellId="bash"
-      shells={SHELLS}
-      onSelectShell={onSelectShell}
-      onSplit={onSplit}
-      onKill={onKill}
-      onRename={onRename}
-      {...overrides}
-    />,
+    <>
+      <TerminalPanelHeader
+        title="Terminal 1"
+        displayCwd="src/lib"
+        shellLabel="bash"
+        state="running"
+        onSplit={onSplit}
+        onKill={onKill}
+        onRename={onRename}
+        {...header}
+      />
+      <ShellPicker shells={SHELLS} shellId={shellId} onSelectShell={onSelectShell} />
+    </>,
   );
   return { view, onSelectShell, onSplit, onKill, onRename };
 }
@@ -343,50 +350,49 @@ describe("the picker's popup has a surface under it", () => {
   });
 });
 
-describe("the pane head", () => {
-  it("places the flat vx disc in the header outside the terminal glyph surface", () => {
-    const { view } = renderHeader();
-    const token = view.container.querySelector("[data-vex-terminal-header] [data-vex-vx-token]");
-    expect(token).not.toBeNull();
-    const disc = token?.querySelector("svg");
-    // Decorative beside a visible word, so hidden from assistive technology.
-    expect(disc?.getAttribute("aria-hidden")).toBe("true");
-    expect(disc?.getAttribute("height")).toBe("24");
-    expect(disc?.getAttribute("width")).toBe("24");
-    expect(token?.closest(".vex-terminal-surface")).toBeNull();
-    // The faded mark is gone.
-    expect(view.container.querySelector("svg.text-brand-mark")).toBeNull();
-  });
-
-  it("is the named R3 head, which carries the 50 high geometry and the quiet rule", () => {
+describe("the panel header in H3 cells", () => {
+  it("is the named head, which carries the 56 high geometry and the quiet rule", () => {
     const { view } = renderHeader();
     const header = view.container.firstElementChild;
     expect(header).not.toBeNull();
-    // docs/design/R3-MINIMAL.md section 9.5: the head paints in terminal.css
-    // (pinned in terminal-surface-css.test.ts) and it paints no field of its own.
+    // Our approved Studio plate: the head paints in terminal.css (pinned in
+    // terminal-surface-css.test.ts) and it paints no field of its own.
     expect(header?.className).toBe("vex-ws-head");
     expect(header?.hasAttribute("data-vex-terminal-header")).toBe(true);
     expect(header?.className).not.toMatch(/\bbg-/);
     expect(header?.className).not.toMatch(/\brounded|shadow/);
+    // The vx disc retired with R3's head.
+    expect(view.container.querySelector("[data-vex-vx-token]")).toBeNull();
   });
 
-  it("sets the name at 14 / 500 over a muted mono shell and directory line", () => {
+  it("sets the name over the process and the directory, joined by a dot", () => {
     renderHeader();
     const name = screen.getByRole("heading", { name: "Terminal 1" });
-    expect(name.className).toContain("text-[14px]");
-    expect(name.className).toContain("font-medium");
-    expect(name.className).toContain("text-ink-primary");
+    expect(name.className).toBe("vex-ws-head__name");
     const sub = document.querySelector("[data-vex-terminal-shell]")?.parentElement;
-    expect(sub?.className).toContain("font-mono");
+    expect(sub?.className).toContain("vex-ws-head__where");
     expect(sub?.className).toContain("vex-num");
-    expect(sub?.className).toContain("text-[12px]");
-    expect(sub?.className).toContain("text-ink-tertiary");
-    // The directory is muted like the rest of the line, never the blue.
+    expect(sub?.textContent).toBe("bash·src/lib");
+    // The directory is muted like the rest of the line, never a colour.
     const cwd = screen.getByLabelText("Working directory: src/lib");
     expect(cwd.className).not.toContain("accent");
   });
 
-  it("draws the four actions as 32 x 32 ink 2 icon keys, in the design's order", () => {
+  it.each([
+    ["running", "Running"],
+    ["exited", "Exited"],
+    ["error", "Ended with an error"],
+    ["restoring", "Restoring"],
+  ] as const)("says its state %s in words beside its square", (state, word) => {
+    renderHeader({ state });
+    const cell = document.querySelector("[data-vex-terminal-state]");
+    expect(cell?.getAttribute("data-vex-terminal-state")).toBe(state);
+    expect(cell?.className).toBe("vex-ws-head__state");
+    expect(cell?.textContent).toBe(word);
+    expect(cell?.querySelector(".vex-sq")).not.toBeNull();
+  });
+
+  it("draws the four actions as 56 key cells with 16 icons, in the design's order", () => {
     renderHeader();
     const keys = [
       "Split Terminal 1 side by side",
@@ -395,22 +401,39 @@ describe("the pane head", () => {
       "Kill the shell in Terminal 1",
     ].map((name) => screen.getByRole("button", { name }));
     for (const key of keys) {
-      expect(key.getAttribute("data-vex-button")).toBe("bare");
-      expect(key.getAttribute("data-vex-button-size")).toBe("icon");
+      expect(key.className).toBe("vex-ws-head__key");
       expect(key.querySelector("svg")?.getAttribute("width")).toBe("16");
     }
     const row = keys[0]?.parentElement;
-    expect(row?.className).toBe("vex-ws-head__keys");
-    expect([...(row?.children ?? [])]).toEqual(keys);
+    expect(row?.className).toBe("vex-ws-head");
+    expect([...(row?.children ?? [])].slice(-4)).toEqual(keys);
     // A kill is ink on hover like its neighbours, never the error red.
     expect(keys[3]?.className).not.toContain("danger");
   });
 
-  it("keeps the shell picker key on the named R3 rule, with the chevron muted", () => {
+  it("carries no shell picker: the tabs row does", () => {
+    const view = render(
+      <TerminalPanelHeader
+        title="Terminal 1"
+        displayCwd="src/lib"
+        shellLabel="bash"
+        state="running"
+        onSplit={vi.fn()}
+        onKill={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+    expect(view.container.querySelector(".vex-ws-picker")).toBeNull();
+  });
+});
+
+describe("the shell picker cell", () => {
+  it("is the named cell: SHELL, the shell in mono, a muted chevron", () => {
     renderHeader();
     const picker = screen.getByRole("button", { name: "Shell for the next terminal" });
     expect(picker.className).toBe("vex-ws-picker");
-    expect(picker.querySelector("span.vex-num.font-mono")?.textContent).toBe("bash");
+    expect(picker.querySelector(".vex-ws-picker__word")?.textContent).toBe("Shell");
+    expect(picker.querySelector(".vex-ws-picker__value")?.textContent).toBe("bash");
     const chevron = picker.querySelector("svg");
     expect(chevron?.getAttribute("width")).toBe("14");
     expect(chevron?.getAttribute("class")).toContain("text-ink-tertiary");
@@ -419,6 +442,6 @@ describe("the pane head", () => {
   it("says in words when the shell the picker holds is not installed", () => {
     renderHeader({ shellId: "fish" });
     const picker = screen.getByRole("button", { name: "Shell for the next terminal" });
-    expect(picker.textContent).toBe("fish (not installed)");
+    expect(picker.querySelector(".vex-ws-picker__value")?.textContent).toBe("fish (not installed)");
   });
 });

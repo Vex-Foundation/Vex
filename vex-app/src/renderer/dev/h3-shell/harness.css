@@ -1,0 +1,97 @@
+/* The renderer's own stylesheet, verbatim, plus the source glob Tailwind
+ * would otherwise infer from the Vite root.
+ *
+ * `vite.h3-shell.config.ts` roots the dev server at THIS directory, so
+ * Tailwind's automatic content detection would scan only the harness and emit
+ * none of the utilities the shell's components carry - a shell drawn without
+ * its `flex`, `h-full` and `min-w-0` is a layout the product does not have.
+ * `@source` points it back at the whole renderer tree, which is exactly what
+ * `vite.renderer.config.ts` gives it. */
+@import "../../styles/globals.css";
+@source "../../";
+
+/* THE WINDOW. The harness page IS the Electron window's content area: the
+ * frame takes the viewport exactly, never scrolls, and paints the shell's own
+ * ground, so a capture at 1440x900 is the window at 1440x900 and nothing the
+ * harness adds can move a column. Everything inside it is the product's. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.vex-h3-harness {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+}
+
+/* The operating system's chrome, stood in for (chrome-standin.ts): above the
+ * page, never hit-tested. The lights are three discs; the caption overlay is
+ * an opaque plate on the shell's ground, as the app's overlay is, with its
+ * three glyphs and an outline so a capture shows its edge. */
+.vex-h3-harness__lights {
+  position: absolute;
+  z-index: 1000;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+}
+.vex-h3-harness__lights > span {
+  position: absolute;
+  border-radius: 50%;
+  background: #ff5f57;
+}
+.vex-h3-harness__lights > span:nth-child(2) {
+  background: #febc2e;
+}
+.vex-h3-harness__lights > span:nth-child(3) {
+  background: #28c840;
+}
+.vex-h3-harness__caption {
+  position: absolute;
+  z-index: 1000;
+  top: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  outline: 1px dashed var(--vex-alias-label-tertiary);
+  outline-offset: -1px;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-secondary);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* An unknown `?state=` lists the states. Harness chrome, so it borrows the
+ * alias tokens and none of the shell's own classes. */
+.vex-h3-harness__index {
+  box-sizing: border-box;
+  padding: 32px 40px;
+  overflow: auto;
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.vex-h3-harness__index h1 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+.vex-h3-harness__index a {
+  color: var(--vex-alias-accent-primary);
+}
+
+/* A stage's stand-in figure (`?stage=`, `?kimm=standins`): each open-section
+ * crop carries the mockup's own Hide Vex cell in its top 62 image pixels
+ * (`standins/README.md`), so the figure is lifted under her real corner key,
+ * as the approved stage plates lift it. Her real art carries no key and needs
+ * no lift; the product's sheets never do this. */
+[data-vex-h3-stage] .vex-pre-vex__kimm .vex-kimm__figure {
+  top: -22px;
+  height: calc(100% + 22px);
+}

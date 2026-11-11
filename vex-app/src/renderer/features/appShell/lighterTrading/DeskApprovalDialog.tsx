@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type JSX } from "react";
 import { createPortal } from "react-dom";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { ApprovalCard } from "../ApprovalCard.js";
@@ -94,20 +94,33 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
   useLayoutEffect(() => () => { setDeskReviewShowing(false); }, []);
 
   // The safe choice takes focus each time the review appears, as the modal's
-  // own initial focus did; a refetch that keeps it open never refocuses.
+  // own initial focus did; a refetch that keeps it open never refocuses. The
+  // review can first render before the ticket's slot is attached and then
+  // move into it (the portal remounts its keys), so it also takes focus again
+  // when it lands in the ticket's place: Reject keeps the first focus.
   const focusRef = useRef(focusApprovalId);
   focusRef.current = focusApprovalId;
-  const wasOpen = useRef(false);
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  const attachDialog = useCallback((element: HTMLDialogElement | null): void => {
+    rootRef.current = element;
+    setDialog(element);
+  }, []);
+  const focusedIn = useRef<HTMLDialogElement | null>(null);
   useEffect(() => {
-    if (open && !wasOpen.current) focusSafeChoice(rootRef.current, focusRef.current);
-    wasOpen.current = open;
-  }, [open]);
+    if (!open) {
+      focusedIn.current = null;
+      return;
+    }
+    if (dialog === null || dialog === focusedIn.current) return;
+    focusedIn.current = dialog;
+    focusSafeChoice(dialog, focusRef.current);
+  }, [open, dialog]);
 
   const dismiss = (): void => { setDismissed(new Set(approvals.map((summary) => summary.id))); };
 
   const review = (
     <dialog
-      ref={rootRef}
+      ref={attachDialog}
       open={open}
       tabIndex={-1}
       aria-labelledby={titleId}

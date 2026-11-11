@@ -1,14 +1,15 @@
 /**
- * Both-themes screenshot QA pass - evidence for the owner's eyes-on
- * calibration review, NOT a CI gate. Runs only when VEX_QA_SHOTS=1 and
+ * Screenshot QA pass - evidence for the owner's eyes-on calibration review,
+ * NOT a CI gate. Runs only when VEX_QA_SHOTS=1 and
  * expects a build made with VITE_VEX_SETUP_TOUR=1 (the tour is the only
  * sanctioned way to reach the shell and the unlock screen without a running
  * local runtime).
  *
- * Round 2 (2026-08-21) widened the set: every pre-shell screen follows the
- * active theme, so the stages are captured per theme, not once. Since V10
- * the gate is themed too: it stands on the same stage print (the day print
- * in celeris, the night print in chronos):
+ * Round 2 (2026-08-21) widened the set to every pre-shell screen, captured
+ * per theme. Since plan row S1-04 the app is dark only
+ * (docs/design/H3-DESKTOP.md section 4.5): Celeris and the Appearance row
+ * are retired, so the set is captured once, in the one theme, which each pass
+ * asserts rather than picks:
  *
  *   gate-act3            the gate's resting frame on the stage print
  *   systemcheck          the themed pre-shell system/port screen
@@ -17,7 +18,6 @@
  *   unlock-error         the failed-unlock callout + the
  *                        "Open logs folder" link
  *   welcome-shell        hero + composer + rail + starter pills
- *   settings-appearance  the theme picker itself
  *
  * The unlock error is produced by submitting a wrong password of legal
  * length against the spec's own throwaway config dir: the vault is not
@@ -32,11 +32,11 @@ import type { Page } from "@playwright/test";
 
 const QA_DIR = process.env.VEX_QA_DIR ?? "";
 
-type Theme = "chronos" | "celeris";
-const THEMES: readonly Theme[] = ["chronos", "celeris"];
+/** The app's one theme (dark only, S1-04); the shots keep its folder. */
+const THEME = "chronos";
 
-function shotPath(theme: Theme, name: string): string {
-  const dir = path.join(QA_DIR, theme);
+function shotPath(name: string): string {
+  const dir = path.join(QA_DIR, THEME);
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `${name}.png`);
 }
@@ -46,12 +46,12 @@ function shotPath(theme: Theme, name: string): string {
  * scaffolding docked bottom-left (z-70), never a shipped surface, so it
  * must not appear in evidence the owner calibrates against.
  */
-async function shot(page: Page, theme: Theme, name: string): Promise<void> {
+async function shot(page: Page, name: string): Promise<void> {
   await page.evaluate(() => {
     const tour = document.querySelector("[data-vex-setup-tour]");
     if (tour instanceof HTMLElement) tour.style.visibility = "hidden";
   });
-  await page.screenshot({ path: shotPath(theme, name) });
+  await page.screenshot({ path: shotPath(name) });
   await page.evaluate(() => {
     const tour = document.querySelector("[data-vex-setup-tour]");
     if (tour instanceof HTMLElement) tour.style.visibility = "";
@@ -66,38 +66,21 @@ async function tourTo(page: Page, view: string): Promise<void> {
   await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
 }
 
-/** Open Settings from the shell, pick a theme, capture, and close. */
-async function pickTheme(page: Page, theme: Theme): Promise<void> {
-  await page.evaluate(() => {
-    const tour = document.querySelector("[data-vex-setup-tour]");
-    if (tour instanceof HTMLElement) tour.style.display = "none";
-  });
-  await page.getByRole("button", { name: /Open menu/ }).click();
-  await page.getByRole("menuitem", { name: /Settings/ }).click();
-  await expect(page.locator("[data-vex-settings-preferences]")).toBeVisible();
-  await page.locator("[data-vex-settings-appearance]").scrollIntoViewIfNeeded();
-  await page.locator(`[data-vex-theme-cube="${theme}"]`).click();
-  await page.waitForTimeout(500);
-  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", theme);
-  await page.screenshot({ path: shotPath(theme, "settings-appearance") });
-  await page.keyboard.press("Escape");
-  await expect(page.locator('[data-vex-screen="appShell"]')).toBeVisible();
-  await page.evaluate(() => {
-    const tour = document.querySelector("[data-vex-setup-tour]");
-    if (tour instanceof HTMLElement) tour.style.display = "";
-  });
+/** The document root carries the app's one theme; there is none to pick. */
+async function expectTheOneTheme(page: Page): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", THEME);
 }
 
 /** The unlock triptych: at rest, armed, and after a failed attempt. */
-async function captureUnlock(page: Page, theme: Theme): Promise<void> {
+async function captureUnlock(page: Page): Promise<void> {
   await tourTo(page, "unlock");
   await page.waitForTimeout(900); // the vex-rise entrance settles
-  await shot(page, theme, "unlock-empty");
+  await shot(page, "unlock-empty");
 
   const field = page.locator("#vex-unlock-password");
   await field.fill("not-the-real-password");
   await page.waitForTimeout(400); // the 150ms armed colour transition
-  await shot(page, theme, "unlock-typed");
+  await shot(page, "unlock-typed");
 
   await page.getByRole("button", { name: /^Unlock/ }).click();
   // Either branch is legitimate evidence: a rejected attempt (danger rail
@@ -106,7 +89,7 @@ async function captureUnlock(page: Page, theme: Theme): Promise<void> {
     timeout: 20_000,
   });
   await page.waitForTimeout(300);
-  await shot(page, theme, "unlock-error");
+  await shot(page, "unlock-error");
 }
 
 test.skip(
@@ -114,7 +97,7 @@ test.skip(
   "QA screenshot pass runs only with VEX_QA_SHOTS=1 and VEX_QA_DIR set",
 );
 
-test("captures both-theme screenshot evidence for the owner's eyes-on pass", async ({
+test("captures the one theme's screenshot evidence for the owner's eyes-on pass", async ({
   vexApp,
 }: {
   vexApp: VexElectronFixture;
@@ -124,36 +107,32 @@ test("captures both-theme screenshot evidence for the owner's eyes-on pass", asy
   await page.waitForLoadState("domcontentloaded");
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // Cold open: gate, then the first-run handoff to SystemCheck. The theme
-  // preference at this point is the un-migrated default (`system`), so the
-  // gate/systemCheck pair is re-captured per theme below rather than here.
+  // Cold open: gate, then the first-run handoff to SystemCheck, already in
+  // the one theme.
   await expect(page.locator('[data-vex-screen="chronos-gate"]')).toBeVisible();
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
+  await expectTheOneTheme(page);
 
-  for (const theme of THEMES) {
-    // The theme picker lives in the shell, so every pass starts there.
-    await tourTo(page, "appShell");
-    await page.waitForTimeout(1200);
-    await pickTheme(page, theme);
+  await tourTo(page, "appShell");
+  await page.waitForTimeout(1200);
+  await expectTheOneTheme(page);
+  await shot(page, "welcome-shell");
 
-    await page.waitForTimeout(1200);
-    await shot(page, theme, "welcome-shell");
+  await captureUnlock(page);
 
-    await captureUnlock(page, theme);
+  await tourTo(page, "systemCheck");
+  await page.waitForTimeout(800);
+  await shot(page, "systemcheck");
 
-    await tourTo(page, "systemCheck");
-    await page.waitForTimeout(800);
-    await shot(page, theme, "systemcheck");
-
-    // A real cold open under the now-persisted preference: proves the gate
-    // and the first paint after it follow the theme.
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
-    await expect(page.locator('[data-vex-screen="chronos-gate"]')).toBeVisible();
-    await page.waitForTimeout(1500);
-    await shot(page, theme, "gate-act3");
-    await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
-    await page.waitForTimeout(600);
-    await shot(page, theme, "systemcheck-boot");
-  }
+  // A real cold open: the gate and the first paint after it carry the one
+  // theme too.
+  await page.reload();
+  await page.waitForLoadState("domcontentloaded");
+  await expect(page.locator('[data-vex-screen="chronos-gate"]')).toBeVisible();
+  await expectTheOneTheme(page);
+  await page.waitForTimeout(1500);
+  await shot(page, "gate-act3");
+  await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
+  await page.waitForTimeout(600);
+  await shot(page, "systemcheck-boot");
 });

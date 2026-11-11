@@ -8,10 +8,11 @@
  *  - logBuffer is bounded to MAX_RENDER_LOGS to honor skill §11 (no
  *    unbounded buffers).
  *
- * Theme: the persisted slot is `themePreference` ("chronos" | "celeris" |
- * "system"); `theme` is the RESOLVED value driving `data-vex-theme` on
- * documentElement (runtime logic in uiStore/theme.ts; pre-paint twin in
- * public/theme-boot.js). Everything else here stays UI-only per skill §5
+ * Theme: H3 is dark only, so `theme` is always the one room ("chronos") that
+ * rides on documentElement's `data-vex-theme`, and the persisted
+ * `themePreference` slot can hold nothing else (runtime logic in
+ * uiStore/theme.ts; pre-paint twin in public/theme-boot.js). Everything else
+ * here stays UI-only per skill §5
  * (domain/IPC data belongs in TanStack Query).
  */
 
@@ -25,19 +26,17 @@ export const MAX_RENDER_LOGS = 500;
 /**
  * Theme runtime types + logic live in the same-named sibling module
  * (`uiStore/theme.ts`); re-exported so the store stays the single public
- * entry point. `theme` is the RESOLVED value that rides on documentElement's
- * `data-vex-theme`; `themePreference` is the persisted user choice
- * ("system" tracks the OS scheme live).
+ * entry point. `theme` is the one room that rides on documentElement's
+ * `data-vex-theme`; `themePreference` is the persisted slot, kept so an old
+ * payload coerces, which can only hold that room.
  */
 export type { VexTheme, VexThemePreference } from "./uiStore/theme.js";
 export type { RuntimeMode } from "./uiStore/runtime-mode.js";
 
 import {
   applyThemeToDocument,
-  bindSystemThemeListener,
   DEFAULT_THEME_PREFERENCE,
-  resolveTheme,
-  systemPrefersDark,
+  VEX_THEME,
   type VexTheme,
   type VexThemePreference,
 } from "./uiStore/theme.js";
@@ -157,9 +156,9 @@ export interface CreateSessionInitialTurn {
 }
 
 export interface UiState {
-  /** Resolved shell theme = f(themePreference, OS scheme). NOT persisted. */
+  /** The shell room: H3 is dark only, so always "chronos". NOT persisted. */
   readonly theme: VexTheme;
-  /** Persisted theme choice; "system" re-resolves on OS scheme changes. */
+  /** The persisted slot; every stored value coerces to the one room. */
   readonly themePreference: VexThemePreference;
   /**
    * Which shell the frame dispatches: the agent columns or the Studio ones.
@@ -199,9 +198,16 @@ export interface UiState {
    */
   readonly leftOpen: boolean;
   /**
-   * Whether Vex's sidebar is open in chat, on approvals and in Studio. Open
-   * by default. Persisted (v22, seeded from `bookOpen`). Read it through
-   * `selectVexOpen`, which picks this or `vexOpenPages` by page class.
+   * KIMM'S OPEN OR CLOSED CHOICE in chat, on approvals and in Studio
+   * (docs/design/H3-DESKTOP.md sections 3.5 and 4.10; plan row S4-14): her
+   * section open, or folded to its strip, in the column that stands there.
+   * One remembered choice per profile, written by every control of hers (the
+   * Vex key, her corner key, Cmd or Ctrl+Shift+B, the Settings switch) and by
+   * nothing she does herself. Open by default: first launch opens her. It
+   * REPLACES "Show avatar": v24 folded a stored `showAvatar: false` into it,
+   * so someone who had hidden her avatar finds her section closed. Persisted
+   * (v22, seeded from `bookOpen`). Read it through `selectVexOpen`, which
+   * picks this or `vexOpenPages` by page class.
    */
   readonly vexOpenChat: boolean;
   /**
@@ -217,16 +223,27 @@ export interface UiState {
    */
   readonly vexOpenLighter: boolean;
   /**
-   * Whether Vex's sidebar shows her hologram. On by default; off, the sidebar
-   * keeps the state word and the rest. Persisted (v22).
+   * Her band under 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's
+   * PD-12): closed on every visit, a press kept for the session only. NOT
+   * persisted, so every launch starts it closed, and nothing narrow writes
+   * `vexOpenChat` or `vexOpenPages`.
+   */
+  readonly vexOpenNarrow: boolean;
+  /**
+   * @deprecated R3's "Show avatar", retired by her section's open or closed
+   * choice (`vexOpenChat`, plan row S4-14). v24 folded a stored `false` into
+   * that choice and pinned this slot true, and nothing reads or writes it
+   * now. It stays persisted and coerced this release (expand-only), so an
+   * older build reading the payload finds her shown and her choice where it
+   * was.
    */
   readonly showAvatar: boolean;
   /**
    * Whether the welcome shows Vex's hologram on her stage (true) or only her
    * coin (false): the welcome token's own choice, a "make room on this
-   * screen" press. It never writes `showAvatar` (the global avatar switch in
-   * Settings and the Vex sidebar) and `showAvatar` never writes it. On by
-   * default. Persisted; a payload without it hydrates to the default.
+   * screen" press. It never writes her section's choice (`vexOpenChat`) and
+   * her choice never writes it. On by default. Persisted; a payload without
+   * it hydrates to the default.
    */
   readonly welcomeVexShown: boolean;
   /**
@@ -237,6 +254,15 @@ export interface UiState {
    */
   readonly vexInferenceNoticeDismissed: boolean;
   /**
+   * Whether her first close has shown the way back (docs/design/H3-DESKTOP.md
+   * section 3.5; plan row S4-15): the "Show Vex" hint and its keycaps under
+   * the Vex key for 2.4 seconds, once per profile (Cloud: once per browser).
+   * False until that first close; set as the hint shows, so no later close
+   * in any window shows it again. Persisted; added without a version hop: a
+   * payload that does not carry it hydrates to the default, not yet shown.
+   */
+  readonly kimmHintShown: boolean;
+  /**
    * @deprecated The previous frame's left page drag width. The R3 sidebars
    * have fixed widths and the frame no longer reads it; it stays persisted
    * and coerced this release (expand-only).
@@ -245,10 +271,11 @@ export interface UiState {
   /** @deprecated The previous frame's BOOK drag width. See `sidebarWidth`. */
   readonly bookWidth: number;
   /**
-   * Below the medium tier the left sidebar renders the rail unless the user
-   * manually re-expands it; this is that override (and, in Lighter, the top
-   * bar's drawer). NOT persisted: a relaunch under a narrow window starts
-   * back at the rail.
+   * The Lighter desk's drawer (Markets and sessions), opened from its title
+   * cell. It was also R3's narrow-tier override that widened the chats
+   * column; H3 never widens a track there (docs/design/H3-DESKTOP.md section
+   * 4.12: the chats panel, the frame's own state), so the agent shell and
+   * Studio no longer set it. NOT persisted.
    */
   readonly sidebarNarrowExpanded: boolean;
   /**
@@ -436,8 +463,6 @@ export interface UiState {
    * `uiStore/persistence.ts`.
    */
   readonly sessionOrdinals: SessionOrdinalLedger;
-  /** Set the theme choice: resolves + writes documentElement in one step. */
-  readonly setThemePreference: (value: VexThemePreference) => void;
   /** Legacy name of `setLeftOpen`: writes both slots. */
   readonly setSidebarOpen: (value: boolean) => void;
   /** Open or close the left sidebar from the medium tier up. */
@@ -454,15 +479,18 @@ export interface UiState {
    * its rail.
    */
   readonly setVexOpen: (value: boolean) => void;
+  /** Open (true) or close (false) her band under 1024, for the session only. */
+  readonly setVexOpenNarrow: (value: boolean) => void;
   /** Legacy name of `setVexOpen`. */
   readonly setBookOpen: (value: boolean) => void;
   /** Flip the current page class's stored choice. */
   readonly toggleBook: () => void;
-  readonly setShowAvatar: (value: boolean) => void;
   /** Show (true) or hide (false) Vex's hologram on the welcome only. */
   readonly setWelcomeVexShown: (value: boolean) => void;
   /** Dismiss the welcome's Vex Inference notice (true), or bring it back. */
   readonly setVexInferenceNoticeDismissed: (value: boolean) => void;
+  /** Record that her first close has shown the way back (true), or forget it. */
+  readonly setKimmHintShown: (value: boolean) => void;
   /**
    * The left sidebar's nav: one press, one store change (see
    * `navigationTarget`). `origin` is the pressed row's rect, for the page's
@@ -595,24 +623,21 @@ function runtimeModePatch(state: UiState, next: RuntimeMode): Partial<UiState> {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      theme: resolveTheme(DEFAULT_THEME_PREFERENCE, systemPrefersDark()),
+      theme: VEX_THEME,
       themePreference: DEFAULT_THEME_PREFERENCE,
       runtimeMode: DEFAULT_RUNTIME_MODE,
       lighterReturn: null,
       lighterSessionId: null,
-      setThemePreference: (themePreference) => {
-        const theme = resolveTheme(themePreference, systemPrefersDark());
-        applyThemeToDocument(theme);
-        set({ themePreference, theme });
-      },
       sidebarOpen: true,
       leftOpen: true,
       vexOpenChat: true,
       vexOpenPages: false,
       vexOpenLighter: false,
+      vexOpenNarrow: false,
       showAvatar: true,
       welcomeVexShown: true,
       vexInferenceNoticeDismissed: false,
+      kimmHintShown: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -652,11 +677,12 @@ export const useUiStore = create<UiState>()(
       setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
         set({ sidebarNarrowExpanded }),
       setVexOpen: (value) => set((state) => vexOpenPatch(state, value)),
+      setVexOpenNarrow: (vexOpenNarrow) => set({ vexOpenNarrow }),
       setBookOpen: (value) => set((state) => vexOpenPatch(state, value)),
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),
-      setShowAvatar: (showAvatar) => set({ showAvatar }),
       setWelcomeVexShown: (welcomeVexShown) => set({ welcomeVexShown }),
+      setKimmHintShown: (kimmHintShown) => set({ kimmHintShown }),
       setVexInferenceNoticeDismissed: (vexInferenceNoticeDismissed) =>
         set({ vexInferenceNoticeDismissed }),
       navigate: (destination, origin = null) =>
@@ -759,10 +785,11 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 22,
-      // Re-stamp the document root once the coerced, resolved theme is
-      // known - theme-boot.js painted the pre-bundle frame from the RAW
-      // payload, and a tampered value must not survive on <html>.
+      version: 24,
+      // Re-stamp the document root once the store has rehydrated. There is
+      // one room, so this only repeats what theme-boot.js stamped pre-paint;
+      // it stays so nothing a payload carries can leave another value on
+      // <html>.
       onRehydrateStorage: () => (state) => {
         if (state !== undefined) applyThemeToDocument(state.theme);
       },
@@ -776,16 +803,7 @@ export const useUiStore = create<UiState>()(
   )
 );
 
-// Keep the document root current: theme-boot.js painted the pre-bundle
-// frame from raw localStorage; once the store has rehydrated (synchronous
-// with localStorage), its coerced resolution is authoritative. The system
-// listener re-resolves a "system" preference live; an explicit preference
-// ignores OS changes by construction (resolveTheme). Both are no-ops in
-// environments without a DOM/matchMedia (tests).
+// Stamp the document root once at load, the same room theme-boot.js painted
+// pre-bundle. No OS scheme listener: H3 is dark only, so a light OS changes
+// nothing. A no-op without a DOM (tests).
 applyThemeToDocument(useUiStore.getState().theme);
-bindSystemThemeListener((prefersDark) => {
-  const { themePreference } = useUiStore.getState();
-  const theme = resolveTheme(themePreference, prefersDark);
-  applyThemeToDocument(theme);
-  useUiStore.setState({ theme });
-});

@@ -356,7 +356,7 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("New mission");
 
-    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    const draft = screen.getByLabelText("Ask Vex") as HTMLTextAreaElement;
     // Mission copy rides the faux-placeholder overlay now (the native
     // placeholder attribute is retired — it cannot animate the prompt swap).
     expect(draft.getAttribute("placeholder")).toBeNull();

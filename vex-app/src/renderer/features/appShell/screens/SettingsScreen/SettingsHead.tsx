@@ -1,8 +1,10 @@
 /**
- * The head of one Settings section (docs/design/R3-MINIMAL.md section 9.6):
- * the section's name at 22 / 500 with its status word beside it (13, ink 2,
- * the swatch drawn before the word), and the lead under it (14, ink 2, max
- * 620). The section sheet draws it for the sections that draw their own
+ * The head of one Settings section (docs/design/R3-MINIMAL.md section 9.6;
+ * VEX Cloud's built `PageHeader` as the plate, owner decision 2026-11-09,
+ * H3-DESKTOP section 4.9): the section's name is the visually hidden h2 (the
+ * nav's chosen row and the header name it), and the lead row says the status
+ * word first (11 caps, ink 2, its swatch before it), then the lead (14, ink 2,
+ * at most 760). The section sheet draws it for the sections that draw their own
  * content (Preferences, Superboard key, Lighter); a section that hosts a
  * wizard step form keeps that form's own head.
  */
@@ -23,16 +25,16 @@ export function SettingsHead({
 }): JSX.Element {
   return (
     <header className="vex-set__head" data-vex-settings-head>
-      <h2 className="vex-set__title">
-        {title}
+      <h2 className="vex-set__title sr-only">{title}</h2>
+      <p className="vex-set__lead">
         {status === null ? null : (
           <span className="vex-set__stw" data-vex-settings-head-status>
             <Swatch state={settingsStatusSwatch(status.tone)} size={10} />
             {status.word}
           </span>
         )}
-      </h2>
-      <p className="vex-set__lead">{lead}</p>
+        <span data-vex-settings-head-lead>{lead}</span>
+      </p>
     </header>
   );
 }

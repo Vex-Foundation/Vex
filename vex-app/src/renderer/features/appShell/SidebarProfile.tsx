@@ -1,28 +1,46 @@
 /**
- * THE ACCOUNT ROW: the identity element at the foot of the left sidebar and
- * of the Studio sidebar (docs/design/R3-MINIMAL.md section 4). One row,
- * padding 12 18 14: the vx in blue in a 30px box on a 1px rule (the local
- * "profile" picture), the user's display name or the personalize ask at
- * 14 / 500, a 12 muted status line, and the up and down chevron at the right.
- * Closed to a rail, the row is the box alone and the status line rides its
- * tooltip.
+ * THE ACCOUNT CELL (docs/design/H3-DESKTOP.md sections 1.4 and 1.8): the
+ * bottom row's first cell, under the chats column, 248 x 72 at 1440; also the
+ * foot of the Lighter desk's rail and of a standalone Studio sidebar. As H3
+ * draws it, in VEX Cloud's built metrics (`account-launcher.tsx`,
+ * `.vx-lc-me`): the person's avatar disc, 34 across, 24 in; the name at 14
+ * in ink ("You" until the person names themselves); "Account and settings"
+ * at 12, muted, under it; the muted up chevron at the right, turned while the
+ * menu is open. Closed to the rail, the cell is the disc alone, with the
+ * shared tooltip.
  *
- * Its portal Menu owns the app's destinations: Personalize, Memory, Sessions,
- * Agent Scan, How Vex works, Settings, Lock Vex, plus a read-only runtime row
- * pinned in the menu footer. Opened upward from a sidebar foot the menu is the
- * flat profile panel (section 12): 316 wide, 10 in from the sidebar's left
- * edge and 66 above its foot, a 1.5px ink frame, never a shadow.
+ * Its accessible name is Cloud's: "{name}, account and settings", or
+ * "Account and settings" on the rail. The runtime's state is the key's
+ * description ("Runtime: Connected"), so the name says what the key opens.
  *
- * The name line is the user's own "Vex setup" `displayName` once set; before
- * that it is a gentle ask ("What should Vex call you?"). The healthy-runtime
- * subtitle speaks the hallmark; any other state speaks its own SENTENCE
- * (`RUNTIME_STATUS_SENTENCES`), never the bare status word. Screen rows route
- * through `setShellRoute` with the trigger row's rect as the expand origin.
+ * The disc is the one the transcript gives the person's own messages
+ * (`TranscriptMessage.tsx`, `YouAvatar`): a circle on the chosen rule with
+ * the person glyph in ink, drawn as SVG, since every box is square (radius
+ * 0). Its fill is Cloud's avatar ground (#151618, `--vex-alias-avatar`), as
+ * the transcript's is.
+ *
+ * Its portal Menu keeps every destination it had: Personalize, Memory,
+ * Sessions, Agent Scan, How Vex works, Settings, Lock Vex, plus a read-only
+ * runtime row pinned in the menu footer. Opened upward from the cell, the
+ * menu is the profile panel: 316 wide, 12 in from the window's edge (the
+ * Menu's margin), its foot on the cell's top rule, the card ground behind
+ * the chosen rule, never a shadow.
+ *
+ * The name is the person's own "Vex setup" `displayName` once set, and "You"
+ * before that (and while the profile loads or cannot be read): H3's word,
+ * which is true of whoever sits at the computer. The ask to set a name lives
+ * on the menu's Personalize row, with its attention mark. The line under the
+ * name is "Account and settings" while the local runtime is connected or
+ * still being checked; any trouble speaks its own SENTENCE there instead
+ * (`RUNTIME_STATUS_SENTENCES`), never the bare status word, so a failure is
+ * never hidden behind the cell's label. Screen rows route through
+ * `setShellRoute` with the trigger's rect as the expand origin.
  */
 
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type JSX,
@@ -31,7 +49,7 @@ import {
 import {
   LineBook,
   LineChat,
-  LineChevronsUpDown,
+  LineChevronUp,
   LineLock,
   LineMemory,
   LineNewChat,
@@ -43,10 +61,10 @@ import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { cn } from "../../lib/utils.js";
-import { VexMark } from "../../components/common/VexMark.js";
 import { useReducedMotion } from "../../lib/motion/index.js";
 import { Menu, type MenuEntry } from "../../components/ui/menu.js";
 import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
@@ -58,8 +76,16 @@ import { VexSetupDialog } from "./VexSetupDialog.js";
 /** The full-app screens the profile menu can open (each a `ShellRoute` kind). */
 type ProfileMenuScreen = "memory" | "sessions" | "agentScan" | "howItWorks";
 
-/** Chronos hallmark: the healthy-runtime subtitle. Test-pinned copy. */
+/**
+ * Chronos hallmark: the healthy runtime's sentence. Test-pinned copy. The
+ * account cell shows H3's line instead while all is well; the sentence stays
+ * the healthy entry of the table below.
+ */
 export const NIGHT_SHIFT_MESSAGE = "The night shift is active.";
+
+/** H3's words in the account cell (Appendix A.2). */
+export const ACCOUNT_CELL_NAME = "You";
+export const ACCOUNT_CELL_LINE = "Account and settings";
 
 /** The runtime states the foot can be in, derived from the health read. */
 export type RuntimeStatusState =
@@ -125,9 +151,32 @@ function entryIcon(Icon: LineIconComponent): ReactNode {
   return <Icon />;
 }
 
-/** Profile panel geometry (section 12): 10 in from the sidebar, 66 above its foot. */
-const PANEL_INSET_X = 10;
-const PANEL_FOOT_GAP = 66;
+/**
+ * The person's avatar disc (section 1.4), the transcript's own drawing
+ * (`TranscriptMessage.tsx`, `YouAvatar`): 36 across on the chosen rule, the
+ * person glyph in ink. Decorative: the trigger's name says whose cell it is.
+ */
+function AccountDisc(): JSX.Element {
+  return (
+    <span aria-hidden data-vex-account-disc="" className="vex-prof__av">
+      <svg width={34} height={34} viewBox="0 0 36 36" focusable="false">
+        <circle className="vex-prof__disc" cx="18" cy="18" r="17.5" strokeWidth="1" />
+        <g className="vex-prof__glyph">
+          <circle cx="18" cy="14.5" r="3.5" />
+          <path d="M11 25c0-3.9 3.1-6.2 7-6.2s7 2.3 7 6.2z" />
+        </g>
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * Profile panel geometry: opened upward from the account cell, the panel's
+ * foot sits on the cell's top rule, a cell stacked on the cell that opened
+ * it, from the column's left edge (the Menu keeps any list 12 in from the
+ * window's edge, so on screen it stands 12 in).
+ */
+const PANEL_INSET_X = 0;
 /** The Menu primitive's own gap between an upward list and its anchor. */
 const MENU_GAP = 4;
 
@@ -153,13 +202,19 @@ export function SidebarProfile({
     result: profileQuery.data,
   });
 
-  // The row's accessible name is the name the row SHOWS (a screen reader
-  // user hears the account, not the product), then the runtime word. With no
-  // name set the row shows a question ("What should Vex call you?"), which is
-  // not a name, so the name falls back to the stable "Vex" the loading and
-  // error states already show.
-  const accountName =
-    nameLine.asksToPersonalize || nameLine.text.trim() === "" ? "Vex" : nameLine.text;
+  // The cell's accessible name is the name the cell SHOWS (a screen reader
+  // user hears the account, not the product), then what it opens (Cloud's
+  // `launcherName`): the person's name, or "You" until they set one. On the
+  // rail no name shows, so the key is "Account and settings".
+  const accountName = nameLine.text;
+  const triggerName = sidebarOpen ? `${accountName}, account and settings` : ACCOUNT_CELL_LINE;
+  const descriptionId = useId();
+  // The line under the name: H3's "Account and settings" while the runtime
+  // is connected or still being checked; any trouble speaks its sentence.
+  const cellLine =
+    runtime.state === "connected" || runtime.state === "connecting"
+      ? ACCOUNT_CELL_LINE
+      : runtime.sentence;
 
   const reducedMotion = useReducedMotion();
   const [menuPhase, setMenuPhase] = useState<"closed" | "open" | "closing">("closed");
@@ -303,60 +358,66 @@ export function SidebarProfile({
     [closeMenu, openScreen, openSettings, requestLock],
   );
 
-  // Opened upward from a sidebar foot, the list is the profile panel: its
-  // left edge 10 in from the trigger row's (the row spans the sidebar), its
-  // foot 66 above the sidebar's. The Menu places an upward list MENU_GAP
-  // above the rect it is handed, so the rect's top is set to land there.
+  // Opened upward from the cell, the list is the profile panel: its left edge
+  // the trigger's (the trigger spans the cell, so the column's), its foot on
+  // the cell's top edge. The Menu places an upward list MENU_GAP above the
+  // rect it is handed, so the rect's top is set to land there.
   const panelAnchorRect = useCallback((): DOMRect | null => {
     const el = triggerRef.current;
     if (el === null) return null;
     const r = el.getBoundingClientRect();
     const left = r.left + PANEL_INSET_X;
-    const top = r.bottom - PANEL_FOOT_GAP + MENU_GAP;
+    const top = r.top + MENU_GAP;
     const width = Math.max(0, r.width - PANEL_INSET_X);
     const rect = { x: left, y: top, left, top, width, height: 0, right: left + width, bottom: top };
     return { ...rect, toJSON: () => rect };
   }, []);
 
-  const trigger = (
+  const button = (
     <button
       ref={triggerRef}
       type="button"
       aria-haspopup="menu"
       aria-expanded={open}
-      aria-label={`${accountName}, ${runtime.label}. Open menu`}
-      // The collapsed rail renders no subtitle, so the tooltip is the only
-      // carrier of the reason there: it speaks the sentence, not the word.
-      title={sidebarOpen ? undefined : runtime.sentence}
+      aria-label={triggerName}
+      aria-describedby={descriptionId}
       onClick={() => open ? closeMenu() : setMenuPhase("open")}
       className="vex-prof"
       data-open={sidebarOpen || undefined}
     >
-      {/* The vx in its box; a closed rail shows the box alone. */}
-      <span aria-hidden className="vex-prof__av">
-        <VexMark size={14} />
+      {/* The runtime's state, the key's description. */}
+      <span id={descriptionId} hidden>
+        {`Runtime: ${runtime.label}`}
       </span>
+      {/* The person's disc; the closed rail shows the disc alone. */}
+      <AccountDisc />
       {sidebarOpen ? (
         <>
           <span className="vex-prof__name">
-            {nameLine.asksToPersonalize ? (
-              // The gentle ask: regular weight, so it never reads as the
-              // confident name it is standing in for.
-              <span className="vex-prof__n vex-prof__n--ask">{nameLine.text}</span>
-            ) : (
-              <span className="vex-prof__n">{nameLine.text}</span>
-            )}
-            {/* The hallmark shows ONLY while the runtime is verifiably
-              * healthy, on one line. Any other state speaks its sentence and
-              * may take two lines: a clipped cause is the defect again. */}
-            <span className={cn("vex-prof__s", runtime.live && "vex-prof__s--live")}>
-              {runtime.sentence}
+            <span className="vex-prof__n">{nameLine.text}</span>
+            {/* "Account and settings" on one line; a trouble's sentence may
+              * take two: a clipped cause is the defect again. */}
+            <span
+              className={cn("vex-prof__s", cellLine === ACCOUNT_CELL_LINE && "vex-prof__s--line")}
+            >
+              {cellLine}
             </span>
           </span>
-          <LineChevronsUpDown className="vex-profile-chevron vex-prof__chev" />
+          <LineChevronUp className="vex-profile-chevron vex-prof__chev" />
         </>
       ) : null}
     </button>
+  );
+  // On the rail the shared tooltip carries what the cell would show: the
+  // name while all is well, the trouble's sentence otherwise (the rail draws
+  // no line under a name, so a failure never hides there). It stays down
+  // while the menu is open.
+  const trigger = sidebarOpen ? (
+    button
+  ) : (
+    <Tooltip label={cellLine === ACCOUNT_CELL_LINE ? accountName : cellLine} side="right" disabled={open}>
+      {button}
+    </Tooltip>
   );
 
   return (
@@ -431,22 +492,20 @@ interface NameLineInput {
 }
 
 /**
- * Name-line derivation. Deliberately fails closed to the stable "Vex"
- * fallback for every non-success state (loading, IPC error, or a resolved
- * `Result.ok === false`) so the personalize ask never flashes before the
- * profile has actually loaded.
+ * Name-line derivation: the person's own name, or H3's "You" (Appendix A.2)
+ * before they set one. Every non-success state (loading, IPC error, or a
+ * resolved `Result.ok === false`) also reads "You" and never asks, so the
+ * menu's personalize mark never flashes before the profile has loaded. A name
+ * that is only spaces is no name.
  */
 function getNameLine({ loading, error, result }: NameLineInput): {
   readonly asksToPersonalize: boolean;
   readonly text: string;
 } {
   if (loading || error || result === undefined || !result.ok) {
-    return { asksToPersonalize: false, text: "Vex" };
+    return { asksToPersonalize: false, text: ACCOUNT_CELL_NAME };
   }
-  if (result.data.displayName === null) {
-    // Test-pinned copy: VexSetupDialog's matching field label reuses the
-    // same literal for its "What should Vex call you?" input.
-    return { asksToPersonalize: true, text: "What should Vex call you?" };
-  }
-  return { asksToPersonalize: false, text: result.data.displayName };
+  const name = result.data.displayName?.trim() ?? "";
+  if (name === "") return { asksToPersonalize: true, text: ACCOUNT_CELL_NAME };
+  return { asksToPersonalize: false, text: name };
 }

@@ -29,6 +29,7 @@
 
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
+import type { StateSquareState } from "../../components/ui/state-square.js";
 import type { SwatchState } from "../../components/ui/swatch.js";
 import type { RuntimeMode } from "../../stores/uiStore/runtime-mode.js";
 import type { TurnIslandState } from "../appShell/TurnIsland/islandTurnState.js";
@@ -97,6 +98,31 @@ export const VEX_STATE_FILL: Readonly<Record<VexState, VexFill>> = {
   waking: "ongoing",
 };
 
+/**
+ * HER STATE'S SQUARE (docs/design/H3-DESKTOP.md sections 1.6 and 2.2; VEX
+ * Cloud's `MOOD_STATE`, `components/vex/vex-mood.ts`): the H3 state square
+ * (`StateSquare`) every place that says her state draws beside the word, the
+ * Vex key, its waiting count and the console line, so they can never
+ * disagree. Ready and Listening the empty frame; a turn in flight the running
+ * square, which blinks; Waiting for approval the target; Done the empty frame
+ * too, a settled turn whatever its outcome, never the green of Filled;
+ * Concerned the framed hatch; Error the cross; Sleeping the dotted frame.
+ * Waking up is desktop's own state (Cloud's waking says Ready): the services
+ * are starting, so it takes the running square.
+ */
+export const VEX_STATE_SQUARE: Readonly<Record<VexState, StateSquareState>> = {
+  ready: "idle",
+  listening: "idle",
+  thinking: "ongoing",
+  working: "ongoing",
+  awaiting: "warning",
+  done: "idle",
+  concerned: "concerned",
+  error: "error",
+  sleeping: "paused",
+  waking: "ongoing",
+};
+
 /** What the state is about: the open chat, the mission session or the project. */
 export type VexScope = "This chat:" | "This mission:" | "This project:";
 
@@ -121,6 +147,16 @@ export function vexWordOf(
 ): string {
   if (state === "sleeping" && options.locked === true) return "Sleeping · Locked";
   return VEX_STATE_WORD[state];
+}
+
+/**
+ * The short word where the room is narrow (VEX Cloud's `short`, the H3
+ * mockup's `.vk-short`: the Vex key under 1280, docs/design/H3-DESKTOP.md
+ * section 1.6): the chat row's own word for a decision waiting, "Waiting".
+ * Every other state keeps its word, already short.
+ */
+export function vexShortWordOf(state: VexState, word: string): string {
+  return state === "awaiting" ? "Waiting" : word;
 }
 
 /** What the live turn is doing, in the two states the fill distinguishes. */

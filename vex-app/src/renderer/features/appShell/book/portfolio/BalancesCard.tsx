@@ -23,6 +23,10 @@
  * "View all assets" opens the All assets page carrying the SAME scope, so the
  * register is never wider than the table that led to it; a single wallet has
  * no register of its own, so under that scope the link is not offered.
+ *
+ * A failed refresh keeps the rows already drawn (`useKeptPageScopePortfolio`):
+ * the page's top says the read failed and offers Retry for the whole page,
+ * since both draw the one read (H3-DESKTOP section 1.9).
  */
 
 import type { JSX } from "react";
@@ -39,8 +43,9 @@ import {
   originOf,
 } from "./PortfolioCard.js";
 import { BalancesTable } from "./BalancesTable.js";
+import { CoverRows } from "../../screens/PageLoading.js";
 import {
-  usePageScopePortfolio,
+  useKeptPageScopePortfolio,
   type PortfolioPageScope,
 } from "./portfolio-page-scope.js";
 import { filterDustTokens, sortTokensByUsdDesc } from "./TokenHoldingRow.js";
@@ -54,11 +59,10 @@ export function BalancesCard({
   /** The page scope - never session or project state read inside. */
   readonly scope: PortfolioPageScope;
 }): JSX.Element {
-  const query = usePageScopePortfolio(scope);
+  const read = useKeptPageScopePortfolio(scope);
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
-  const result = query.data;
-  const portfolio = result?.ok ? result.data : null;
+  const portfolio = read.portfolio;
   // Dust filter runs BEFORE the cut - see the module doc.
   const top =
     portfolio !== null
@@ -85,9 +89,10 @@ export function BalancesCard({
         ) : null
       }
     >
-      {query.isLoading ? (
-        <CardStateNote tone="loading">Loading…</CardStateNote>
-      ) : (result !== undefined && !result.ok) || query.isError ? (
+      {read.loading ? (
+        // Decoration under the page's one loading status (PositionBlock's).
+        <CoverRows rows={3} />
+      ) : portfolio === null && read.failed ? (
         <CardStateNote tone="warn">Couldn&apos;t load your balances.</CardStateNote>
       ) : onlyDust ? (
         <CardStateNote>No priced balances.</CardStateNote>

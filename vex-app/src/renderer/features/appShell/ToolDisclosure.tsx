@@ -1,17 +1,15 @@
 /**
  * Collapsible tool disclosure - kept for ORPHAN `tool_result` rows whose call
  * never paired inside the same tool run (S5 step rows own everything else).
- * Collapsed by default: a step row with the raw label and the chevron;
- * expanding reveals the body in the paper 2 well (docs/design/R3-MINIMAL.md
- * section 6). Presentational, local state only. CSP-safe - no inline style,
+ * Collapsed by default: a step row of the steps' frame with the raw label and
+ * the chevron at the right; expanding reveals the body in the cell well
+ * (docs/design/H3-DESKTOP.md section 1.7). Presentational, local state only. CSP-safe - no inline style,
  * no HTML sink (body is a React text node); the aria contract is unchanged.
  */
 
 import { useId, useRef, useState, type JSX } from "react";
-import {
-  LineChevronDown,
-  LineChevronRight,
-} from "../../components/icons/line/index.js";
+import { LineChevronDown } from "../../components/icons/line/index.js";
+import { TraceKind } from "./SessionTranscript/TurnTrace.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 
 export function ToolDisclosure({
@@ -37,16 +35,19 @@ export function ToolDisclosure({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={bodyId}
-          className="vex-step__key"
+          className="vex-step__key vex-step__grid"
         >
           <span aria-hidden className="vex-step__fill" />
+          <TraceKind kind="tool" />
           {/* The raw tool id: a technical string, so the code face. */}
-          <span className="vex-step__title font-code text-[13px]">
-            {label}
+          <span className="vex-step__text">
+            <span className="vex-step__title font-code text-[13px]">
+              {label}
+            </span>
           </span>
-          <span aria-hidden className="vex-step__spacer" />
+          <span aria-hidden className="vex-step__end" />
           <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronDown size={14} /> : <LineChevronRight size={14} />}
+            <LineChevronDown size={14} />
           </span>
         </button>
       </div>

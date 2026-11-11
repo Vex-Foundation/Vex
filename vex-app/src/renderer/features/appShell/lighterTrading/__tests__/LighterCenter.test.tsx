@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
-import { DEFAULT_LIGHTER_LAYOUT, LIGHTER_BOOK_COLUMN_MIN, LIGHTER_STACK_BELOW } from "../desk-preferences.js";
+import { DEFAULT_LIGHTER_LAYOUT, LIGHTER_BOTTOM_MIN, LIGHTER_STACK_BELOW, deskBookHeight } from "../desk-preferences.js";
 
 // The always-mounted account-setup modal reads `useQueryClient()` even while
 // closed (see LighterAccountSetupModal.js), so every render needs a provider
@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({ useLighterDesk: vi.fn() }));
 vi.mock("../useLighterDesk.js", () => ({ useLighterDesk: mocks.useLighterDesk }));
 vi.mock("../MarketBar.js", () => ({
   MarketBar: () => <div data-testid="market-bar" />,
+  MarketSelectKey: ({ onOpen }: { onOpen: () => void }) => (
+    <button type="button" data-testid="zen-market-key" onClick={onOpen} />
+  ),
+  MarketLastPrice: () => <span data-testid="zen-last-price" />,
   streamStatusLabel: (status: string) => status,
 }));
 vi.mock("../MarketChart.js", () => ({
@@ -178,56 +182,43 @@ describe("LighterCenter", () => {
     expect(screen.getByRole("status").textContent).toContain("Choosing a market…");
   });
 
-  it("lays out chart, market depth and ticket with four named splitters on a wide desk", () => {
+  it("stands the chart over the book beside the ticket, with the dock's one splitter (H3-DESKTOP.md section 4.9)", () => {
     mocks.useLighterDesk.mockReturnValue(desk());
-    renderCenter(<LighterCenter />);
+    const { container } = renderCenter(<LighterCenter />);
     expect(screen.getByTestId("market-chart")).toBeTruthy();
     expect(screen.getByTestId("trade-ticket")).toBeTruthy();
     expect(screen.getByTestId("order-book")).toBeTruthy();
     expect(screen.getByTestId("trades")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Order ticket" })).toBeTruthy();
+    // The ticket's width is the sheet's fixed column; only the dock resizes.
     expect(screen.getAllByRole("separator").map((node) => node.getAttribute("aria-label"))).toEqual([
-      "Resize the order book column",
-      "Resize the trades panel",
-      "Resize the order ticket column",
       "Resize the account dock",
     ]);
+    const upper = container.querySelector<HTMLElement>(".lit-desk-upper");
+    expect(upper?.style.gridTemplateColumns).toBe("");
+    // The chart over the book, the book as high as its rows (jsdom's window
+    // is 768 high: four levels a side).
+    const main = container.querySelector<HTMLElement>(".lit-desk-main");
+    expect(main?.parentElement).toBe(upper);
+    expect(main?.style.gridTemplateRows).toBe(`minmax(0, 1fr) ${String(deskBookHeight(4))}px`);
+    expect(container.querySelector(".lit-book-column")?.getAttribute("data-book-rows")).toBe("4");
     expect(screen.getByRole("group", { name: "Chart interval" }).querySelectorAll("button")).toHaveLength(8);
   });
 
-  it("keeps the ticket at full height and tabs market depth below the chart on a compact desk", () => {
-    bodyWidth = LIGHTER_STACK_BELOW - 1;
-    mocks.useLighterDesk.mockReturnValue(desk());
-    const { container } = renderCenter(<LighterCenter />);
-    const upper = container.querySelector<HTMLElement>(".lit-desk-upper[data-stacked]");
-    expect(upper).not.toBeNull();
-    expect(upper?.style.gridTemplateRows).toBe("minmax(0, 1fr) 240px");
-    expect(screen.getByTestId("order-book").getAttribute("data-view")).toBe("split");
-    expect(screen.getAllByRole("separator").map((node) => node.getAttribute("aria-label"))).toEqual([
-      "Resize chart and market depth",
-      "Resize the order ticket column",
-      "Resize the account dock",
-    ]);
-    const column = container.querySelector(".lit-book-column");
-    expect(column?.getAttribute("data-tab")).toBe("book");
-    const tradesTab = screen.getAllByRole("tab", { name: "Trades" })[0];
-    if (!tradesTab) throw new Error("trades tab missing");
-    fireEvent.click(tradesTab);
-    expect(column?.getAttribute("data-tab")).toBe("trades");
-  });
-
-  it("resizes compact market depth without changing ticket or wide-layout proportions", () => {
-    bodyWidth = 900;
-    mocks.useLighterDesk.mockReturnValue(desk());
-    renderCenter(<LighterCenter />);
-    const seam = screen.getByRole("separator", { name: "Resize chart and market depth" });
-    fireEvent.keyDown(seam, { key: "ArrowUp" });
-    const saved = useLighterAnalysisStore.getState().desk.layout;
-    expect(saved.compactBookShare).toBeCloseTo(216 / 719);
-    expect(saved.ticketShare).toBe(DEFAULT_LIGHTER_LAYOUT.ticketShare);
-    expect(saved.tradesShare).toBe(DEFAULT_LIGHTER_LAYOUT.tradesShare);
-    fireEvent.doubleClick(seam);
-    expect(useLighterAnalysisStore.getState().desk.layout.compactBookShare).toBeCloseTo(240 / 719);
+  it("keeps bids beside asks under the chart at every width, with Trades as a tab", () => {
+    for (const width of [900, LIGHTER_STACK_BELOW + 200]) {
+      bodyWidth = width;
+      mocks.useLighterDesk.mockReturnValue(desk());
+      const { container, unmount } = renderCenter(<LighterCenter />);
+      expect(screen.getByTestId("order-book").getAttribute("data-view")).toBe("split");
+      const column = container.querySelector(".lit-book-column");
+      expect(column?.getAttribute("data-tab")).toBe("book");
+      const tradesTab = screen.getAllByRole("tab", { name: "Trades" })[0];
+      if (!tradesTab) throw new Error("trades tab missing");
+      fireEvent.click(tradesTab);
+      expect(column?.getAttribute("data-tab")).toBe("trades");
+      unmount();
+    }
   });
 
   it("shows the desk's own cards in the ticket's place and leaves the agent's to the chat rail", () => {
@@ -247,7 +238,7 @@ describe("LighterCenter", () => {
     expect(screen.getAllByTestId("approval-card").map((node) => node.textContent)).toEqual(["a1", "a3"]);
   });
 
-  it("gives the review a usable ticket width while it stands in the ticket's place, then returns to the saved share", () => {
+  it("stands the review in the ticket's own column while it shows, and returns the ticket after", () => {
     // The real ticket keeps a slot beside its form; the mocked one does not,
     // so the slot is provided here, as the ticket would.
     const slot = document.createElement("div");
@@ -267,15 +258,14 @@ describe("LighterCenter", () => {
         ),
       });
       const upper = (): HTMLElement | null => container.querySelector<HTMLElement>(".lit-desk-upper");
-      // The 1200 wide desk resolves the ticket to 300 (its 0.25 share); the
-      // review takes the mockup's 338 beside the 240 book column.
+      // The review takes the ticket's 340 column (lighter-desk.css): nothing
+      // about the columns changes while it shows, so the card's box is the
+      // ticket's.
       expect(upper()?.hasAttribute("data-ticket-review")).toBe(true);
-      expect(upper()?.style.gridTemplateColumns).toBe("minmax(0, 1fr) 240px 338px");
+      expect(upper()?.style.gridTemplateColumns).toBe("");
       mocks.useLighterDesk.mockReturnValue(desk({ approvals: [] }));
       rerender(<LighterCenter />);
       expect(upper()?.hasAttribute("data-ticket-review")).toBe(false);
-      expect(upper()?.style.gridTemplateColumns).toBe("minmax(0, 1fr) 240px 300px");
-      // The saved share is never written by the review.
       expect(useLighterAnalysisStore.getState().desk.layout.ticketShare).toBe(
         DEFAULT_LIGHTER_LAYOUT.ticketShare,
       );
@@ -313,11 +303,79 @@ describe("LighterCenter", () => {
     );
 
     const root = container.querySelector('[data-vex-area="lighter-desk"]');
-    expect(root?.getAttribute("data-chart-expanded")).toBe("true");
     expect(root?.getAttribute("data-zen-mode")).toBe("true");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(openZenAssistant).toHaveBeenCalledTimes(1);
     expect(current.askVex).toHaveBeenCalledWith(false);
+  });
+
+  it("makes the chart's toolbar Zen's row: the market and its price, the intervals, Ask Vex, the fold key, Exit Zen", () => {
+    // docs/design/H3-DESKTOP.md section 4.9, the approved `lighter-zen` plate.
+    mocks.useLighterDesk.mockReturnValue(desk());
+    const zen = {
+      controlsOpen: false,
+      assistantOpen: false,
+      onToggleControls: vi.fn(),
+      onToggleAssistant: vi.fn(),
+      onExit: vi.fn(),
+    };
+    const { container, rerender } = renderCenter(<LighterCenter zenMode zenControls={zen} />);
+    const root = container.querySelector('[data-vex-area="lighter-desk"]');
+    // Zen opens folded, as before H3.
+    expect(root?.getAttribute("data-zen-controls")).toBe("closed");
+    const chart = screen.getByTestId("market-chart");
+    const order = Array.from(chart.querySelectorAll("[data-testid], [aria-label]")).map(
+      (node) => node.getAttribute("data-testid") ?? node.getAttribute("aria-label"),
+    );
+    expect(order.slice(0, 3)).toEqual(["zen-market-key", "zen-last-price", "Chart interval"]);
+    expect(order.slice(-3)).toEqual(["Ask Vex", "Show Zen controls", "Exit Zen Mode"]);
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    expect(zen.onToggleControls).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Exit Zen Mode" }));
+    expect(zen.onExit).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <LighterCenter zenMode zenControls={{ ...zen, controlsOpen: true, assistantOpen: true }} />
+      </QueryClientProvider>,
+    );
+    const shown = container.querySelector('[data-vex-area="lighter-desk"]');
+    expect(shown?.getAttribute("data-zen-controls")).toBe("open");
+    expect(screen.getByRole("button", { name: "Hide Zen controls" }).getAttribute("aria-expanded")).toBe("true");
+    const ask = screen.getByRole("button", { name: "Close Vex" });
+    expect(ask.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(ask);
+    expect(zen.onToggleAssistant).toHaveBeenCalledTimes(1);
+    // The market key opens the picker, which hangs from Zen's row.
+    fireEvent.click(screen.getByTestId("zen-market-key"));
+    expect(mocks.useLighterDesk.mock.results.at(-1)?.value.setMarketPickerOpen).toHaveBeenCalled();
+  });
+
+  it("off Zen draws none of Zen's row", () => {
+    mocks.useLighterDesk.mockReturnValue(desk());
+    const { container } = renderCenter(<LighterCenter />);
+    expect(container.querySelector('[data-vex-area="lighter-desk"]')?.hasAttribute("data-zen-controls")).toBe(false);
+    expect(screen.queryByTestId("zen-market-key")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Exit Zen Mode" })).toBeNull();
+  });
+
+  it("closes the market picker first on Escape in Zen, so Zen's own key skips the press", () => {
+    const current = desk({ marketPickerOpen: true });
+    mocks.useLighterDesk.mockReturnValue(current);
+    renderCenter(<LighterCenter zenMode />);
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(current.setMarketPickerOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves Escape alone on the desk while the picker is open: the picker keeps its own", () => {
+    const current = desk({ marketPickerOpen: true });
+    mocks.useLighterDesk.mockReturnValue(current);
+    renderCenter(<LighterCenter />);
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("keeps environment setup visible above the Zen chart", () => {
@@ -337,19 +395,18 @@ describe("LighterCenter", () => {
     expect(dialog?.closest('[data-vex-area="lighter-desk"]')).not.toBeNull();
   });
 
-  it("persists splitter steps and dock collapse through the desk preferences", () => {
+  it("persists the dock's splitter steps and its collapse through the desk preferences", () => {
     mocks.useLighterDesk.mockReturnValue(desk());
     renderCenter(<LighterCenter />);
-    const column = screen.getByRole("separator", { name: "Resize the order book column" });
-    expect(column.getAttribute("aria-valuenow")).toBe(String(Math.round(1200 * DEFAULT_LIGHTER_LAYOUT.bookShare)));
-    fireEvent.keyDown(column, { key: "Home" });
-    expect(column.getAttribute("aria-valuenow")).toBe(String(LIGHTER_BOOK_COLUMN_MIN));
-    // The pixel step persists as a share of the measured desk width.
-    expect(useLighterAnalysisStore.getState().desk.layout.bookShare).toBeCloseTo(LIGHTER_BOOK_COLUMN_MIN / 1200);
+    const seam = screen.getByRole("separator", { name: "Resize the account dock" });
+    fireEvent.keyDown(seam, { key: "Home" });
+    expect(seam.getAttribute("aria-valuenow")).toBe(String(LIGHTER_BOTTOM_MIN));
+    // The pixel step persists as a share of the measured desk height.
+    expect(useLighterAnalysisStore.getState().desk.layout.bottomShare).toBeCloseTo(LIGHTER_BOTTOM_MIN / 900);
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse dock" }));
     expect(screen.getByRole("button", { name: "Expand dock" })).toBeTruthy();
     expect(screen.queryByRole("separator", { name: "Resize the account dock" })).toBeNull();
-    expect(useLighterAnalysisStore.getState().desk.layout).toMatchObject({ bookShare: LIGHTER_BOOK_COLUMN_MIN / 1200, bottomCollapsed: true });
+    expect(useLighterAnalysisStore.getState().desk.layout).toMatchObject({ bottomShare: LIGHTER_BOTTOM_MIN / 900, bottomCollapsed: true });
   });
 });

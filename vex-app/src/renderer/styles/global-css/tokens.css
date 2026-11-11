@@ -1,11 +1,11 @@
-/* VEX design tokens: R3 Minimal on the V10 colours, the three-tier system
- * (docs/design/R3-MINIMAL.md section 1).
+/* VEX design tokens: H3, the three-tier system (docs/design/H3-DESKTOP.md
+ * section 2; R3-MINIMAL.md section 1 before it).
  *
- *   static  -> @theme primitives (paper, ink, the one blue, Night Ledger).
+ *   static  -> @theme primitives (the H3 set, the candle pair, white).
  *              NEVER consumed by components; the design guard bans raw hexes
  *              in TSX.
- *   alias   -> semantic CSS vars on :root (chronos = default) with a
- *              [data-vex-theme="celeris"] override block. Named --vex-alias-*.
+ *   alias   -> semantic CSS vars on :root: ONE room, no theme override
+ *              block (H3 is dark only). Named --vex-alias-*.
  *              The NAMES are the components' contract and outlive every
  *              repaint; only the values below change between design rounds.
  *   utility -> `@theme inline` projects aliases into Tailwind utilities.
@@ -20,19 +20,21 @@
  *   --vex-alias-rule*, -counter, -title, -focus, -field, -label-box,
  *   -on-photo, -sky-rule      -> the V10 names of the same projections
  *
- * THE TWO ROOMS. Celeris (light) is the website's cool paper #f3f4f7 with
- * ink #0a0d18 and the one blue #0000c0; white #ffffff is only ever a field
- * (inputs, the composer). Chronos (dark) is Night Ledger: the darkest tones of
- * the sepia prints as paper (#1b1412), the website paper as ink, and the blue
- * lifted to a periwinkle of the same hue (#a3abff) wherever it must be read;
- * the true #0000c0 stays a FILL behind white type.
+ * ONE ROOM. H3 is dark only (the H3 revamp plan, decision 6, 2026-11-03):
+ * Celeris, the light room, retired with the "system" choice, so the alias tier
+ * is the :root block alone and nothing re-points it. `data-vex-theme` still
+ * reads "chronos" on documentElement (uiStore/theme.ts), so every reader
+ * keyed on the attribute keeps working. Every role reads the H3 primitives
+ * below; R3's Night Ledger (the sepia night paper, its periwinkle and the
+ * #0000c0 fill) retired with the last role that read it.
  *
- * STATUS IS SHOWN BY FILL, NEVER BY COLOUR. Success and error are ink,
- * attention is the one blue; a swatch's pattern (solid, dot screen, hatch,
- * target, outline) carries the state. Two hue pairs sit outside the blue and
- * the ink ramp, both sanctioned exceptions and neither ever a status: the
- * candlestick pair, inside the Lighter chart only, and the trading pair, on
- * trading values only (P&L, Long and Short, bids and asks).
+ * STATUS IS A SQUARE BESIDE A WORD, AND EVERY STATUS HAS ITS OWN DRAWING
+ * (docs/design/H3-DESKTOP.md section 2.2; PD-03): solid, blink, target,
+ * cross, frame, dotted frame and hatch, so a colour never stands alone. The
+ * word is ink, a failure's in the refusal ink. Gains and losses in trading
+ * values take their own green and red as TYPE (the sheet's --live and
+ * --err), lighter than the squares and never a status. The candlestick pair
+ * stays inside the Lighter chart only.
  *
  * SHAPE. Radius 0 everywhere (base.css enforces it for every element), no
  * shadow, no blur, no glass, no gradient ramp. */
@@ -44,45 +46,110 @@
   --color-white: #ffffff;
   --color-black: #000000;
 
-  /* Static tier - paper, ink and the one blue (celeris). Ink ramp measured on
-   * paper: ink 17.62:1, ink-2 9.59:1, ink-3 5.97:1. */
-  --color-paper: #f3f4f7;
-  --color-paper-2: #e8eaf2;
-  --color-ink: #0a0d18;
-  --color-ink-2: #3a3e52;
-  /* The website's "muted": tertiary text and group counts. */
-  --color-ink-3: #565c78;
-  /* Logo blue: every blue word, line, button and chip text (10.84:1 on
-   * paper). */
-  --color-blue: #0000c0;
-  /* Tweet blue: counters, figures and the primary hover. Never body text. */
-  --color-blue-hi: #0000ff;
-
-  /* Static tier - Night Ledger (chronos). Measured on night: paper 16.53:1,
-   * type-2 9.39:1, type-3 6.18:1, peri 8.50:1, peri-hi 4.59:1. */
-  --color-night-0: #150f0d;
-  --color-night: #1b1412;
-  --color-night-1: #221a17;
-  --color-night-2: #2a201c;
-  --color-type-2: #bbbabb;
-  --color-type-3: #989697;
-  --color-peri: #a3abff;
-  --color-peri-hi: #6470ff;
-
   /* Static tier - the one sanctioned exception to status by fill:
    * candlesticks and their volume bars, inside the Lighter chart only. */
   --color-candle-up: #22c55e;
   --color-candle-down: #ef4444;
 
-  /* Static tier - the second sanctioned exception: the trading pair, on
-   * trading values only, never a status (docs/design/R3-MINIMAL.md section
-   * 1). Tuned from the candle pair: up 5.20:1 and down 5.27:1 on paper; the
-   * night pair 9.75:1 and 7.25:1 on night. Components read the
-   * --vex-alias-trade-* aliases below, never these. */
-  --color-up: #10763a;
-  --color-down: #c2272e;
-  --color-up-night: #4cd685;
-  --color-down-night: #ff7b7b;
+  /* Static tier - H3 (docs/design/H3-DESKTOP.md section 2.1; the VEX Cloud
+   * round 3 mockup sheet, app variant H3, 2026-11-03): a near-black ground,
+   * square cells told apart by 1px white rules, one saturated blue for
+   * primary keys, status as a small coloured square beside an ink word, and
+   * gains and losses in green and red type. Declared here first and consumed
+   * by the alias tier, which reads nothing else for colour.
+   *
+   * TWO SOURCES, as the contract's table gives them. The review sheet's own
+   * tokens (stated in oklch; each primitive below is its sRGB hex, with the
+   * sheet's form beside it), and, where the app captures differ from the
+   * sheet or show a fill the sheet has no token for, the capture's measured
+   * value. Where the two disagree the captures win:
+   *   - THE GROUND is the sheet's --panel, not its --page: the captures read
+   *     #000002 to #020202 in every column, level with --panel (8.5%) and a
+   *     shade under --page (9%). So there is one ground and no page step.
+   *   - VEX Cloud's built tokens (apps/web/src/styles.css, W3 to W5) settle
+   *     what the captures could only measure: the page (#020205) under the
+   *     columns, the side columns' rail (#010101), the card (#030405), the
+   *     open ground (#0C0D0F), the chosen row (#1A1B1C fading out) and the
+   *     two bubbles, white at 6% (Vex) and 13% (the person). Raised 2
+   *     (#101214) and the solid bubble (#212325), measured before Cloud
+   *     built them, retire onto those values.
+   *   - THE STATUS GREEN AND RED are measured: the squares and the FILLED
+   *     stamp are darker than the sheet's --live and --err, which are TYPE
+   *     colours, for gains and losses.
+   *
+   * HEX, NOT oklch(). Everything that reads this tier reads hex: the WCAG
+   * measurements in `status-contrast.test.ts`, the main window's
+   * `backgroundColor` (Electron takes a hex) and the Windows caption overlay.
+   * `theme-matrix.test.ts` converts the sheet's oklch itself and holds each
+   * sheet-sourced hex to it. Two sheet values fall outside sRGB, the blue
+   * hover and the loss red; the contract takes their channel-clipped sRGB
+   * (#1557FF, #FF887C), and so does this tier.
+   *
+   * Measured on the ground (#010203): ink 19.03:1, ink-2 11.14:1, muted
+   * 5.69:1, gain 11.68:1, loss 8.96:1. The blue measures 2.42:1 there, so it
+   * is a FILL (white on it 8.59:1, on its hover 5.47:1) and never type on
+   * the ground. White on status green 5.11:1, on status red 5.91:1; the two
+   * squares read 4.06:1 and 3.51:1 on the ground, above the 3:1 for a mark
+   * beside a word. */
+  /* The ground: the sheet's --panel, oklch(8.5% 0.008 264): the chat
+   * column, the window's first paint and every field. */
+  --color-h3-ground: #010203;
+  /* VEX Cloud's --vx-page, oklch(9% 0.012 264): the page under the columns
+   * (html, body, #root), the frame's own ground. */
+  --color-h3-page: #020205;
+  /* VEX Cloud's --vx-rail, oklch(6% 0.006 264): the side columns, the chats
+   * column (and its 76 rail) and Vex's column. */
+  --color-h3-rail: #010101;
+  --color-h3-cell: #040406; /* oklch(11% 0.006 264) */
+  --color-h3-raised: #070709; /* oklch(13% 0.004 264) */
+  /* VEX Cloud's card ground, oklch(10.5% 0.006 264): menus, dialogs and the
+   * ground a floating failure lays its red over (Cloud's --vx-card). */
+  --color-h3-card: #030405;
+  /* VEX Cloud's tooltip plate, oklch(20% 0.004 264), the top of the ground
+   * ladder: tooltips and toasts, ink on it (Cloud's --vx-tooltip). */
+  --color-h3-tooltip: #151618;
+  /* VEX Cloud's open ground, oklch(16% 0.004 264) (Cloud's --vx-cell-open):
+   * the Vex key's portrait cell while her section is open, under the
+   * portrait glyph. */
+  --color-h3-cell-open: #0c0d0f;
+  /* VEX Cloud's chosen row, oklch(22% 0.004 264) (its --vx-chosen-row-rail):
+   * where a chosen or hovered row's fill starts, at the row's left edge; it
+   * fades to transparent at its right. */
+  --color-h3-row: #1a1b1c;
+  --color-h3-ink: #f3f5f9; /* oklch(97% 0.005 264) */
+  --color-h3-ink-2: #babec6; /* oklch(80% 0.012 264) */
+  --color-h3-muted: #808693; /* oklch(62% 0.02 264) */
+  /* oklch(45.2% 0.313 264.1): the sheet's spelling of sRGB's own pure blue. */
+  --color-h3-blue: #0000ff;
+  /* oklch(56% 0.28 264), outside sRGB: channel-clipped. */
+  --color-h3-blue-hover: #1557ff;
+  /* Gains in trading values, as type: VEX Cloud's built --vx-pnl-up and
+   * --vx-trade-up, its --vx-live-bubble-text, oklch(80% 0.12 150). */
+  --color-h3-gain: #83d494;
+  /* Losses in trading values, as type: VEX Cloud's built --vx-pnl-down and
+   * --vx-trade-down, its --vx-err-bubble-text, oklch(76% 0.15 27), outside
+   * sRGB: channel-clipped. */
+  --color-h3-loss: #ff887c;
+  /* Measured, no sheet token (about oklch 52% 0.13 150): the status square
+   * of FILLED and the receipt's stamp. */
+  --color-h3-status-green: #1d7e3f;
+  /* Measured, no sheet token (about oklch 53% 0.19 27): the status square of
+   * DID NOT EXECUTE. */
+  --color-h3-status-red: #c22226;
+  /* VEX Cloud's built tokens (apps/web/src/styles.css, read by its
+   * styles/status.css), where they win over the mockup:
+   *   - the HUD, --vx-hud, oklch(94% 0 0): the running square, which blinks
+   *     (PD-06). Never green: green is Filled;
+   *   - the REFUSAL INK, --vx-err-text, oklch(74% 0.17 27), outside sRGB:
+   *     channel-clipped. The failed cross, a failed step's word and the turn
+   *     error row's title. A primitive of its own, apart from the loss type
+   *     colour, so no status alias reads a trading colour. */
+  --color-h3-hud: #ebebeb;
+  --color-h3-err-text: #ff7a6e;
+  /* VEX Cloud's header ground without its alpha, oklch(7% 0.01 264)
+   * (`--vx-header-solid`, its DG-0 / EC-02): an opaque cell over Kimm's
+   * ground, her section's corner key, which wears no blur. */
+  --color-h3-header-solid: #010102;
 
   /* Shape. Tailwind's default radius, shadow and blur scales are killed so a
    * stray `rounded-xl`, `shadow-lg` or `backdrop-blur-md` compiles to nothing.
@@ -102,204 +169,352 @@
   --blur-*: initial;
 
   /* Typography - self-hosted WOFF2 (CSP-clean), faces in fonts.css
-   * (docs/design/R3-MINIMAL.md section 1).
-   *   --font-sans / --font-display = Instrument Sans (variable 400-700):
-   *     every UI word, labels and status words included, in sentence case.
-   *     Inter Tight follows it as glyph coverage only.
-   *   --font-mono  = JetBrains Mono (variable 100-800): every figure,
-   *     address, time and duration, with `.vex-num` (type.css) for
-   *     tabular figures. No pixel face.
-   *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
-   *     viewer, raw JSON. The same face as the figures, kept as its own
-   *     token so code and figures can part again without a sweep.
-   *   --font-serif = Instrument Serif: display only (the greeting 52, wake
-   *     and unlock 56). Static 400 + italic, NO weight axis.
-   * The sans stack names its metric-matched `Fallback` twin right after the
-   * web faces, so the block period lays out at the final metrics. */
+   * (docs/design/H3-DESKTOP.md section 2.3).
+   *   --font-sans / --font-display = Be Vietnam Pro (static 400 and 600,
+   *     latin and latin-ext): every word. A 500 request renders the 400 file
+   *     and a 700 the 600 file; weight synthesis is off (base.css), so
+   *     nothing is faked.
+   *   --font-mono  = Roboto Mono (static 400 and 700, latin and latin-ext): every
+   *     figure, balance, address, time and duration, with `.vex-num`
+   *     (type.css) for tabular figures, and the money card's field labels.
+   *     Every figure is 400.
+   *     Studio's terminal is set in it too, 13/20, with the bundled 700 for
+   *     its bold text (section 4.9).
+   *   --font-code  = JetBrains Mono: code - code blocks, the file viewer,
+   *     raw JSON. Code and figures parted here, as the token was kept for.
+   *   --font-serif = the sans now: H3 sets display type in Be Vietnam Pro
+   *     (docs/design/H3-DESKTOP.md section 2.3); R3's serif and its files
+   *     are retired. The name stays only so the `font-serif` utility's call
+   *     sites keep compiling, as the radius names stay at zero; the display
+   *     rules in the sheets read --font-display.
+   * The sans and the mono stacks name their metric-matched `Fallback` twins
+   * right after the web face (VEX Cloud's numbers, fonts.css), so the block
+   * period lays out at the final metrics. Be Vietnam Pro carries latin-ext
+   * and vietnamese itself, so no coverage face follows it. */
   --font-sans:
-    "Instrument Sans", "Inter Tight", "Instrument Sans Fallback",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+    "Be Vietnam Pro", "Be Vietnam Pro Fallback", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
-    "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    "Roboto Mono", "Roboto Mono Fallback", "SF Mono", Consolas,
+    "Liberation Mono", monospace;
   --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
-  /* Falls back to the platform serifs so a font-load miss still reads as a
-   * serif. */
-  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-serif: var(--font-display);
 
-  /* Caps tracking. R3 sets caps on tags only (REAL FUNDS, HIGH RISK: 11px,
-   * 600, docs/design/R3-MINIMAL.md section 1); labels and status words are
-   * sentence case with no tracking. These steps stay for the caps call sites
-   * that each screen converts in its own pass. */
-  --tracking-eyebrow: 0.18em;
-  --tracking-status: 0.14em;
-  --tracking-chip: 0.12em;
-  --tracking-caption: 0.06em;
-  --tracking-tape: 0.24em;
+  /* Caps tracking (docs/design/H3-DESKTOP.md section 2.3). H3 sets every
+   * label in caps at ONE tracking, the sheet's 0.08em: the label register
+   * (type.css), the tags and stamps, the card's mono field labels. R3's
+   * stepped scale (0.06 to 0.24em) collapses onto it; the old names stay so
+   * their call sites keep compiling, each the same 0.08em. */
+  --tracking-label: 0.08em;
+  --tracking-eyebrow: var(--tracking-label);
+  --tracking-status: var(--tracking-label);
+  --tracking-chip: var(--tracking-label);
+  --tracking-caption: var(--tracking-label);
+  --tracking-tape: var(--tracking-label);
+  /* VEX Cloud's roles that track apart from the label (the H3 mockup's
+   * app.css): a field row's and a check row's caps (`.fr > dt`, `.ck`)
+   * 0.06em; times and counts (`.lc-time`, `.cn-h b`, `.xc-when`) 0.04em; the
+   * trace's kind (`.rz-k`, Model / Tool / Runtime) 0.1em. */
+  --tracking-field: 0.06em;
+  --tracking-figure: 0.04em;
+  --tracking-kind: 0.1em;
 }
 
-/* Alias tier - CHRONOS (dark, Night Ledger) is the default on :root. The
- * theme attribute rides on documentElement (`data-vex-theme`, written
- * pre-paint by public/theme-boot.js and kept current by the uiStore theme
- * runtime). */
+/* Alias tier - the one room, on :root. The theme attribute still rides on
+ * documentElement (`data-vex-theme="chronos"`, written pre-paint by
+ * public/theme-boot.js and by the uiStore theme runtime), but no block keys
+ * on it any more: `theme-matrix.test.ts` refuses a theme override anywhere
+ * in the sheets. */
 :root {
-  /* Surfaces: ONE paper. Cards, rails and popovers sit on the same ground and
-   * are told apart by rules, never by a lighter step or a shadow. */
-  --vex-alias-bg-base: var(--color-night);
-  --vex-alias-bg-deep: var(--color-night-0);
-  --vex-alias-bg-layer-1: var(--color-night);
-  --vex-alias-bg-layer-2: var(--color-night);
-  /* Paper 2 (the code and signed-fields wells, the connection banner) is
-   * #221A17 at night, the field's own step (R3-MINIMAL.md section 1.1), as the
-   * transcript's wells and the token chip already paint it. */
-  --vex-alias-bg-layer-3: var(--color-night-1);
-  --vex-alias-bg-overlay: var(--color-night-1);
-  --vex-alias-bg-skeleton: rgba(243, 244, 247, 0.06);
-  --vex-alias-sidebar-fill: var(--color-night-0);
-  /* The field: inputs and the composer. The one surface that steps off the
-   * paper. */
-  --vex-alias-field: var(--color-night-1);
-  /* The two "user surfaces": the message bubble and the composer. */
-  --vex-alias-bubble: var(--color-night-2);
+  /* Surfaces (docs/design/H3-DESKTOP.md sections 2.1 and 2.4), VEX Cloud's
+   * ladder: the page (#020205) under the frame, the rail (#010101) under the
+   * side columns, and the ground (#010203) under the chat column, its cards
+   * and every field; a cell is told from its neighbour by a 1px rule, never
+   * by a shadow. The fills above the ground are Cloud's own steps, each
+   * named by what it paints:
+   *   card       #030405  menus, popovers, dialogs, the connection banner
+   *   cell       #040406  a control at rest (New chat, the model cell), the
+   *                       code and signed-fields wells
+   *   raised     #070709  a key cell (REVIEW, REJECT), a pressed segment
+   *   open       #0C0D0F  a selected tab or cell, a pressed key, the washes
+   *   plate      #151618  the tooltip, the toast, the avatar's disc
+   *   bubbles    white at 6% (Vex) and 13% (the person)
+   * The captures put the composer's field and the card's amount field on
+   * the ground itself, framed by the rule, so the field is the ground. H3
+   * recesses nothing under the ground, so the deep tier is the ground too. */
+  --vex-alias-bg-base: var(--color-h3-ground);
+  /* The page under the frame (Cloud's --vx-page): html, body and #root. */
+  --vex-alias-bg-page: var(--color-h3-page);
+  --vex-alias-bg-deep: var(--color-h3-ground);
+  --vex-alias-bg-layer-1: var(--color-h3-ground);
+  --vex-alias-bg-layer-2: var(--color-h3-ground);
+  /* The wells (code, signed fields, the connection banner): the cell step. */
+  --vex-alias-bg-layer-3: var(--color-h3-cell);
+  /* Popovers, menus, hover cards and the connection banner: Cloud's card
+   * ground (--vx-card), which its 24% rule frames over the column. */
+  --vex-alias-bg-overlay: var(--color-h3-card);
+  --vex-alias-bg-skeleton: rgba(255, 255, 255, 0.06);
+  /* The parked cover's 1px head (VEX Cloud's --vx-scan-head): the ink at
+   * 85%, on the cover's raised fill (`.vex-cover`). */
+  --vex-alias-scan-head: rgba(243, 245, 249, 0.85);
+  /* Vex's line's strip over the bars on her column's foot (VEX Cloud's
+   * --vx-strip, oklch(6% 0.01 264 / 0.82)). Cloud also blurs what is under
+   * it by 10px; desktop never blurs (no blur, no glass), so the strip is the
+   * fill alone. */
+  --vex-alias-strip: rgba(0, 1, 2, 0.82);
+  /* The bars under it (Cloud's bars canvas): white, each bar at 1.4% plus
+   * up to 55% by its level (the canvas sets the alpha, `vex-bars.ts`). */
+  --vex-alias-bars: var(--color-white);
+  /* The side columns, the chats column and Vex's (Cloud's --vx-rail). */
+  --vex-alias-sidebar-fill: var(--color-h3-rail);
+  /* The field: inputs and the composer, on the ground behind their rule. */
+  --vex-alias-field: var(--color-h3-ground);
+  /* The bubbles (Cloud's --vx-bubble-you and --vx-bubble): the person's
+   * message on white at 13%, Vex's answer and greeting on white at 6%. Ink
+   * reads 14.4:1 and 17.3:1 on them over the ground. */
+  --vex-alias-bubble: rgba(255, 255, 255, 0.13);
+  --vex-alias-bubble-vex: rgba(255, 255, 255, 0.06);
+  /* The avatar's disc under the person glyph (Cloud's --vx-avatar,
+   * oklch(20% 0.004 264)): the plate step. */
+  --vex-alias-avatar: var(--color-h3-tooltip);
+  /* The bubbles' corners (Cloud's --vx-size-bubble-radius-vex and -you):
+   * 18 round, the corner next to the speaker sharp at 4. The shape law's
+   * only CSS exceptions (base.css). */
+  --vex-radius-bubble-vex: 4px 18px 18px 18px;
+  --vex-radius-bubble-you: 18px 4px 18px 18px;
+  /* The same two corners one by one, for her answer's bubble runs. */
+  --vex-radius-bubble-corner: 18px;
+  --vex-radius-bubble-corner-speaker: 4px;
   --vex-alias-composer: var(--vex-alias-field);
+  /* The chosen row and the row under the pointer (Cloud's
+   * --vx-chosen-row-rail): its fill fades from #1A1B1C at the row's left
+   * edge to transparent at its right, over whatever column it crosses. One
+   * of H3's two gradients (the other is Kimm's ground). */
+  --vex-alias-row-selected: linear-gradient(
+    90deg,
+    var(--color-h3-row),
+    transparent
+  );
 
-  /* Rules: ALWAYS alpha so they compose over any surface. `rule` divides
-   * regions and outlines chips, `rule-quiet` divides inside a block,
-   * `rule-ink` is the 1.5px REAL FUNDS frame and the risk callout. */
-  --vex-alias-rule: rgba(243, 244, 247, 0.14);
-  --vex-alias-rule-quiet: rgba(243, 244, 247, 0.07);
-  --vex-alias-rule-ink: var(--color-paper);
+  /* Rules: ALWAYS alpha so they compose over any surface, in the sheet's
+   * white-rule idiom: `--rule`, white at 7%, divides every cell, row and
+   * region (two cells side by side draw two, which is the darker line the
+   * captures show round the suggestion grid); `--rule-chosen`, white at 24%,
+   * marks a total (above TOTAL DEBIT) and draws keycaps. `rule-ink` is the
+   * ink frame (the REAL FUNDS stamp's fill, the risk callout). */
+  --vex-alias-rule: rgba(255, 255, 255, 0.07);
+  --vex-alias-rule-quiet: rgba(255, 255, 255, 0.07);
+  --vex-alias-rule-chosen: rgba(255, 255, 255, 0.24);
+  --vex-alias-rule-ink: var(--color-h3-ink);
   --vex-alias-border-l1: var(--vex-alias-rule-quiet);
   --vex-alias-border-l2: var(--vex-alias-rule);
-  --vex-alias-border-l3: rgba(243, 244, 247, 0.22);
-  --vex-alias-border-l4: rgba(243, 244, 247, 0.32);
+  --vex-alias-border-l3: var(--vex-alias-rule-chosen);
+  --vex-alias-border-l4: var(--vex-alias-rule-chosen);
   --vex-alias-border-input: var(--vex-alias-rule);
 
-  /* Labels: solid steps of the ink ramp, never opacity-stacked. Caption is
-   * the tertiary step: V10 has no unreadable fourth tier. Dimmed is
-   * decoration and disabled marks only. */
-  --vex-alias-label-primary: var(--color-paper);
-  --vex-alias-label-secondary: var(--color-type-2);
-  --vex-alias-label-tertiary: var(--color-type-3);
-  --vex-alias-label-caption: var(--color-type-3);
-  --vex-alias-label-dimmed: rgba(243, 244, 247, 0.18);
-  /* Text painted on the primary (paper) button fill. */
-  --vex-alias-label-on-primary: var(--color-night);
-  /* Text painted on a solid accent fill: chronos accent is the light peri,
-   * so its foreground is the night paper (8.50:1). */
-  --vex-alias-label-on-accent: var(--color-night);
-  /* Text painted on the reversed chrome plate (tooltip, hover card, toast,
-   * connection banner): a paper plate at night. */
-  --vex-alias-label-on-chrome: var(--color-night);
+  /* Labels: the sheet's three inks, solid, never opacity-stacked: ink
+   * 19.03:1, ink 2 11.14:1 and muted 5.69:1 on the ground. Caption is the
+   * muted step: there is no unreadable fourth tier. Dimmed (white at 24%,
+   * Cloud's chosen rule) is decoration and disabled marks only. The
+   * placeholder is Cloud's --vx-placeholder, white at 55%, which reads
+   * 6.3:1 on the field (Cloud raised v99's 40% to reach AA). */
+  --vex-alias-label-primary: var(--color-h3-ink);
+  --vex-alias-label-secondary: var(--color-h3-ink-2);
+  --vex-alias-label-tertiary: var(--color-h3-muted);
+  --vex-alias-label-caption: var(--color-h3-muted);
+  --vex-alias-label-dimmed: rgba(255, 255, 255, 0.24);
+  --vex-alias-label-placeholder: rgba(255, 255, 255, 0.55);
+  /* The cell meters (VEX Cloud's --vx-meter-off, -on and -head): an unlit
+   * cell white at 8%, a lit cell 39%, the last lit cell 60%. Over its limit
+   * a meter's lit cells turn ink, never red. */
+  --vex-alias-meter-off: rgba(255, 255, 255, 0.08);
+  --vex-alias-meter-on: rgba(255, 255, 255, 0.39);
+  --vex-alias-meter-head: rgba(255, 255, 255, 0.6);
+  /* Faint: a glyph at rest that the pointer lights, never a word (VEX
+   * Cloud's --vx-faint, white at 55%: the Send key's dots). */
+  --vex-alias-label-faint: rgba(255, 255, 255, 0.55);
+  /* Type painted on the ink fill (the primary key's ink inversion, the REAL
+   * FUNDS stamp): the ground. */
+  --vex-alias-label-on-primary: var(--color-h3-ground);
+  /* Type painted on a solid accent fill: the ground. */
+  --vex-alias-label-on-accent: var(--color-h3-ground);
+  /* Type painted on the reversed chrome plate (the ink label box, the
+   * connection banner): the ground on the ink plate. The tooltip and the
+   * toast moved to the dark floating plate (--vex-alias-label-on-plate). */
+  --vex-alias-label-on-chrome: var(--color-h3-ground);
 
-  /* Buttons: primary is the ink inversion (paper on night); the accent CTA
-   * is the true blue fill with white type, the one place #0000c0 sits on the
-   * night paper. */
-  --vex-alias-button-primary-fill: var(--color-paper);
-  --vex-alias-button-primary-hover: var(--color-type-2);
-  --vex-alias-button-accent-fill: var(--color-blue);
-  --vex-alias-button-accent-hover: var(--color-blue-hi);
+  /* Keys (docs/design/H3-DESKTOP.md section 2.4). THE PRIMARY KEY is the one
+   * saturated blue, #0000FF, with white caps (SEND, the card's decision key),
+   * one blue cell in view at a time; its hover is the blue hover, #1557FF
+   * (Cloud's --vx-blue-fill-hover), which on SEND and the docked approve
+   * key rises from the key's foot over 420ms rather than swapping at once.
+   * White reads 8.59:1 on the blue and 5.47:1 on its hover. The captures
+   * draw the blue cell bare on the ground, so the edge R3 drew round a blue
+   * fill at night is transparent. The ink key (a primary-fill button) is the
+   * ink inversion: ground caps on the ink, dimming to ink 2 on hover. */
+  --vex-alias-button-primary-fill: var(--color-h3-ink);
+  --vex-alias-button-primary-hover: var(--color-h3-ink-2);
+  --vex-alias-button-accent-fill: var(--color-h3-blue);
+  --vex-alias-button-accent-hover: var(--color-h3-blue-hover);
   --vex-alias-button-accent-ink: var(--color-white);
-  /* The periwinkle edge on a blue fill at night, where the fill's
-   * silhouette would sink into the night paper (buttons, the send key, the
-   * vx disc). docs/design/R3-MINIMAL.md section 1. */
-  --vex-alias-button-accent-edge: var(--color-peri);
+  --vex-alias-button-accent-edge: transparent;
+  /* The general key (components/ui/button.tsx, section 5.2): VEX Cloud's
+   * v99 keys. The fill that rises on hover is white at 7% (on the blue key,
+   * the blue hover); a strong key wears the 40% control edge, because the
+   * raised ground alone is 1.02:1 on the card (Cloud's --vx-rule-control). */
+  --vex-alias-key-fill-hover: rgba(255, 255, 255, 0.07);
+  --vex-alias-rule-control: rgba(255, 255, 255, 0.4);
 
-  /* The one blue, as text and lines: the peri; hover lifts to paper. */
-  --vex-alias-accent-primary: var(--color-peri);
-  --vex-alias-accent-hover: var(--color-paper);
-  --vex-alias-accent-brand: var(--color-peri-hi);
-  --vex-alias-accent-wash: var(--color-night-2);
-  /* Counters and numerals, serif titles, the focus ring. */
-  --vex-alias-counter: var(--color-peri-hi);
-  --vex-alias-title: var(--color-paper);
-  --vex-alias-focus: var(--color-peri);
+  /* The accent as TYPE AND LINES is the ink: the blue measures 2.42:1 on the
+   * ground, so it is never type there (section 2.1). A selected word, a link
+   * (underlined, section 2.3) and an accent line read in ink; a hover steps
+   * to ink 2. */
+  --vex-alias-accent-primary: var(--color-h3-ink);
+  --vex-alias-accent-hover: var(--color-h3-ink-2);
+  --vex-alias-accent-brand: var(--color-h3-ink);
+  --vex-alias-accent-wash: var(--color-h3-cell-open);
+  /* Counters and numerals and display titles: ink (H3 sets no figure or
+   * title in a hue). The focus ring is the 2px white ring, drawn 2px inside
+   * a cell (outline-offset -2px) and outside a link or a box (Cloud's
+   * --vx-focus-ring-color, --vx-white). */
+  --vex-alias-counter: var(--color-h3-ink);
+  --vex-alias-title: var(--color-h3-ink);
+  --vex-alias-focus: var(--color-white);
 
-  /* Interactive washes. */
-  --vex-alias-interactive-hover: rgba(243, 244, 247, 0.06);
-  --vex-alias-interactive-active: rgba(243, 244, 247, 0.1);
-  --vex-alias-interactive-solid: var(--color-night-2);
-  --vex-alias-interactive-danger: rgba(243, 244, 247, 0.08);
+  /* Interactive fills. A hover is white at 4% over the cell (the open Vex
+   * key's fold cell reads that much above the ground); a pressed or selected
+   * cell takes the open ground (the selected tab); a solid pressed segment
+   * takes raised (a key cell). */
+  --vex-alias-interactive-hover: rgba(255, 255, 255, 0.04);
+  --vex-alias-interactive-active: var(--color-h3-cell-open);
+  --vex-alias-interactive-solid: var(--color-h3-raised);
+  --vex-alias-interactive-danger: rgba(255, 255, 255, 0.06);
+  /* The open ground (Cloud's --vx-cell-open): the Vex key's portrait cell
+   * while she is in her section, the frame she left. */
+  --vex-alias-cell-open: var(--color-h3-cell-open);
 
-  /* Status, collapsed to fill. Success and error are the ink (paper at
-   * night), attention is the peri; every wash is a paper step, so ink on
-   * wash sits between ink and ground in both rooms.
-   * `status-contrast.test.ts` measures every family in both themes. */
-  --vex-alias-state-success: var(--color-paper);
-  --vex-alias-state-success-wash: var(--color-night-1);
-  --vex-alias-state-warn: var(--color-peri);
-  --vex-alias-state-warn-label: var(--color-peri);
-  --vex-alias-state-warn-wash: var(--color-night-2);
-  --vex-alias-state-error: var(--color-paper);
-  --vex-alias-state-error-wash: var(--color-night-1);
+  /* Status words (section 2.2): ink, every one of them. The state inks keep
+   * their names because they paint words and plates (`text-success`, the
+   * connection banner's error plate); in H3 a word is never the colour.
+   * Each wash is the open ground, so ink on its wash sits between ink and
+   * the ground. `status-contrast.test.ts` measures every family. */
+  --vex-alias-state-success: var(--color-h3-ink);
+  --vex-alias-state-success-wash: var(--color-h3-cell-open);
+  --vex-alias-state-warn: var(--color-h3-ink);
+  --vex-alias-state-warn-label: var(--color-h3-ink);
+  --vex-alias-state-warn-wash: var(--color-h3-cell-open);
+  --vex-alias-state-error: var(--color-h3-ink);
+  --vex-alias-state-error-wash: var(--color-h3-cell-open);
 
-  /* Trading values only (P&L, Long and Short, bids and asks), never a
-   * status: a state keeps its fill and word. The night pair here, the paper
-   * pair under celeris. `status-contrast.test.ts` measures both on every
-   * text ground. */
-  --vex-alias-trade-up: var(--color-up-night);
-  --vex-alias-trade-down: var(--color-down-night);
-  /* Type on a solid Long or Short key: the night paper on the night pair. */
-  --vex-alias-trade-ink: var(--color-night);
+  /* Status SQUARES (section 2.2): every status has its own drawing, so a
+   * colour never stands alone (PD-03; `.vex-sq` in ui-primitives/marks.css).
+   * Filled is the solid status green (#1D7E3F, 4.06:1 on the ground); the
+   * turn error row's square is the solid status red (#C22226, 3.51:1);
+   * running and pending the hud square, which blinks (#EBEBEB, VEX Cloud's
+   * --vx-hud); a failure the cross in the refusal ink. A mark beside a word
+   * owes the 3:1 for graphics, and each clears it on every H3 cell. The
+   * receipt's FILLED stamp is the green fill with white caps (5.11:1). */
+  --vex-alias-state-success-mark: var(--color-h3-status-green);
+  --vex-alias-state-error-mark: var(--color-h3-status-red);
+  --vex-alias-state-running-mark: var(--color-h3-hud);
+  /* The refusal ink (VEX Cloud's --vx-err-text, 8.17:1 on the ground): a
+   * failure's cross and its word, a failed step's word and first line, the
+   * turn error row's title. The one status ink that is not the ink. */
+  --vex-alias-state-refusal: var(--color-h3-err-text);
+  --vex-alias-stamp-filled: var(--color-h3-status-green);
+  --vex-alias-stamp-filled-ink: var(--color-white);
 
-  /* Overlay masks: the dialog dim (mask-1) and the drop sheet. No blur. */
-  --vex-alias-bg-mask-1: rgba(8, 5, 4, 0.6);
-  --vex-alias-bg-mask-drop: rgba(27, 20, 18, 0.7);
+  /* Gains and losses in trading values, as TYPE (section 2.2): VEX Cloud's
+   * built pnl and trade pair, 11.68:1 and 8.96:1 on the ground. They replace R3's
+   * night trading pair and are never a status: a state keeps its square and
+   * its ink word. `status-contrast.test.ts` measures the pair on every text
+   * ground. */
+  --vex-alias-trade-up: var(--color-h3-gain);
+  --vex-alias-trade-down: var(--color-h3-loss);
+  /* Type on a solid Long or Short key: the ground. */
+  --vex-alias-trade-ink: var(--color-h3-ground);
 
-  /* The reversed chrome plate: tooltip, hover card and toast. Paper at
-   * night, ink by day, with --vex-alias-label-on-chrome on top. */
-  --vex-alias-tooltip-bg: var(--color-paper);
-  --vex-alias-toast-bg: var(--color-paper);
-  /* The standalone vx mark: paper at night, the logo blue by day. */
-  --vex-alias-brand-mark: var(--color-paper);
+  /* Overlay masks: the dialog dim (mask-1) and the drop sheet, both the
+   * ground at an alpha. No blur. */
+  --vex-alias-bg-mask-1: rgba(0, 0, 0, 0.6);
+  --vex-alias-bg-mask-drop: rgba(1, 2, 3, 0.7);
 
-  /* On a photograph (the ground zone of a sepia print), in both rooms:
+  /* The floating plate (VEX Cloud's tooltip and toast, docs/design/
+   * H3-DESKTOP.md sections 5.1 and 5.4): the top of the ground ladder, ink
+   * words on it (--vex-alias-label-on-plate). The toast wears the chosen rule;
+   * a failure lays the refusal red at 16% over the card ground. */
+  --vex-alias-tooltip-bg: var(--color-h3-tooltip);
+  --vex-alias-toast-bg: var(--color-h3-tooltip);
+  /* The header's ground made opaque (Cloud's --vx-header-solid): her corner
+   * key over her ground, a solid cell with no blur. */
+  --vex-alias-header-solid: var(--color-h3-header-solid);
+  --vex-alias-label-on-plate: var(--color-h3-ink);
+  --vex-alias-card: var(--color-h3-card);
+  --vex-alias-refusal-tint: color-mix(in srgb, var(--vex-alias-state-error-mark) 16%, transparent);
+  /* The standalone vx mark: the ink. */
+  --vex-alias-brand-mark: var(--color-h3-ink);
+
+  /* On a photograph (the ground zone of a sepia print):
    * white captions and animals, paper label boxes under chips and buttons,
    * the 42% white hairline above a spread caption, and the rule drawn on the
    * pale sky zone. */
   --vex-alias-on-photo: var(--color-white);
   --vex-alias-rule-photo: rgba(255, 255, 255, 0.42);
-  --vex-alias-label-box: var(--color-paper);
-  --vex-alias-sky-rule: rgba(243, 244, 247, 0.32);
+  --vex-alias-label-box: var(--color-h3-ink);
+  --vex-alias-sky-rule: rgba(255, 255, 255, 0.32);
 
-  /* PRE-SHELL (the stage) - the theme-aware group behind chronos-gate.css:
+  /* PRE-SHELL (the stage) - the group behind chronos-gate.css:
    * the plate under the stage print, the type the stage sets ON the print,
    * and what the `[data-vex-gate="true"]` scope re-projects onto the
    * shadcn/utility names for the paper leaf.
    *
-   * `gate-plate` must equal the main-window `backgroundColor` in CHRONOS
-   * (#1b1412, main/main-window.ts) so first paint and the plate are one
-   * surface. */
-  --vex-alias-gate-plate: var(--color-night);
-  /* On the night print every type is paper (docs/design/R3-MINIMAL.md
-   * section 1.1): the giant counter and the step numerals too, where the
-   * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
-   * night fields; the box keeps a half-peri edge so it reads on the print. */
-  --vex-alias-gate-counter: var(--color-paper);
-  --vex-alias-gate-field: var(--color-night-1);
-  --vex-alias-gate-go-rule: rgba(163, 171, 255, 0.5);
-  --vex-alias-gate-border: rgba(243, 244, 247, 0.22);
-  --vex-alias-gate-input: rgba(243, 244, 247, 0.32);
-  --vex-alias-gate-muted: rgba(243, 244, 247, 0.08);
+   * `gate-plate` must equal the main-window `backgroundColor` (#010203,
+   * main/main-window.ts) so first paint and the plate are one surface: the
+   * H3 ground. */
+  --vex-alias-gate-plate: var(--color-h3-ground);
+  /* On the print every type is the ink (docs/design/H3-DESKTOP.md section
+   * 2.1; R3 measured the peri-hi counter at 1.34:1 there and moved it to
+   * paper first): the giant counter and the step numerals too. The unlock
+   * field and its Unlock box are cells, a control at rest; the box is edged
+   * in the chosen rule so it reads on the print, where R3 drew a half-peri
+   * edge. Every rule is white at an alpha, in the sheet's idiom. */
+  --vex-alias-gate-counter: var(--color-h3-ink);
+  --vex-alias-gate-field: var(--color-h3-cell);
+  --vex-alias-gate-go-rule: var(--vex-alias-rule-chosen);
+  --vex-alias-gate-border: var(--vex-alias-rule-chosen);
+  --vex-alias-gate-input: rgba(255, 255, 255, 0.32);
+  --vex-alias-gate-muted: rgba(255, 255, 255, 0.08);
+  /* VEX Cloud's loader gate (the kit's LoaderGate, ui-primitives/gate.css):
+   * pure black under white, its meter cells at 3% unlit, 20% lit and 42% at
+   * the head, its counter's base digits at 8%. */
+  --vex-alias-loader-plate: var(--color-black);
+  --vex-alias-loader-ink: var(--color-white);
+  --vex-alias-loader-off: rgba(255, 255, 255, 0.03);
+  --vex-alias-loader-on: rgba(255, 255, 255, 0.2);
+  --vex-alias-loader-head: rgba(255, 255, 255, 0.42);
+  --vex-alias-loader-base: rgba(255, 255, 255, 0.08);
   /* Field fill and inline-code chips on the plate. */
   --vex-alias-gate-well: var(--vex-alias-field);
   /* 1px rails, progress tracks and quiet chips on the plate. */
-  --vex-alias-gate-rail: rgba(243, 244, 247, 0.1);
-  /* Multi-line log/command plates (command blocks, migration errors). */
-  --vex-alias-gate-code: var(--color-night-0);
-  /* Alert-rail ink: the status inks themselves, no mixing toward white or
-   * black (status is a fill pattern now, the ink only has to read). */
+  --vex-alias-gate-rail: rgba(255, 255, 255, 0.1);
+  /* Multi-line log/command plates (command blocks, migration errors): the
+   * well step, the cell. */
+  --vex-alias-gate-code: var(--color-h3-cell);
+  /* Alert-rail ink: the status inks themselves, the ink (a status word is
+   * never the colour, section 2.2), with no mixing toward white or black. */
   --vex-alias-gate-danger-text: var(--vex-alias-state-error);
   --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
 
   /* BOARD SURFACES (Token Radar). The board modal, the preview card in the
    * transcript and the sidebar module paint ONE surface family through these
-   * aliases. Flat paper; a card is told from the plate by its rule. */
-  --vex-alias-board-surface: var(--color-night);
-  --vex-alias-board-card: var(--color-night);
-  --vex-alias-board-card-hover: var(--color-night-2);
+   * aliases. The flat ground; a card is told from the plate by its rule, and
+   * a hovered card takes the raised step. */
+  --vex-alias-board-surface: var(--color-h3-ground);
+  --vex-alias-board-card: var(--color-h3-ground);
+  --vex-alias-board-card-hover: var(--color-h3-raised);
 
   /* TERMINAL (Vex Studio). The 16 ANSI slots plus the four chrome colours
    * xterm needs, aliased here because xterm paints to a canvas: it cannot
@@ -309,13 +524,15 @@
    * component would be invisible to the theme flip and banned by the design
    * guard.
    *
-   * THE RETUNED PALETTE (docs/design/R3-MINIMAL.md section 1.1). The reading
-   * surface, foreground, cursor and selection are literals rather than paper
-   * aliases: a running program reads the background through OSC 11, so this
-   * surface is a wire contract and moves only with a retune of the terminal
-   * itself. Chronos reads on the night field #221a17 (night-1) in paper ink
-   * with the periwinkle cursor; celeris on the white field in ink with the
-   * paper blue cursor.
+   * THE H3 PALETTE (our approved Studio plate, docs/design/H3-DESKTOP.md
+   * section 4.9). The reading surface, foreground, cursor and selection are
+   * literals rather than aliases: a running program reads the background
+   * through OSC 11, so this surface is a wire contract and moves only with a
+   * retune of the terminal itself, which the plate is. It reads on the
+   * ground, #010203, in the ink, with an ink cursor and an ink selection: no
+   * blue in Studio's chrome. The ANSI green and red take H3's gain and loss
+   * type colours (section 2.1), so a test runner's pass and fail read as the
+   * app's own; every other slot keeps its retuned value.
    *
    * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
    * dropped, so the background is an explicit opaque eight-digit hex. The
@@ -323,18 +540,18 @@
    *
    * The ANSI slots are a WIRE CONTRACT with programs that emit SGR 30-37 and
    * 90-97, not brand decisions, and bending them to the brand ramp would
-   * misrender every diff, prompt and ls. They are tuned per theme to clear
-   * the contrast floor against the surface the canvas sits on;
+   * misrender every diff, prompt and ls. They are tuned to clear the
+   * contrast floor against the surface the canvas sits on;
    * `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
-  --vex-alias-term-background: #221a17ff;
-  --vex-alias-term-foreground: #f3f4f7;
-  --vex-alias-term-cursor: #a3abff;
-  --vex-alias-term-selection: rgba(163, 171, 255, 0.3);
+  --vex-alias-term-background: #010203ff;
+  --vex-alias-term-foreground: #f3f5f9;
+  --vex-alias-term-cursor: #f3f5f9;
+  --vex-alias-term-selection: rgba(243, 245, 249, 0.24);
 
   --vex-alias-term-black: #1c2030;
-  --vex-alias-term-red: #f2777a;
-  --vex-alias-term-green: #6cc57c;
+  --vex-alias-term-red: #ff887c;
+  --vex-alias-term-green: #83d494;
   --vex-alias-term-yellow: #e0b155;
   --vex-alias-term-blue: #a3abff;
   --vex-alias-term-magenta: #c69af3;
@@ -356,8 +573,7 @@
    * @shikijs/core rather than remembered. Shiki writes
    * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so
    * a name missing from this sheet renders as NO COLOUR - no error, no
-   * warning, just grey code. `theme-matrix.test.ts` pins every slot in both
-   * themes.
+   * warning, just grey code. `theme-matrix.test.ts` pins every slot.
    *
    * V10: one blue and the ink ramp, no rainbow. Keywords, constants,
    * functions and links carry the blue; strings the second ink; comments and
@@ -384,16 +600,15 @@
 
   /* Scrollbar tint pairs (consumed through the runtime indirection in
    * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
-  --vex-alias-scrollbar-l1: rgba(243, 244, 247, 0.16);
-  --vex-alias-scrollbar-l1-hover: rgba(243, 244, 247, 0.3);
-  --vex-alias-scrollbar-l2: rgba(243, 244, 247, 0.22);
-  --vex-alias-scrollbar-l2-hover: rgba(243, 244, 247, 0.36);
+  --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.16);
+  --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.3);
+  --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.22);
+  --vex-alias-scrollbar-l2-hover: rgba(255, 255, 255, 0.36);
 
   /* MOTION VOCABULARY - the one CSS home for every duration and curve.
    *
-   * Theme-independent, so it is declared here and NOT repeated in the celeris
-   * block: a theme changes what a surface looks like, never how long it takes
-   * to get there. `lib/motion/index.ts` mirrors every value below as a JS
+   * Theme-independent: a room changes what a surface looks like, never how
+   * long it takes to get there. `lib/motion/index.ts` mirrors every value below as a JS
    * constant for the call sites that need the number (a timer paired with a
    * CSS duration, or a Motion transition); the pairing is asserted by
    * `__tests__/motion-tokens.test.ts`, which fails if either side moves alone.
@@ -407,6 +622,51 @@
   --vex-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
   --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* KIMM'S SECTION (docs/design/H3-DESKTOP.md section 3.1): her section opens
+   * in 720ms and closes in 420ms, both on the push curve, as a clip-path
+   * wipe that never moves the layout. The two durations are a NAMED
+   * EXCEPTION to the scale above, owned by her section alone (MOTION-POLICY
+   * lists them); the push curve is the family's fourth, for her section
+   * only. The curve is DERIVED: the mockup prints her clip inset at 120,
+   * 240 and 480ms opening and 120 and 240ms closing, and
+   * cubic-bezier(0.22, 1, 0.36, 1) reproduces all five to the printed
+   * digits (`motion-tokens.test.ts` replays them); the review sheet's own
+   * --ease misses by up to about 315px. Reduced motion and Save-Data land
+   * her at once. */
+  --vex-duration-vex-open: 720ms;
+  --vex-duration-vex-close: 420ms;
+  --vex-ease-push: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* THE RUNNING BLINK (PD-06; docs/design/H3-DESKTOP.md section 2.2): a
+   * running square blinks, opacity 1 to 0.25 on steps(2, end), one cycle in
+   * 600ms, VEX Cloud's built --vx-blink. A NAMED EXCEPTION to the scale
+   * (MOTION-POLICY lists it), shared with Cloud. It loops only while the
+   * running state lasts; reduced motion and Save-Data hold it still as half
+   * a square. */
+  --vex-duration-blink: 600ms;
+
+  /* THE LOADING HATCH (docs/design/H3-DESKTOP.md section 5.6): the 14px
+   * stepping hatch beside a loading word blinks on the same two steps at
+   * half the pace, one cycle in 1200ms, VEX Cloud's built --vx-blink-hatch.
+   * A NAMED EXCEPTION to the scale (MOTION-POLICY lists it). It loops only
+   * while the load lasts; reduced motion and Save-Data hold it still. */
+  --vex-duration-blink-hatch: 1200ms;
+
+  /* THE LOADER GATE (docs/design/H3-DESKTOP.md section 5.9): VEX Cloud's
+   * gate leaves in a 600ms fade (its --vx-dur-item) while the mark lifts out
+   * to 96% over 700ms (--vx-dur-gate) and fades over 500ms
+   * (--vx-dur-item-fade). NAMED EXCEPTIONS to the scale (MOTION-POLICY lists
+   * them), the gate's alone; reduced motion and Save-Data leave at once. */
+  --vex-duration-gate-fade: 600ms;
+  --vex-duration-gate-mark: 700ms;
+  --vex-duration-gate-mark-fade: 500ms;
+
+  /* THE KEY'S FILL (docs/design/H3-DESKTOP.md section 5.2): on hover a fill
+   * rises from a key's foot in 420ms, VEX Cloud's --vx-dur-fill, a named
+   * exception to the scale (MOTION-POLICY lists it), on the entrance curve.
+   * Hovering pointers only; reduced motion lands it at once. */
+  --vex-duration-key-fill: 420ms;
 
   /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
    * section 2). Theme-independent like the motion vocabulary. The left
@@ -422,155 +682,61 @@
   --vex-vex-w-md: 240px;
   --vex-vex-w-sm: 224px;
   --vex-transcript-max: 760px;
+
+  /* H3 SHELL GEOMETRY (docs/design/H3-DESKTOP.md sections 1.1, 1.2, 1.5 and
+   * 1.10), declared ahead of the grid that reads it: the R3 names above stay
+   * the frame's until the shell grid moves (S2), and nothing reads these yet.
+   *
+   * The column rule, VEX Cloud's (PD-14, the H3 mockup's `--vex-w`): the
+   * chats column is a fixed 248; the Vex column is clamp(360px, 30vw, 768px)
+   * from 1280 up, unrounded (432 at 1440, 409.8 at 1366, 384 at 1280, 768
+   * from 2560), and a fixed 340 from 1024 to 1279; the chat column takes the
+   * rest, with no floor.
+   * The tracks are a function of the window width alone, never of Kimm's
+   * section, which is the first leg of the money rule (section 3.6); the
+   * column solver mirrors the rule in JS (`lib/shell-columns.ts`).
+   *
+   * One header row of cells, 76 high, across the window; one bottom row, 72
+   * high, under the three columns in a chat. Kimm's section folds to a 56
+   * strip, which is also her corner key's height. Under 1024 the band layout
+   * takes over: the chats fold to a 76 rail and the Vex column becomes a band
+   * over the chat. A media query cannot read a custom property, so the band's
+   * edge is stated here for the record and spelled by the rules that use it. */
+  --vex-h3-chats-w: 248px;
+  --vex-h3-vex-share: 30vw;
+  --vex-h3-vex-w: clamp(360px, var(--vex-h3-vex-share), 768px);
+  --vex-h3-header-h: 76px;
+  --vex-h3-bottom-h: 72px;
+  --vex-h3-strip-h: 56px;
+  --vex-h3-band-under: 1024px;
+  --vex-h3-rail-w: 76px;
+  /* D2 (section 6; owner decision 2026-11-09): the shell's Vex column stands
+   * at the RIGHT edge, a fixed 280 from 1024 up (`D2_VEX_WIDTH`), whatever
+   * the window; `--vex-h3-vex-w` above stays the stages' (wake, checks,
+   * wizard), which keep H3's middle column. */
+  --vex-d2-vex-w: 280px;
+  /* THE WIDE ZOOM (section 1.11; VEX Cloud's `--vx-zoom`, the mockup's
+   * `--z`): clamp(1, window / 1760, 1.5), written on <html> by
+   * `lib/wide-zoom.ts`; 1 until it runs. The transcript, the composer dock,
+   * the picker, the console, a page, her section's key and its strip zoom;
+   * the frame's cells never do. The foot row grows with it, 72 x zoom and its
+   * 1px rule (Cloud's `--foot`: 73 at 1440), so the zoomed composer and the
+   * card's decision row still fill it. */
+  --vex-zoom: 1;
+  /* HER BAND under 1024 (section 1.10; VEX Cloud's `--band-h`): a box over
+   * the chat's top under the 48 console line, min(clamp(220, 34dvh, 296),
+   * 40dvh) high: 244.8 at a 720-high window, 261.1 at 768. */
+  --vex-band-h: min(clamp(220px, 34dvh, 296px), 40dvh);
+  --vex-h3-foot: calc(var(--vex-h3-bottom-h) * var(--vex-zoom) + 1px);
 }
 
-/* Alias tier - CELERIS (light): the website's paper. */
-[data-vex-theme="celeris"] {
-  --vex-alias-bg-base: var(--color-paper);
-  --vex-alias-bg-deep: var(--color-paper);
-  --vex-alias-bg-layer-1: var(--color-paper);
-  --vex-alias-bg-layer-2: var(--color-paper);
-  --vex-alias-bg-layer-3: var(--color-paper-2);
-  --vex-alias-bg-overlay: var(--color-paper-2);
-  --vex-alias-bg-skeleton: rgba(0, 0, 192, 0.06);
-  --vex-alias-sidebar-fill: var(--color-paper);
-  --vex-alias-field: var(--color-white);
-  --vex-alias-bubble: var(--color-paper-2);
-  --vex-alias-composer: var(--vex-alias-field);
-
-  --vex-alias-rule: rgba(0, 0, 192, 0.22);
-  --vex-alias-rule-quiet: rgba(0, 0, 192, 0.12);
-  --vex-alias-rule-ink: var(--color-ink);
-  --vex-alias-border-l1: var(--vex-alias-rule-quiet);
-  --vex-alias-border-l2: var(--vex-alias-rule);
-  --vex-alias-border-l3: rgba(0, 0, 192, 0.32);
-  --vex-alias-border-l4: rgba(0, 0, 192, 0.44);
-  --vex-alias-border-input: var(--vex-alias-rule);
-
-  --vex-alias-label-primary: var(--color-ink);
-  --vex-alias-label-secondary: var(--color-ink-2);
-  --vex-alias-label-tertiary: var(--color-ink-3);
-  --vex-alias-label-caption: var(--color-ink-3);
-  --vex-alias-label-dimmed: rgba(10, 13, 24, 0.18);
-  --vex-alias-label-on-primary: var(--color-paper);
-  --vex-alias-label-on-accent: var(--color-paper);
-  --vex-alias-label-on-chrome: var(--color-paper);
-
-  --vex-alias-button-primary-fill: var(--color-ink);
-  --vex-alias-button-primary-hover: var(--color-ink-2);
-  --vex-alias-button-accent-fill: var(--color-blue);
-  --vex-alias-button-accent-hover: var(--color-blue-hi);
-  --vex-alias-button-accent-ink: var(--color-paper);
-  /* By day the blue fill holds its own silhouette on paper: the edge is
-   * transparent, so a border shows the fill under it. */
-  --vex-alias-button-accent-edge: transparent;
-
-  --vex-alias-accent-primary: var(--color-blue);
-  --vex-alias-accent-hover: var(--color-blue-hi);
-  --vex-alias-accent-brand: var(--color-blue-hi);
-  --vex-alias-accent-wash: var(--color-paper-2);
-  --vex-alias-counter: var(--color-blue-hi);
-  --vex-alias-title: var(--color-blue);
-  --vex-alias-focus: var(--color-blue-hi);
-
-  --vex-alias-interactive-hover: rgba(0, 0, 192, 0.05);
-  --vex-alias-interactive-active: rgba(0, 0, 192, 0.09);
-  --vex-alias-interactive-solid: var(--color-paper-2);
-  --vex-alias-interactive-danger: rgba(10, 13, 24, 0.06);
-
-  /* Status by fill: ink for done and errors, the blue for attention, every
-   * wash the paper-2 step. */
-  --vex-alias-state-success: var(--color-ink);
-  --vex-alias-state-success-wash: var(--color-paper-2);
-  --vex-alias-state-warn: var(--color-blue);
-  --vex-alias-state-warn-label: var(--color-blue);
-  --vex-alias-state-warn-wash: var(--color-paper-2);
-  --vex-alias-state-error: var(--color-ink);
-  --vex-alias-state-error-wash: var(--color-paper-2);
-
-  --vex-alias-trade-up: var(--color-up);
-  --vex-alias-trade-down: var(--color-down);
-  --vex-alias-trade-ink: var(--color-white);
-
-  --vex-alias-bg-mask-1: rgba(10, 13, 24, 0.24);
-  --vex-alias-bg-mask-drop: rgba(243, 244, 247, 0.7);
-
-  --vex-alias-tooltip-bg: var(--color-ink);
-  --vex-alias-toast-bg: var(--color-ink);
-  --vex-alias-brand-mark: var(--color-blue);
-
-  --vex-alias-on-photo: var(--color-white);
-  --vex-alias-rule-photo: rgba(255, 255, 255, 0.42);
-  --vex-alias-label-box: var(--color-paper);
-  --vex-alias-sky-rule: rgba(10, 13, 24, 0.18);
-
-  /* PRE-SHELL under celeris: the day print's pale sky carries the blue
-   * counter and the paper label boxes; the leaf is paper with white fields. */
-  --vex-alias-gate-plate: var(--color-paper);
-  --vex-alias-gate-counter: var(--color-blue-hi);
-  --vex-alias-gate-field: var(--color-paper);
-  --vex-alias-gate-go-rule: transparent;
-  --vex-alias-gate-border: rgba(0, 0, 192, 0.22);
-  --vex-alias-gate-input: rgba(0, 0, 192, 0.32);
-  --vex-alias-gate-muted: rgba(0, 0, 192, 0.06);
-  --vex-alias-gate-well: var(--vex-alias-field);
-  --vex-alias-gate-rail: rgba(0, 0, 192, 0.12);
-  --vex-alias-gate-code: var(--color-paper-2);
-  --vex-alias-gate-danger-text: var(--vex-alias-state-error);
-  --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
-
-  --vex-alias-board-surface: var(--color-paper);
-  --vex-alias-board-card: var(--color-paper);
-  --vex-alias-board-card-hover: var(--color-paper-2);
-
-  /* TERMINAL under celeris: the white field (see the chronos block). On a WHITE card the whole ANSI ramp moves down
-   * rather than up, and the normal/bright pair moves TOGETHER: the six
-   * chromatic normals are the darker step and their bright partners the
-   * lighter one, so `git diff`'s bright red still reads as the lighter red
-   * while clearing 4.5:1. */
-  --vex-alias-term-background: #ffffffff;
-  --vex-alias-term-foreground: #0a0d18;
-  --vex-alias-term-cursor: #0000c0;
-  --vex-alias-term-selection: rgba(0, 0, 192, 0.14);
-
-  --vex-alias-term-black: #2b3040;
-  --vex-alias-term-red: #9b2b30;
-  --vex-alias-term-green: #1f5c31;
-  --vex-alias-term-yellow: #6b4d0c;
-  --vex-alias-term-blue: #0000c0;
-  --vex-alias-term-magenta: #5c2f86;
-  --vex-alias-term-cyan: #16535a;
-  --vex-alias-term-white: #6b7180;
-  --vex-alias-term-bright-black: #4a5064;
-  --vex-alias-term-bright-red: #c0393f;
-  --vex-alias-term-bright-green: #2f7d43;
-  --vex-alias-term-bright-yellow: #8a6410;
-  --vex-alias-term-bright-blue: #2b52c4;
-  --vex-alias-term-bright-magenta: #7a3fb0;
-  --vex-alias-term-bright-cyan: #1f6f78;
-  --vex-alias-term-bright-white: #1c2030;
-
-  /* CODE TOKENS - the same slot list as the chronos block (both themes must
-   * declare every slot; see there). */
-  --vex-alias-code-background: transparent;
-  --vex-alias-code-foreground: var(--vex-alias-label-primary);
-  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-string: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-string-expression: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-comment: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-constant: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-function: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-parameter: var(--vex-alias-label-primary);
-  --vex-alias-code-token-punctuation: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-inserted: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-deleted: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-changed: var(--vex-alias-label-secondary);
-
-  --vex-alias-scrollbar-l1: rgba(0, 0, 192, 0.16);
-  --vex-alias-scrollbar-l1-hover: rgba(0, 0, 192, 0.32);
-  --vex-alias-scrollbar-l2: rgba(0, 0, 192, 0.22);
-  --vex-alias-scrollbar-l2-hover: rgba(0, 0, 192, 0.4);
+/* The Vex column from 1024 to 1279 (PD-14): a fixed 340, the share's
+ * place (`H3_VEX_NARROW` in lib/shell-columns.ts). Under 1024 the shell has
+ * no Vex column; the screens before it keep this one. */
+@media (max-width: 1279px) {
+  :root {
+    --vex-h3-vex-w: 340px;
+  }
 }
 
 /* Utility tier - alias projections. `@theme inline` is REQUIRED here: the
@@ -594,6 +760,7 @@
   --color-ink-tertiary: var(--vex-alias-label-tertiary);
   --color-ink-caption: var(--vex-alias-label-caption);
   --color-ink-dimmed: var(--vex-alias-label-dimmed);
+  --color-ink-placeholder: var(--vex-alias-label-placeholder);
   --color-ink-on-primary: var(--vex-alias-label-on-primary);
   --color-ink-on-accent: var(--vex-alias-label-on-accent);
 
@@ -610,6 +777,7 @@
   /* The V10 names. */
   --color-rule: var(--vex-alias-rule);
   --color-rule-quiet: var(--vex-alias-rule-quiet);
+  --color-rule-chosen: var(--vex-alias-rule-chosen);
   --color-rule-ink: var(--vex-alias-rule-ink);
   --color-rule-photo: var(--vex-alias-rule-photo);
   --color-sky-rule: var(--vex-alias-sky-rule);
@@ -636,9 +804,18 @@
   --color-interactive-active: var(--vex-alias-interactive-active);
   --color-interactive-solid: var(--vex-alias-interactive-solid);
   --color-interactive-danger: var(--vex-alias-interactive-danger);
+  --color-rule-control: var(--vex-alias-rule-control);
+  --color-surface-card: var(--vex-alias-card);
 
   --color-success: var(--vex-alias-state-success);
   --color-success-wash: var(--vex-alias-state-success-wash);
+  /* The status squares and the FILLED stamp: `text-success-mark` on a
+   * swatch, `bg-stamp-filled` under `text-ink-on-stamp-filled`. */
+  --color-success-mark: var(--vex-alias-state-success-mark);
+  --color-danger-mark: var(--vex-alias-state-error-mark);
+  --color-running-mark: var(--vex-alias-state-running-mark);
+  --color-stamp-filled: var(--vex-alias-stamp-filled);
+  --color-ink-on-stamp-filled: var(--vex-alias-stamp-filled-ink);
   --color-warning: var(--vex-alias-state-warn);
   --color-warning-label: var(--vex-alias-state-warn-label);
   --color-warning-wash: var(--vex-alias-state-warn-wash);

@@ -10,7 +10,7 @@
  *
  *  - THE OPAQUE PANE. The pane carries no backdrop filter and its background is
  *    the palette's own reading surface, so the canvas, the wrapper and the pane
- *    agree on one colour in both themes.
+ *    agree on one colour.
  *  - THE GUTTER. The distance from the studio sidebar's right edge to the first
  *    terminal column is a layout fact. It is read at 1920 and 1280 wide and
  *    written to the measurement file, so before/after a padding change is a
@@ -18,13 +18,13 @@
  *  - SCROLL THROUGHPUT. Frames per second while a 30 000-line burst lands and
  *    while the scrollback is wheeled, written next to the gutter numbers.
  *  - THE CONTRAST FLOOR. The palette foreground over the painted pane, at its
- *    worst sampled pixel, never below 7:1 in either theme.
+ *    worst sampled pixel, never below 7:1.
  *  - THE ANSWER TO OSC 11. xterm tells a program that asks for the background
  *    colour whatever `theme.background` says, alpha dropped, and Claude Code
  *    (in `auto`), bat, delta and nvim pick light or dark from that answer. The
  *    shell asks, the reply travels the real pty round trip, and the file the
- *    shell writes is asserted to classify light in celeris and dark in
- *    chronos. A reverse-video sample is measured alongside, since its glyphs
+ *    shell writes is asserted to classify dark (the app is dark only since
+ *    plan row S1-04). A reverse-video sample is measured alongside, since its glyphs
  *    take the same token's RGB. Both probes type a POSIX shell line, so where
  *    the Studio launches `ComSpec` (Windows) they record an unmeasured
  *    `posix_probe` outcome instead of running; the reply bytes themselves are
@@ -99,54 +99,12 @@ async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> 
 }
 
 /**
- * Flip the theme through Settings (the product path: the appearance cubes),
- * from whatever mode the shell is in. The menu that reaches Settings lives in
- * the Agent sidebar, so a Studio caller is switched there through the nav's
- * Chat row and back through its Studio row; the project
- * stays selected across the switch, and is reopened from the rail when it did
- * not.
+ * The app's one theme. Since plan row S1-04 the app is dark only
+ * (docs/design/H3-DESKTOP.md section 4.5): Celeris and the Appearance row are
+ * retired, so the surface is measured in the one room the document root
+ * carries, and there is no other theme to flip to.
  */
-async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void> {
-  const html = page.locator("html");
-  if ((await html.getAttribute("data-vex-theme")) === theme) return;
-  const shell = page.locator('[data-vex-screen="appShell"]');
-  const wasStudio = (await shell.getAttribute("data-vex-runtime-mode")) === "studio";
-  const nav = page.getByRole("navigation", { name: "Main" });
-  if (wasStudio) await nav.getByRole("button", { name: "Chat" }).click();
-  // The tour navigator is docked over the rail's menu button; it is QA
-  // scaffolding and is taken out of the way for the click, as qa-screenshots
-  // does.
-  await page.evaluate(() => {
-    const tour = document.querySelector("[data-vex-setup-tour]");
-    if (tour instanceof HTMLElement) tour.style.display = "none";
-  });
-  try {
-    await page.getByRole("button", { name: /Open menu/ }).click();
-    await page.getByRole("menuitem", { name: /Settings/ }).click();
-    await expect(page.locator("[data-vex-settings-preferences]")).toBeVisible();
-    await page.locator("[data-vex-settings-appearance]").scrollIntoViewIfNeeded();
-    await page.locator(`[data-vex-theme-cube="${theme}"]`).click();
-    await expect(html).toHaveAttribute("data-vex-theme", theme);
-    await page.keyboard.press("Escape");
-    await expect(shell).toBeVisible();
-  } finally {
-    await page.evaluate(() => {
-      const tour = document.querySelector("[data-vex-setup-tour]");
-      if (tour instanceof HTMLElement) tour.style.display = "";
-    });
-  }
-  if (!wasStudio) return;
-  // Back in agent mode the way into Studio is the left sidebar nav's row.
-  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Studio" }).click();
-  const surface = page.locator(".vex-terminal-surface--active");
-  if ((await surface.count()) === 0) {
-    await page
-      .locator('[data-vex-area="studio-sidebar"]')
-      .getByRole("button", { name: /^vex-surface-/ })
-      .click();
-  }
-  await expect(surface).toBeVisible();
-}
+const THEME = "chronos";
 
 function outDir(testInfo: TestInfo): string {
   const dir = OUT_DIR === "" ? testInfo.outputDir : OUT_DIR;
@@ -175,11 +133,10 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
     fs.writeFileSync(path.join(dir, "surface-measurements.json"), JSON.stringify(report, null, 2));
   };
 
-  // The dark theme first, by the product path, before Studio is entered: the
-  // shell resolves the system preference on a fresh config dir, which under a
-  // headless X server is light.
+  // The app's one theme, whatever the host's own preference: a fresh config
+  // dir under a light OS still paints dark.
   await tourTo(page, "appShell");
-  await pickTheme(page, "chronos");
+  await expect(page.locator("html")).toHaveAttribute("data-vex-theme", THEME);
   await openFirstProjectWithATerminal(page, "vex-surface-");
 
   /* ---- 1. THE GUTTER, at the two widths the owner named ---------------- */
@@ -241,26 +198,6 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
   report["scrollbar"] = scrollbar;
   save();
 
-  /* ---- 5. THE OTHER THEME, best effort: a capture and its contrast ----- */
-  try {
-    await pickTheme(page, "celeris");
-    await page.waitForTimeout(400);
-    await focusTerminalGrid(page);
-    await page.keyboard.type("clear");
-    await page.keyboard.press("Enter");
-    await page.waitForTimeout(400);
-    const celerisFacts = await readPaneFacts(page);
-    contrasts.push(await measureContrast(page, "celeris", celerisFacts.foreground, capture));
-    osc11.push(await probeOsc11(page, "celeris", dir));
-    reverseVideo.push(await measureReverseVideo(page, "celeris", celerisFacts, capture));
-    const celerisShot = path.join(dir, "terminal-surface-celeris.png");
-    await withTourHidden(page, () => page.screenshot({ path: celerisShot }));
-    (report["screenshots"] as Record<string, string>)["celeris"] = celerisShot;
-  } catch (error) {
-    report["celerisSkipped"] = error instanceof Error ? error.message : String(error);
-  }
-  save();
-
   testInfo.annotations.push({ type: "surface-measurements", description: JSON.stringify(report) });
   // Unpiped, so the numbers are in the run's own output as well.
   console.log(`[surface] ${JSON.stringify(report)}`);
@@ -305,24 +242,20 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
   // as "1e-05s", so the value is parsed rather than matched as text.
   expect(durationMs(scrollbar.reducedMotionTransition)).toBeLessThanOrEqual(0.01);
 
-  // THE CONTRAST FLOOR (rule 08, both themes): the palette foreground over
+  // THE CONTRAST FLOOR (rule 08): the palette foreground over
   // the pane as painted, at its worst sampled pixel, never below 7:1.
   for (const contrast of contrasts) {
     expect(contrast.contrastWorst, `${contrast.theme} contrastWorst`).toBeGreaterThanOrEqual(7);
   }
 
-  // THE OSC 11 ANSWER (both themes; the light one is the claim, so a skipped
-  // celeris is a failure here rather than a note). xterm answers from
+  // THE OSC 11 ANSWER, in the app's one theme. xterm answers from
   // `theme.background` with the alpha dropped, and Claude Code in `auto` mode
-  // picks its theme from that answer by the rule `probeOsc11` applies. A
-  // pane that answered black in light mode got dark chrome painted over it.
+  // picks its theme from that answer by the rule `probeOsc11` applies, so a
+  // dark pane must answer dark.
   // The probe is a POSIX shell line: where the Studio launches ComSpec it does
   // not run, and what it records instead is the gate's own outcome, so a
   // probe that silently did nothing cannot pass as measured.
-  expect(
-    osc11.map((reply) => reply.theme).sort(),
-    `celerisSkipped: ${String(report["celerisSkipped"] ?? "no")}`,
-  ).toEqual(["celeris", "chronos"]);
+  expect(osc11.map((reply) => reply.theme)).toEqual([THEME]);
   for (const reply of osc11) {
     if (!reply.measured) {
       expect(posixProbesAvailable(), `${reply.theme} OSC 11 unmeasured on a POSIX host`).toBe(false);
@@ -330,15 +263,13 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
       continue;
     }
     expect(posixProbesAvailable(), `${reply.theme} OSC 11 measured where the probe cannot run`).toBe(true);
-    expect(reply.claudeCodeTheme, `${reply.theme} OSC 11 answered ${reply.raw}`).toBe(
-      reply.theme === "celeris" ? "light" : "dark",
-    );
+    expect(reply.claudeCodeTheme, `${reply.theme} OSC 11 answered ${reply.raw}`).toBe("dark");
   }
 
   // REVERSE VIDEO: the glyphs take the background token's RGB, made opaque by
   // the WebGL renderer, so with the token carrying the pane's surface they
   // read against the foreground-coloured box. Before the token carried an
-  // RGB the light theme painted black glyphs on a near-black box (1.6:1).
+  // RGB the retired light theme painted black glyphs on a near-black box (1.6:1).
   // Under the DOM renderer (xvfb: no WebGL2) the sample is unmeasurable and
   // is recorded as such, as it is where the POSIX probe cannot run; the floor
   // holds wherever the WebGL renderer paints and the probe ran.

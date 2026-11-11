@@ -3,14 +3,21 @@
  * for a smart ten-year-old (risk/approval wording stays literal). Static
  * repo markdown (`how-vex-works-content.md`, imported `?raw`) rendered
  * through the article variant of MarkdownContent: sans section heads at
- * 20 / 500 under the serif page head, and local bundled protocol logos
- * (`/protocols/*`, `/logo/*` from public/).
+ * 20 / 500, and local bundled protocol logos (`/protocols/*`, `/logo/*` from
+ * public/).
  *
  * A page in the centre column, both sidebars standing (docs/design/R3-MINIMAL.md
  * sections 9.6 and 12): a 680 reading column and, beside it, "On this page",
- * the section heads as keys with the one in view in the blue. The list is read
+ * the section heads as keys with the one in view marked. The list is read
  * from the rendered article, so it can never name a section the text does not
  * have; a key scrolls its section to the top of the page.
+ *
+ * In H3 (docs/design/H3-DESKTOP.md sections 1.9 and 4.9; no plate for this
+ * page) it follows the page frame: the header's title cell names the page, so
+ * the page draws no head (the h1 stays for assistive tech); the contents are
+ * H3 rows under a caps group head, the section in view in ink with a 2px ink
+ * rule at its left, never the blue (`memory.css`). The text is static, so the
+ * frame draws no "Updated" stamp.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
@@ -70,7 +77,7 @@ export function HowVexWorksScreen({
   }, []);
 
   return (
-    <ShellScreen title="How Vex works" origin={origin} onClose={onClose} width="wide">
+    <ShellScreen title="How Vex works" origin={origin} onClose={onClose} width="wide" chapter={null}>
       <div className="vex-article" data-vex-screen="how-vex-works">
         <article
           ref={articleRef}

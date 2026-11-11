@@ -5,6 +5,16 @@ and the docked session stage; `variant="hero" | "docked"` names the stage
 (default derives from `activeSessionId`). The textarea DOM survives a
 hero-to-docked move because the parent keeps the mount position stable.
 
+## The shell's box (docs/design/H3-DESKTOP.md section 6.5)
+
+Since 2026-11-10 (owner decision, "Framed box on the column") the shell's
+composer is one framed box on the conversation column, lifted off the
+window's foot: the field on top, then one row under a 1px rule holding the
+model cell, the status strip's cells (AI PERMISSION and the promise as caps
+chips, the state, the context meter) and SEND (STOP). The box's frame is its
+focus while the field holds it. The Lighter desk keeps its strip over its
+row. Section 6.5 is the source; the R3 geometry below is history.
+
 ## Geometry (docs/design/R3-MINIMAL.md section 7, references d2, d3, d5)
 
 - Card: `.vex-composer-card` (console.css) - square, 1px
@@ -13,7 +23,7 @@ hero-to-docked move because the parent keeps the mount position stable.
   padding 14 14 10 18 on both stages. It follows the page column (720 on the
   welcome, 540 beside Vex under 1180; composer.css). NO focus treatment of
   any kind; the blue caret and the send key carry focus. While an approval
-  waits it draws the 1.5px ink frame.
+  waits it draws the 1px ink frame.
 - Field: 16/24 sans, a 48px two-line floor, the text 6px off the right edge
   (the placeholder overlay mirrors it), height cap 336px (14 lines) then
   scroll. The placeholder is muted.
@@ -75,10 +85,10 @@ hero-to-docked move because the parent keeps the mount position stable.
   context label and meter),
   `ComposerMissionStrip` (read-only mission status word + plan review link).
 - Context meter (`ComposerContextMeter`): a 30px key reading "Context N%"
-  beside the shared `CellMeter` (five 4x10 cells) from `useContextWindow`;
+  beside the shared `CellMeter` (VEX Cloud's meter: ten 6x12 cells, 8% unlit, 39% lit, the last lit 60%) from `useContextWindow`;
   past the ENGINE's
   own critical band the cells turn ink. It opens a 264px `role="dialog"`
-  panel above and right-aligned, on the 1.5px ink frame. Outside pointer and Escape dismiss it; focus returns to
+  panel above and right-aligned, on the 1px ink frame. Outside pointer and Escape dismiss it; focus returns to
   the trigger; the tooltip serves the closed state only. The panel draws a
   TOTAL-ONLY bar (the same meter at twenty cells) - `ContextWindowDto` carries no System/Tools/Messages
   split, so the reference's legend is deliberately absent rather than

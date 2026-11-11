@@ -1,17 +1,31 @@
 /**
- * EmptyBlock: the empty, loading and could-not-load block
- * (docs/design/R3-MINIMAL.md section 12). One plain sentence and, where there
- * is one, the next step: a quiet frame, a muted scope word ("Sessions"), the
- * sentence, an optional line, and a blue next step at the foot.
+ * EmptyBlock: the empty, loading and could-not-load block, in VEX Cloud's
+ * anatomy (its `EmptyState`, `ErrorState` and `LoadingState`,
+ * `components/ui/empty-state.tsx` and `styles/rows.css`; H3 `.empty`;
+ * docs/design/H3-DESKTOP.md section 5.7).
  *
- * Loading is a word and a quiet line, never a skeleton of fake numbers: pass
- * `loading` and the sentence becomes the loading word beside the dot screen,
- * with the loading line under it. A failed read passes `state="error"` (or
- * `"concerned"` for stale data) and the sentence takes that fill.
+ *   empty     a centred card: the rule frame on the card ground, padding
+ *             40 16; the section's own glyph at 28 in muted (`glyph`, when
+ *             given), the one sentence at 14 in muted, a second line when
+ *             the caller has one worth saying, and the next step as a 44
+ *             framed key.
+ *   error     the same card with the sentence in ink, the cross glyph
+ *             (`rail-no`) in ink, and Retry as the 44 framed key (the strong
+ *             key: raised, full ink). `concerned` (a timeout that clears on
+ *             its own) takes the warning glyph instead.
+ *   loading   the card holds the loading word (the stepping hatch and the
+ *             sentence) over three parked covers: never a pulse, never a
+ *             sweep, never a figure. It is a status named by the sentence,
+ *             and busy.
  *
- *   <EmptyBlock scope="Sessions" title="No sessions yet" detail="..." />
- *   <EmptyBlock scope="Conversation" title="Loading conversation" loading />
- *   <EmptyBlock scope="Portfolio" state="error" title="Couldn't load your portfolio."
+ * Every word is sentence case; nothing is caps. `scope` (the old muted scope
+ * word) is no longer drawn, as Cloud draws no caps word; it stays accepted
+ * and rides `data-scope`, so a caller and its tests can still find a block
+ * by its section.
+ *
+ *   <EmptyBlock title="No sessions yet." glyph="rail-ask" />
+ *   <EmptyBlock title="Loading conversation" loading />
+ *   <EmptyBlock state="error" title="Couldn't load your portfolio."
  *     action={{ label: "Retry", onClick: retry }} />
  *
  * Styles: `.vex-empty-block` in `ui-primitives/indicators.css`.
@@ -19,29 +33,44 @@
 
 import type { HTMLAttributes, JSX, ReactNode } from "react";
 import { cn } from "../../lib/utils.js";
-import { StateWord } from "./state-word.js";
-import type { SwatchState } from "./swatch.js";
+import { Glyph, type GlyphName } from "../icons/glyph/Glyph.js";
+import { Button } from "./button.js";
+import { Cover, LoadingWord } from "./cover.js";
 
 export interface EmptyBlockAction {
   readonly label: string;
   readonly onClick: () => void;
 }
 
+/** A failed read (`error`) or one whose outcome is not known yet (`concerned`). */
+export type EmptyBlockState = "error" | "concerned";
+
 export interface EmptyBlockProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
-  /** The muted scope word above the sentence ("Sessions", "Portfolio"). */
+  /** The section ("Sessions", "Portfolio"): not drawn; it rides `data-scope`. */
   readonly scope?: string;
   /** The one plain sentence. */
   readonly title: string;
   /** A second line: why, or what will appear here. */
   readonly detail?: ReactNode;
-  /** The next step, drawn as a blue word at the foot of the block. */
+  /** The next step (or Retry), drawn as a 44 framed key at the foot. */
   readonly action?: EmptyBlockAction;
-  /** A fill for the sentence (a failed or stale read). */
-  readonly state?: SwatchState;
-  /** In flight: the sentence is the loading word and the quiet line follows. */
+  /** A failed or stale read: the sentence and its glyph in ink. */
+  readonly state?: EmptyBlockState;
+  /** The section's own glyph, 28 and muted, above the sentence (an empty block only). */
+  readonly glyph?: GlyphName;
+  /** In flight: the loading word over the parked covers. */
   readonly loading?: boolean;
 }
+
+/** The glyph a failed read draws, as Cloud's ErrorState (`rail-no`). */
+const STATE_GLYPH: Readonly<Record<EmptyBlockState, GlyphName>> = {
+  error: "rail-no",
+  concerned: "warning",
+};
+
+/** The three covers of a first read (Cloud's LoadingBars): full, four fifths, three fifths. */
+const COVER_WIDTHS = ["100%", "80%", "60%"] as const;
 
 export function EmptyBlock({
   scope,
@@ -49,44 +78,52 @@ export function EmptyBlock({
   detail,
   action,
   state,
+  glyph,
   loading = false,
   className,
   ...rest
 }: EmptyBlockProps): JSX.Element {
-  const fill: SwatchState | undefined = loading ? "listening" : state;
+  const tone = loading ? undefined : state;
+  const drawn = loading ? undefined : tone === undefined ? glyph : STATE_GLYPH[tone];
   return (
     <div
       className={cn("vex-empty-block", className)}
       data-vex-empty-block=""
-      aria-busy={loading ? true : undefined}
+      data-scope={scope === undefined || scope === "" ? undefined : scope}
+      data-tone={tone}
+      data-loading={loading ? "" : undefined}
+      {...(loading ? { role: "status", "aria-label": title, "aria-busy": true } : {})}
       {...rest}
     >
-      {scope === undefined || scope === "" ? null : (
-        <span className="vex-empty-block__scope">{scope}</span>
-      )}
-      {fill === undefined ? (
-        <span className="vex-empty-block__title">{title}</span>
-      ) : (
-        <StateWord className="vex-empty-block__state" state={fill} word={title} />
+      {drawn === undefined ? null : (
+        <span className="vex-empty-block__glyph" aria-hidden="true">
+          <Glyph name={drawn} size={28} />
+        </span>
       )}
       {loading ? (
-        // The same line the loader draws, decorative here: the word above
-        // already says what is loading.
-        <span className="vex-loader vex-loader--ink vex-empty-block__line">
-          <i className="vex-loader__segment" />
-        </span>
-      ) : null}
+        <>
+          <LoadingWord word={title} className="vex-empty-block__loading" />
+          <span className="vex-empty-block__covers" aria-hidden="true">
+            {COVER_WIDTHS.map((width) => (
+              <Cover key={width} width={width} />
+            ))}
+          </span>
+        </>
+      ) : (
+        <p className="vex-empty-block__title">{title}</p>
+      )}
       {detail === undefined || detail === null ? null : (
-        <span className="vex-empty-block__detail">{detail}</span>
+        <p className="vex-empty-block__detail">{detail}</p>
       )}
       {action === undefined ? null : (
-        <button
-          type="button"
-          className="vex-empty-block__action"
+        <Button
+          variant={tone === undefined ? "quiet" : "ink"}
+          size="lg"
+          className="vex-empty-block__key"
           onClick={action.onClick}
         >
           {action.label}
-        </button>
+        </Button>
       )}
     </div>
   );

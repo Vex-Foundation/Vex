@@ -1,8 +1,10 @@
 /**
  * Branch: failed - the native runtime's start stopped at one step. One status
- * stanza per failure kind, carrying the runtime's own message, then the
- * remediation copy for that kind, Try again (which asks main for a fresh
- * start; a model download resumes where it stopped) and the logs folder.
+ * row per failure kind, carrying the runtime's own message, then the
+ * remediation copy for that kind. Its keys stand in the bottom row
+ * (`FailureActs`): Try again, the blue key at the right edge, which asks main
+ * for a fresh start (a model download resumes where it stopped); the logs
+ * folder is the bottom-left cell's link (`RuntimeBootstrap`).
  *
  * `data-runtime-failure={kind}` is the test contract.
  */
@@ -12,7 +14,7 @@ import type { NativeRuntimeFailureKind, NativeRuntimeStep } from "@shared/schema
 
 import { Button } from "../../../components/ui/button.js";
 import { SetupStatusCard, type SetupStatusTone } from "../../../components/onboarding/SetupStatusCard.js";
-import { OpenLogsLink } from "../../../components/common/OpenLogsLink.js";
+import { StageActs, StageGap } from "../../../components/onboarding/StageFrame.js";
 
 interface FailureCopy {
   readonly tone: SetupStatusTone;
@@ -85,21 +87,26 @@ interface FailureBodyProps {
   readonly kind: NativeRuntimeFailureKind;
   readonly step: NativeRuntimeStep;
   readonly message: string;
-  readonly onRetry: () => void;
 }
 
-export function FailureBody({ kind, step, message, onRetry }: FailureBodyProps): JSX.Element {
+export function FailureBody({ kind, step, message }: FailureBodyProps): JSX.Element {
   const copy = copyFor(kind, step);
   return (
     <div className="vex-fr-stack" data-runtime-failure={kind}>
       <SetupStatusCard tone={copy.tone} word={copy.word} title={copy.title} detail={message} />
       {copy.advice !== null ? <p className="vex-fr-text">{copy.advice}</p> : null}
-      <div className="vex-fr-acts">
-        <Button onClick={onRetry} className="w-[420px] max-w-full">
-          Try again
-        </Button>
-        <OpenLogsLink className="vex-fr-link" />
-      </div>
     </div>
+  );
+}
+
+/** The failure's bottom row: Try again, the one blue key, at the right edge. */
+export function FailureActs({ onRetry }: { readonly onRetry: () => void }): JSX.Element {
+  return (
+    <StageActs>
+      <StageGap />
+      <Button onClick={onRetry} className="vex-pre-primary">
+        Try again
+      </Button>
+    </StageActs>
   );
 }

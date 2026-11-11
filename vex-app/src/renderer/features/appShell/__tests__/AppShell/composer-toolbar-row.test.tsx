@@ -1,7 +1,10 @@
 /**
- * Composer toolbar row - the shrink chain, the trailing runtime cluster, and
- * the context meter's panel (UIUX round 3, lane F2; codex Bug 3 + the deepseek
- * cross-check §2).
+ * Composer status strip (docs/design/H3-DESKTOP.md sections 1.8 and 6.5 and
+ * Appendix A.5; once the toolbar row) - its four cells (AI PERMISSION, the
+ * promise, the state, CONTEXT), standing in the shell box's row between the
+ * model cell and SEND, the shrink chain, the protected seats, the model
+ * cell, and the context meter's panel (UIUX round 3, lane F2; codex Bug
+ * 3 + the deepseek cross-check §2).
  *
  * WHAT THIS FILE CAN AND CANNOT PROVE. jsdom performs no layout: `offsetWidth`
  * and `scrollWidth` are always 0 and container queries never evaluate. So the
@@ -16,8 +19,8 @@
  *  - leading cluster concedes (min-w-0, no `shrink-0` on the text seats), its
  *    labels own the ellipsis, its glyphs are fixed;
  *  - trailing cluster is `flex-none` and its seats never shrink;
- *  - the permission label collapses at the row container's 460px threshold
- *    while the seat keeps its accessible name;
+ *  - the permission's words collapse to its icon at the strip container's
+ *    600px threshold while the seat keeps its accessible name;
  *  - no focusable control is blanket-clipped, and every one carries a visible
  *    focus ring;
  *  - the context meter's click panel: dialog semantics, Escape and outside
@@ -158,7 +161,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** The toolbar row is the flex parent of both clusters. */
+/** The status strip: the permission seat's cell's parent. */
 function toolbarRow(container: HTMLElement): HTMLElement {
   const seat = container.querySelector(
     '[data-vex-area="composer-permission-chip"]',
@@ -169,9 +172,38 @@ function toolbarRow(container: HTMLElement): HTMLElement {
 }
 
 describe("composer toolbar - the shrink chain (Bug 3)", () => {
-  it("the row is the query container the permission collapse answers to", () => {
+  it("in the box the row is the query container the permission collapse answers to, the strip none", () => {
+    // docs/design/H3-DESKTOP.md section 6.5: the strip's cells stand in the
+    // box's row, so its steps answer to the row's width (console.css,
+    // `.vex-composer-row`'s `container: composer-row / inline-size`).
     const { container } = mountDocked();
-    expect(toolbarRow(container).className).toContain("@container");
+    const strip = toolbarRow(container);
+    expect(strip.getAttribute("data-vex-area")).toBe("composer-strip");
+    expect(strip.className).not.toContain("@container");
+    expect(strip.parentElement?.className).toBe("vex-composer-row");
+  });
+
+  it("the strip is D2's four cells, in the box's row between the model cell and SEND", () => {
+    // docs/design/H3-DESKTOP.md section 6.5: the model and its effort are the
+    // model cell's; the strip's cells (AI permission, the promise, the
+    // state, the context) follow it in the one row, and SEND ends it.
+    const { container } = mountDocked();
+    const strip = toolbarRow(container);
+    expect(Array.from(strip.children).map((cell) => cell.className.split(" ")[1])).toEqual([
+      "vex-composer-strip__access",
+      "vex-composer-strip__promise",
+      "vex-composer-strip__state",
+      "vex-composer-strip__context",
+    ]);
+    expect(strip.querySelector(".vex-composer-strip__access")?.textContent).toBe("AI permission");
+    expect(strip.querySelector('[data-vex-area="composer-options"]')).toBeNull();
+    expect(strip.previousElementSibling?.getAttribute("data-vex-area")).toBe("composer-model-group");
+    expect(strip.nextElementSibling?.getAttribute("aria-label")).toBe("Send message");
+    // No daily budget: the context meter takes its cell (section 4.1).
+    expect(strip.textContent).not.toMatch(/budget/i);
+    expect(
+      strip.querySelector('.vex-composer-strip__context [data-vex-area="composer-context-ring"]'),
+    ).not.toBeNull();
   });
 
   it("the leading cluster concedes width instead of painting outside the row", () => {
@@ -181,17 +213,16 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
       { modelId: "anthropic/claude-opus-4-1-20250805-extended", reasoning: null },
     ];
     const { container } = mountDocked();
-    const modelChip = container.querySelector(
-      '[data-vex-area="composer-model-chip"]',
-    ) as HTMLElement | null;
-    expect(modelChip).not.toBeNull();
-    const chip = modelChip as HTMLElement;
-    // The chip box MAY shrink: `min-w-0`, and no `shrink-0` pinning it.
-    expect(chip.className).toContain("min-w-0");
-    expect(chip.className).not.toContain("shrink-0");
-    // Its cluster is the shrinkable one.
-    const cluster = chip.parentElement as HTMLElement;
-    expect(cluster.className).toContain("min-w-0");
+    const label = container.querySelector("[data-vex-model-label]") as HTMLElement | null;
+    expect(label).not.toBeNull();
+    const name = label as HTMLElement;
+    // The name MAY shrink: `min-w-0`, and no `shrink-0` pinning it.
+    expect(name.className).toContain("min-w-0");
+    expect(name.className).not.toContain("shrink-0");
+    // Its frame and its cell are the shrinkable ones (the model cell, D2).
+    const frame = name.parentElement as HTMLElement;
+    expect(frame.className).toContain("min-w-0");
+    expect((frame.parentElement as HTMLElement).className).toContain("vex-composer-modelcell");
   });
 
   it("labels own the ellipsis, on the options control the bar draws", () => {
@@ -204,22 +235,20 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(label.className).toContain("truncate");
     expect(label.className).toContain("min-w-0");
-    // R3 (section 7): the model's name is a sans word inside the one options
-    // frame - no brand glyph beside it, so the label is the only thing that
-    // concedes.
-    const chip = container.querySelector(
-      '[data-vex-area="composer-model-chip"]',
-    ) as HTMLElement;
-    expect(chip.className).toContain("vex-composer-options__model");
-    expect(chip.className).toContain("font-sans");
-    expect(chip.className).not.toContain("font-mono");
-    expect(chip.closest('[data-vex-area="composer-options"]')?.className).toContain(
+    // The model's name is a sans word inside the one options frame - no
+    // glyph beside it (the glyph is the model cell's), so the label is the
+    // only thing that concedes.
+    expect(label.className).toContain("vex-composer-options__model");
+    expect(label.className).toContain("font-sans");
+    expect(label.className).not.toContain("font-mono");
+    expect(label.closest('[data-vex-area="composer-options"]')?.className).toContain(
       "vex-composer-options",
     );
+    expect(label.querySelector("svg")).toBeNull();
     expect(container.querySelector('[data-testid="model-brand-icon"]')).toBeNull();
   });
 
-  it("the options control reads model · Reasoning: effort in one frame", () => {
+  it("the model cell reads the name over \"Reasoning: High\", the effort key after the words", () => {
     models = [
       {
         modelId: "anthropic/claude-sonnet-4",
@@ -237,10 +266,23 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(frame).not.toBeNull();
     expect(frame.textContent).toContain("claude-sonnet-4");
-    expect(frame.textContent).toContain("Reasoning:");
-    expect(
-      frame.querySelector('[role="combobox"][aria-label="Reasoning effort"]'),
-    ).not.toBeNull();
+    expect(frame.textContent).not.toContain("·");
+    const effort = frame.querySelector('[role="combobox"][aria-label="Reasoning effort"]');
+    expect(effort).not.toBeNull();
+    // "Reasoning:" stands before the effort key, under the name (D2,
+    // section 6.5); the words are a picture, the key keeps its own name.
+    const line = frame.querySelector(".vex-composer-options__reasoning");
+    expect(line?.querySelector(".vex-composer-options__prefix")?.textContent).toBe("Reasoning:");
+    expect(line?.querySelector(".vex-composer-options__prefix")?.getAttribute("aria-hidden")).toBe("true");
+    expect(line?.contains(effort)).toBe(true);
+    expect(frame.querySelector("[data-vex-model-label]")?.compareDocumentPosition(line as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    // In the bottom row's model cell, beside the model key, not the strip.
+    const cell = frame.closest('[data-vex-area="composer-model-group"]');
+    expect(cell?.closest('[data-vex-area="composer-row"]')).not.toBeNull();
+    expect(cell?.querySelector(".vex-composer-model")).not.toBeNull();
+    expect(frame.closest('[data-vex-area="composer-strip"]')).toBeNull();
   });
 
   it("the chip shows the bare model name; the full routed id stays the accessible name", () => {
@@ -280,19 +322,25 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     useUiStore.setState({ shellRoute: { kind: "none" } });
   });
 
-  it("the model key wears the vx disc when Vex Inference serves the model, and says so", () => {
+  it("the model cell wears the vx disc when Vex Inference serves the model, and says so", () => {
     models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "vexcloud" }];
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    // The key is the row's model cell (docs/design/H3-DESKTOP.md section 1.8).
+    expect(chip.className).toContain("vex-composer-model");
+    expect(chip.closest('[data-vex-area="composer-row"]')).not.toBeNull();
     const disc = chip.querySelector('[data-vex-provider-mark="vexcloud"] [data-vex-vx-token] svg');
-    expect([disc?.getAttribute("width"), disc?.getAttribute("height")]).toEqual(["16", "16"]);
+    expect([disc?.getAttribute("width"), disc?.getAttribute("height")]).toEqual(["20", "20"]);
     expect(disc?.getAttribute("aria-hidden")).toBe("true");
-    // The mark comes before the name, and the words carry the provider.
+    // The glyph is the cell's one child; the words carry the model and the
+    // provider, and the name reads in the options over the row.
+    expect(chip.children).toHaveLength(1);
     expect(chip.firstElementChild?.getAttribute("data-vex-provider-mark")).toBe("vexcloud");
     expect(chip.getAttribute("aria-label")).toBe(
       "Model: openai/gpt-6-luna on Vex Inference. Opens the model menu.",
     );
-    expect(chip.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
+    expect(chip.querySelector("[data-vex-model-label]")).toBeNull();
+    expect(container.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
   });
 
   it("the model key wears OpenRouter's one-ink mark when OpenRouter serves the model", () => {
@@ -308,11 +356,12 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     );
   });
 
-  it("an unknown provider draws no mark and claims no provider", () => {
+  it("an unknown provider draws the line model glyph and claims no provider", () => {
     models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "somewhere-else" }];
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
     expect(chip.querySelector("[data-vex-provider-mark]")).toBeNull();
+    expect(chip.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens the model menu.");
   });
 
@@ -404,12 +453,17 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     // The reference threshold, declared on the LABEL - never on the seat, and
     // never on a focusable control.
-    expect(label.className).toContain("@max-[460px]:hidden");
+    expect(label.className).toContain("@max-[600px]:hidden");
     expect(label.className).toContain("truncate");
+    // H3 draws the words alone; the grant's icon stands in only once they
+    // have collapsed.
+    const icon = seat.querySelector("svg") as SVGElement;
+    expect(icon.getAttribute("class")).toContain("hidden");
+    expect(icon.getAttribute("class")).toContain("@max-[600px]:block");
     // The invariant that makes the collapse safe: the accessible name is on
     // the seat, so hiding the text cannot leave an unnamed control.
     expect(seat.getAttribute("aria-label")).toBe("Access mode: Full access");
-    expect(seat.className).not.toContain("@max-[460px]:hidden");
+    expect(seat.className).not.toContain("@max-[600px]:hidden");
   });
 
   it("no focusable seat is clipped, and every one shows focus", () => {
@@ -440,20 +494,34 @@ describe("composer toolbar - the access-mode seat", () => {
     const seat = container.querySelector(
       '[data-vex-area="composer-permission-chip"]',
     ) as HTMLElement;
-    // R3: the grant as its promise.
+    // The grant as its promise, FUNDS REQUIRE APPROVAL in Restricted.
     expect(seat.textContent).toBe("Funds require approval");
     expect(seat.querySelector("button")).toBeNull();
-    // Adjacency is the owner's requirement: mode next to the counter.
+    // Adjacency is the owner's requirement: mode next to the counter, with
+    // only H3's narrow state cell between them.
+    const cell = seat.parentElement as HTMLElement;
+    expect(cell.nextElementSibling?.className).toContain("vex-composer-strip__state");
     expect(
-      seat.nextElementSibling?.querySelector(
+      cell.nextElementSibling?.nextElementSibling?.querySelector(
         '[data-vex-area="composer-context-ring"]',
       ),
     ).not.toBeNull();
   });
+
+  it("says FULL ACCESS in Full access, and nothing about approval", () => {
+    const { container } = mountDocked({ permission: "full" });
+    const seat = container.querySelector(
+      '[data-vex-area="composer-permission-chip"]',
+    ) as HTMLElement;
+    expect(seat.textContent).toBe("Full access");
+    expect(container.querySelector(".vex-composer-strip")?.textContent).not.toMatch(
+      /require approval/i,
+    );
+  });
 });
 
 describe("composer toolbar - the context meter panel", () => {
-  it("the trigger is a 30px labelled key naming its percentage over the five cell meter; no fabricated denominator", () => {
+  it("the trigger is CONTEXT, the ten cell meter and the share, named by its percentage; no fabricated denominator", () => {
     contextWindow = { tokensUsed: 45_000, contextLimit: null };
     const { container, unmount } = mountDocked();
     expect(
@@ -470,14 +538,20 @@ describe("composer toolbar - the context meter panel", () => {
     expect(trigger.getAttribute("aria-label")).toBe("Context 45% used");
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
     expect(trigger.className).toContain("vex-composer-context");
-    expect(trigger.textContent).toBe("Context 45%");
-    // The drawing is the shared CellMeter (five cells, 45% => two filled),
-    // decoration to the button's own name.
+    // H3's DAILY BUDGET form, desktop's real figure: the label, the meter,
+    // then the share.
+    expect(trigger.textContent).toBe("Context45%");
+    expect(trigger.querySelector(".vex-composer-context__label")?.textContent).toBe("Context");
+    expect(trigger.querySelector(".vex-composer-context__share")?.textContent).toBe("45%");
+    // The drawing is the shared CellMeter (ten cells, 45% => five filled),
+    // decoration to the button's own name, between the label and the share.
     const meter = trigger.querySelector(".vex-cell-meter");
     expect(meter).not.toBeNull();
     expect(meter?.getAttribute("aria-hidden")).toBe("true");
-    expect(meter?.querySelectorAll("i")).toHaveLength(5);
-    expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(2);
+    expect(meter?.previousElementSibling?.className).toContain("vex-composer-context__label");
+    expect(meter?.querySelectorAll("i")).toHaveLength(10);
+    expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(5);
+    expect(meter?.querySelectorAll("i[data-head]")).toHaveLength(1);
     expect(trigger.querySelector("svg")).toBeNull();
   });
 

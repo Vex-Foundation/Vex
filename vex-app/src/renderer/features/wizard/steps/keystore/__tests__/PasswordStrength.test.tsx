@@ -13,9 +13,10 @@ afterEach(() => {
   cleanup();
 });
 
+/** The verdict's H3 square (docs/design/H3-DESKTOP.md section 2.2). */
 function fillOf(container: HTMLElement): string | null {
   return (
-    container.querySelector(".vex-state-word")?.getAttribute("data-s") ?? null
+    container.querySelector(".vex-pre-status")?.getAttribute("data-sq") ?? null
   );
 }
 
@@ -49,7 +50,7 @@ describe("PasswordStrength", () => {
     );
     expect(getByText(/Checking…/i)).toBeTruthy();
     expect(queryByText(/^weak$/i)).toBeNull();
-    expect(fillOf(container)).toBe("listening");
+    expect(fillOf(container)).toBe("running");
   });
 
   it("does not show 'Checking…' when the field is empty, even if not ready", () => {
@@ -57,14 +58,14 @@ describe("PasswordStrength", () => {
       <PasswordStrength length={0} ready={false} score={0} label="weak" blocked />,
     );
     expect(queryByText(/Checking…/i)).toBeNull();
-    expect(fillOf(container)).toBe("idle");
+    expect(fillOf(container)).toBe("none");
   });
 
-  it("paints a refused password with the target and an accepted one solid", () => {
+  it("squares a refused password in ink and an accepted one green", () => {
     const refused = render(
       <PasswordStrength length={11} ready score={2} label="fair" blocked />,
     );
-    expect(fillOf(refused.container)).toBe("warning");
+    expect(fillOf(refused.container)).toBe("ink");
     refused.unmount();
     const accepted = render(
       <PasswordStrength length={16} ready score={3} label="good" blocked={false} />,

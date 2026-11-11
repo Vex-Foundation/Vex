@@ -8,8 +8,8 @@
  * and every grep a CI job runs stay exactly what they were.
  *
  * WHY A REGISTRATION FUNCTION and not a second spec: the walk shares the
- * screenshot pass (`shot`) and the theme picker (`pickTheme`) with the other
- * sections, and those stay owned by the spec that defines the capture
+ * screenshot pass (`shot`) and the one-theme check (`expectTheOneTheme`) with
+ * the other sections, and those stay owned by the spec that defines the capture
  * contract. They are handed in rather than duplicated, so a capture pass
  * photographs every section under one rule.
  *
@@ -28,10 +28,12 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
  *
  * Vex's column is paper (`.vex-vs` in vex-sidebar.css; docs/design/
  * R3-MINIMAL.md section 5: one paper per room, no box, no fill, no radius, no
- * shadow, no blur), and its sections (her state, Needs you, This project) sit
- * on it. The claims are measured in the same shape
+ * shadow, no blur; H3 keeps it: square cells on one ground), and its console's
+ * sections (Needs you, This project, AI permission, recent activity) sit on
+ * it. The claims are measured in the same shape
  * studio-terminal-surface.spec.ts proves its own for the pane, in Studio, in
- * both themes:
+ * the app's one theme (dark only since plan row S1-04, docs/design/
+ * H3-DESKTOP.md section 4.5):
  *
  *  - THE PAGE IS PAPER. The column paints an opaque ground and blurs nothing
  *    behind it.
@@ -40,7 +42,7 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
  *  - LEGIBILITY. Every ink token the sections use is measured against the
  *    section AS PAINTED, at the pixel closest to the ink (the worst case),
  *    with the section's own text hidden for the read so the paper is what is
- *    sampled. Primary ink must clear 7:1 in both themes; every other token is
+ *    sampled. Primary ink must clear 7:1; every other token is
  *    recorded (the numbers are what a token retune would be judged against).
  */
 
@@ -275,7 +277,9 @@ async function measureSurface(
     return paper === null ? "" : window.getComputedStyle(paper).backgroundColor;
   });
   const cards: CardGlaze[] = [];
-  const sections = host.locator(".vex-vs__state, .vex-vs__sec");
+  // The console's sections (H3): Needs you in its top, then This project,
+  // AI permission and the recent activity in its rest.
+  const sections = host.locator(".vex-console__needs, .vex-console__section");
   const count = await sections.count();
   expect(count, `${kind} has no cards to measure`).toBeGreaterThan(0);
   for (let index = 0; index < count; index += 1) {
@@ -325,15 +329,17 @@ function expectOnPaper(surface: SurfaceGlaze): void {
 export interface RailParityWalk {
   /** Photograph a state, if this run is a capture pass; a no-op otherwise. */
   readonly shot: (page: Page, name: string) => Promise<void>;
-  /** Switch the app to one explicit theme, so a capture names what it shows. */
-  readonly pickTheme: (page: Page, theme: "chronos" | "celeris") => Promise<void>;
+  /** Assert the app's one theme (dark only, S1-04); there is none to pick. */
+  readonly expectTheOneTheme: (page: Page) => Promise<void>;
+  /** That theme's name, so a capture names what it shows. */
+  readonly theme: string;
   /** Where a capture pass writes; empty means assert, photograph nothing. */
   readonly shotsDir: string;
 }
 
 export function registerRailParityScenarios(
   test: typeof vexTest,
-  { shot, pickTheme, shotsDir }: RailParityWalk,
+  { shot, expectTheOneTheme, theme, shotsDir }: RailParityWalk,
 ): void {
   /**
    * UX-2: the states the rail findings are argued from (B4, I6, I2, A7, A3).
@@ -342,7 +348,7 @@ export function registerRailParityScenarios(
    * what a real layout puts on screen, which is exactly what jsdom cannot answer:
    *
    *  - B4, the collapsed spine: the vitest suite proves no text NODE renders. It
-   *    cannot prove the rail is 56px wide, or that nothing overflows it. Here the
+   *    cannot prove the rail is 76px wide (H3), or that nothing overflows it. Here the
    *    box is measured.
    *  - I6, the explorer pane: "takes the rail's remaining height" is a claim about
    *    resolved pixels. The unit suite can only prove the flex chain is unbroken;
@@ -352,7 +358,7 @@ export function registerRailParityScenarios(
    *    vitest; what is proven here is that they REPLACE the browsing region on a
    *    real rail rather than sitting under it off-screen.
    *
-   * `VEX_UX_THEME` picks the theme; a capture pass runs it once per theme.
+   * The app is dark only, so the walk asserts and captures its one theme.
    */
   test("UX-2 rail and explorer: the spine, the pane, the seam and the search", async ({
     vexDb,
@@ -369,8 +375,7 @@ export function registerRailParityScenarios(
     const reached = await enterStudio(page);
     test.skip(!reached, TOUR_SKIP_REASON);
 
-    const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
-    await pickTheme(page, theme);
+    await expectTheOneTheme(page);
 
     const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
     await expect(sidebar).toBeVisible();
@@ -378,10 +383,11 @@ export function registerRailParityScenarios(
     /* ---- 01: the welcome rail, and the way back to Agent ---------------- */
 
     // No capsule anywhere: the Studio sidebar is the left sidebar, and its
-    // nav's Chat row is the way back (docs/design/R3-MINIMAL.md section 4).
+    // nav, folded to its Studio row, unfolds the Chat row that is the way
+    // back (docs/design/H3-DESKTOP.md section 4.9).
     await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
     await expect(
-      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Show every page" }),
     ).toBeVisible();
     await shot(page, `${theme}-01-studio-welcome-empty`);
 
@@ -407,7 +413,7 @@ export function registerRailParityScenarios(
     // I9's rail half: once a project is open the welcome is gone and the nav
     // stays in the sidebar, so Studio is never a one-way door.
     await expect(
-      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Show every page" }),
     ).toBeVisible();
     await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
 
@@ -473,27 +479,32 @@ export function registerRailParityScenarios(
 
     /* ---- 30: Vex's column, scoped to the PROJECT (A3) ------------------- */
 
-    // R3 (docs/design/R3-MINIMAL.md section 5.1): the right column is Vex's.
-    // The Studio rail's money cards moved to the Portfolio page; the column
-    // says what it is about ("This project:"), then Needs you, then the
-    // project's own block: its facts (the Project card's rows, the path
-    // ending in the folder main actually created) and the two project-scoped
-    // pages, Project assets and Agent Scan. Then her plate.
+    // H3 (docs/design/H3-DESKTOP.md sections 1.5 and 4.9, the approved Studio
+    // plate, S8-06): the column is Vex's console. Its top holds Needs you and
+    // the missions row; her section lies over its rest, where This project
+    // stands in place of a chat's AI permission: the project's access, its
+    // agents, wallet and folder (the path ending in the folder main actually
+    // created) and its Project assets key. The recent activity is the
+    // project's own, and Open activity opens Agent Scan on the project.
     const vex = page.locator('[data-vex-area="vex-sidebar"]');
     await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
-    await expect(vex.locator('[data-vex-area="vex-state"]')).toContainText("This project:");
     await expect(vex.locator('[data-vex-area="vex-needs-you"]')).toBeVisible();
     const projectBlock = vex.locator('[data-vex-area="vex-this-project"]');
     await expect(projectBlock).toBeVisible();
-    await expect(projectBlock.getByText("Mode", { exact: true })).toBeVisible();
-    await expect(projectBlock.getByText("Studio", { exact: true })).toBeVisible();
-    await expect(projectBlock.getByText("Access", { exact: true })).toBeVisible();
-    await expect(projectBlock.getByText(/^(Full|Restricted)$/)).toBeVisible();
-    await expect(projectBlock.getByText("Started", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByRole("heading", { name: "This project" })).toBeVisible();
+    await expect(projectBlock).toHaveAttribute("data-permission", /^(full|restricted)$/);
+    await expect(projectBlock.getByText(/^(Full access|Restricted): /)).toBeVisible();
+    await expect(projectBlock.getByText("Agents", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByText(/^Wallets?$/)).toBeVisible();
+    await expect(projectBlock.getByText("Folder", { exact: true })).toBeVisible();
     await expect(projectBlock.getByTitle(new RegExp(`${projectName}$`))).toBeVisible();
     await expect(projectBlock.getByRole("button", { name: "Project assets" })).toBeVisible();
-    await expect(projectBlock.getByRole("button", { name: "Agent Scan" })).toBeVisible();
-    await expect(vex.locator('[data-vex-area="vex-portrait-plate"]')).toBeVisible();
+    await expect(
+      vex.locator('[data-vex-area="vex-open-activity"][data-vex-activity-scope="project"]'),
+    ).toBeVisible();
+    // D2 (docs/design/H3-DESKTOP.md section 6): Kimm stands at the column's
+    // top as her portrait card, over the console, never over it.
+    await expect(vex.locator('[data-vex-area="vex-portrait-card"]')).toBeVisible();
 
     // NO MONEY IN VEX'S COLUMN: no card, no tab strip, no board surface.
     await expect(vex.locator("[data-vex-portfolio-section]")).toHaveCount(0);
@@ -524,14 +535,20 @@ export function registerRailParityScenarios(
 
     /* ---- 32: the collapsed spine carries NO words (B4) ------------------ */
 
-    await sidebar.getByRole("button", { name: "Collapse Studio sidebar" }).click();
+    // In H3 the frame's header draws the sidebar key over the column
+    // (docs/design/H3-DESKTOP.md section 1.3); the rail keeps its own Expand
+    // key as the way back.
+    await page
+      .locator('[data-vex-area="shell-head"]')
+      .getByRole("button", { name: "Collapse Studio sidebar" })
+      .click();
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
     // POLLED, because the grid track slides to the spine over the reveal
     // duration. The contract is where it SETTLES; reading the box on the first
     // frame reads the slide.
     await expect
       .poll(async () => (await sidebar.boundingBox())?.width ?? 0, { timeout: 5_000 })
-      .toBeLessThanOrEqual(72);
+      .toBeLessThanOrEqual(76);
     // THE B4 ASSERTION, measured rather than inspected: no descendant of the rail
     // paints text, and nothing in it is wider than the spine. The old rail failed
     // both - "Pro" and a chevron sat in a box wider than the column.
@@ -549,7 +566,7 @@ export function registerRailParityScenarios(
               return child.width > 0 && child.right > box.right + 1;
             }).length;
           }),
-        { message: "content is bleeding out of the 56px spine", timeout: 5_000 },
+        { message: "content is bleeding out of the 76px rail", timeout: 5_000 },
       )
       .toBe(0);
     await shot(page, `${theme}-32-sidebar-collapsed`);
@@ -561,18 +578,19 @@ export function registerRailParityScenarios(
     // Rule 08 asks for a layout threshold at the seam and on both sides. The pure
     // comparison is unit-tested (`shell-columns.test.ts`); what a browser adds is
     // that the SHELL actually applies it.
-    // The seam is R3's (docs/design/R3-MINIMAL.md section 2.1): from 1180 up
-    // the sidebar keeps its preference, under it the sidebar folds to its rail.
-    await page.setViewportSize({ width: 1181, height: 900 });
+    // The seam is H3's (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): from
+    // 1280 up the sidebar keeps its preference, under it the sidebar is the
+    // 76 rail.
+    await page.setViewportSize({ width: 1281, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1180, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1179, height: 900 });
+    await page.setViewportSize({ width: 1279, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
     await page.setViewportSize({ width: 1000, height: 900 });
     await shot(page, `${theme}-33-narrow-1000px`);
 
-    /* ---- 34: THE PAPER, as painted, in both themes ---------------------- */
+    /* ---- 34: THE PAPER, as painted, in the one theme --------------------- */
 
     // Back to the walk's viewport; the auto-collapse above was a temporary
     // constraint, so the sidebar's stored preference returns with the width.
@@ -580,26 +598,22 @@ export function registerRailParityScenarios(
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
     await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
     await expect(projectBlock).toBeVisible();
-    const other: "chronos" | "celeris" = theme === "chronos" ? "celeris" : "chronos";
     const surfaces: SurfaceGlaze[] = [];
 
-    // The column's own motion (her canvas aside) must have settled before the
-    // paper is photographed.
-    const settled = async (): Promise<void> => {
-      await page.waitForTimeout(900);
-    };
+    // In D2 her portrait card stands above the console and covers none of it
+    // (docs/design/H3-DESKTOP.md section 6), so the console's sections are
+    // read on the column's ground with her shown: the photograph is of the
+    // console at rest.
+    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
+    await page.evaluate(() => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement) focused.blur();
+    });
+    await page.mouse.move(1, 899);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
 
-    await settled();
     await shot(page, `${theme}-34-vex-sidebar-paper`);
     surfaces.push(await measureSurface(page, vex, "vex-sidebar", theme, shotsDir));
-
-    // The OTHER theme: the same column, the same measurement.
-    await pickTheme(page, other);
-    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
-    await expect(projectBlock).toBeVisible();
-    await settled();
-    await shot(page, `${other}-34-vex-sidebar-paper`);
-    surfaces.push(await measureSurface(page, vex, "vex-sidebar", other, shotsDir));
 
     if (shotsDir !== "") {
       fs.writeFileSync(

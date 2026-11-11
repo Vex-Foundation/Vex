@@ -102,15 +102,16 @@ describe("the scroller spans the panel; the column lives inside it", () => {
   it("keeps the floating slots inside the scroller but OUT of the row column", async () => {
     // The centred scene and the jump pill are zero-height STICKY slots: inside
     // the scroller (sticky resolves against the scrolling ancestor) and
-    // outside the row column, whose 18px gap they would otherwise take,
+    // outside the row column, whose flow rhythm they would otherwise break,
     // opening a hole between rows. The retired anchor-run-out spacer used to
     // hold the scroll range with dead space; the follow model needs none, so
     // nothing in the scroller writes an inline height any more.
     const { container } = await renderTranscript();
     const scroller = getScroller(container);
     const column = readingColumn(container);
-    const rowStack = column.querySelector(".gap-\\[18px\\]");
+    const rowStack = column.querySelector("[data-vex-flow]");
     expect(rowStack).not.toBeNull();
+    expect(rowStack?.querySelector("[data-vex-latest-slot]")).toBeNull();
     expect(scroller.querySelector('div[style*="height"]')).toBeNull();
   });
 

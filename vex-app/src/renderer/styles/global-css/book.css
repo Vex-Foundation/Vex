@@ -10,23 +10,245 @@
  *     .vex-pf-vex                   the $VEX line
  *
  * Paper, ink, one blue; radius 0, no shadow, no blur; every colour an alias,
- * so the Night Ledger needs no second rule set. Figures are JetBrains Mono
- * (`.vex-num`); words are Instrument Sans. Trading colours appear only on
- * trading values (`[data-trade]`: the Lighter uPnL, Long and Short, the $VEX
- * 24 hour change), never on a state word. */
+ * so the Night Ledger needs no second rule set. Figures are Roboto Mono
+ * (`.vex-num`, --font-mono); words are Be Vietnam Pro (--font-sans). Trading
+ * colours appear only on trading values (`[data-trade]`: the Lighter uPnL,
+ * Long and Short, the $VEX 24 hour change), never on a state word. */
 
-/* The page asks the sheet for the centre's width (920 at 1440) and the
- * design's page padding (22 40 24, section 9.1), not the 760 reading column:
- * the tables need it. */
-.vex-ov:has(.vex-pf) {
-  --vex-ov-max: 920px;
-  --vex-ov-pad: 40px;
-  --vex-ov-top: 22px;
+/* ---- the H3 page frame (every page) ----------------------------------
+ * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57
+ * high across the page, the tabs at the left (the selected one on the open ground,
+ * the contract's selected tab fill) and "Updated {time}" with the page's
+ * keys at the right; under its rule the page body, 24 in from each edge,
+ * not R3's centred reading column. VEX Cloud's page blocks (`page.css`, the
+ * page kit): they stand at the left, at most 1136 wide, so a wide window
+ * leaves room at the right instead of stretching a table across it.
+ *
+ * THE READING LINE (sections 1.11 and 6.6): with her panel's room standing,
+ * from 1024 (`data-vex-seat="column"`), the page starts where the chat's
+ * title and the conversation column do, on `--vex-read-x`, and the tabs row's
+ * first cell starts there too. The body zooms (`overlay.css`), so the line,
+ * measured in the window, is divided back by the zoom. With her closed the
+ * page takes the whole width right of the chats and keeps 24.
+ *
+ * These rules live here, with the pages, rather than in `overlay.css`, which
+ * keeps the sheet's box, its layer and its scroller. Every page's sheet
+ * carries `data-frame="h3"` (`ShellScreen`); the selector also names
+ * `[data-width]` (always set) so it outranks overlay.css's own
+ * `.vex-ov[data-width="wide"]` column, which loads after this sheet. */
+.vex-ov[data-frame="h3"][data-width] {
+  --vex-ov-in: 24px;
+  --vex-ov-pad: 24px;
+  --vex-ov-max: calc(var(--vex-ov-in) + 1136px + var(--vex-ov-pad));
+  --vex-ov-top: 24px;
 }
-@media (max-width: 1179px) {
-  .vex-ov:has(.vex-pf) {
-    --vex-ov-pad: 28px;
+.vex-ov[data-frame="h3"][data-width] .vex-ov__body {
+  margin-inline: 0;
+  padding-inline-start: var(--vex-ov-in);
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-ov[data-frame="h3"][data-width] {
+  --vex-ov-in: calc(var(--vex-read-x) / var(--vex-zoom, 1));
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"] .vex-ov[data-frame="h3"] > .vex-pg-bar {
+  padding-left: var(--vex-read-x);
+}
+/* The Board is desktop's own page (section 4.9, awaiting its plate): its
+ * grid of cards keeps the whole column and its 24 inset. */
+.vex-ov[data-frame="h3"][data-width]:has(> .vex-ov__scroll > .vex-ov__body > .vex-bd),
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="column"]
+  .vex-ov[data-frame="h3"][data-width]:has(> .vex-ov__scroll > .vex-ov__body > .vex-bd) {
+  --vex-ov-in: 24px;
+  --vex-ov-max: none;
+}
+/* The page's h1 takes the focus on open (the route focus, `ShellScreen`):
+ * a heading is not a control, so it draws no ring. */
+.vex-ov[data-frame="h3"] h1[tabindex="-1"]:focus {
+  outline: none;
+}
+/* The row stands above the scroller: the sheet's one grid row becomes two. */
+.vex-ov[data-frame="h3"]:has(> .vex-pg-bar) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.vex-pg-bar {
+  display: flex;
+  min-width: 0;
+  min-height: 57px;
+  align-items: stretch;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-family: var(--font-sans);
+}
+/* The tab cells: each bounded by the rule on both sides (two neighbours
+ * share one), a key's caps 13 tracked 0.08em (VEX Cloud's `.pg-tabs a`),
+ * ink 2 at rest, ink on the open ground when selected. */
+.vex-pg-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.vex-pg-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  /* The detail span starts with " · ", whose space a flex item drops. */
+  gap: 0.35em;
+  margin-left: -1px;
+  /* VEX Cloud's tab cell (`rows.css`, `.vx-tabs`): 22 each side. */
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-tab:first-child {
+  margin-left: 0;
+}
+.vex-pg-tab:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-tab[aria-pressed="true"] {
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-tab:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-pg-tab__d {
+  color: var(--vex-alias-label-tertiary);
+}
+/* A narrow page (her section open on a 1440 window leaves the chat column
+ * 760): the cells tighten and drop their muted second word ("· Primary"),
+ * which the Wallets table on the same page still prints beside each wallet,
+ * so three wallet tabs, the stamp and the key share one row instead of the
+ * last tab scrolling under the stamp. The bar is its own size container, so
+ * this follows the page's width, not the window's. */
+.vex-pg-bar {
+  container: vex-pg-bar / inline-size;
+}
+@container vex-pg-bar (width < 900px) {
+  .vex-pg-tabs .vex-pg-tab {
+    padding: 0 18px;
   }
+  .vex-pg-tabs .vex-pg-tab__d {
+    display: none;
+  }
+}
+.vex-pg-bar__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  padding-left: 16px;
+}
+/* "Updated 14:30": 12, muted, sentence case (VEX Cloud's page stamp); the
+ * clock is a figure at the same size. */
+.vex-pg-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pg-stamp .vex-num {
+  font-size: 12px;
+}
+/* A page key in the row: a square cell the row's height, the rule on its
+ * left, the icon at rest in ink 2. */
+.vex-pg-key {
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: -24px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-key:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.vex-pg-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* ---- a failed refresh (`RefreshFailedNotice`) -------------------------
+ * docs/design/H3-DESKTOP.md section 1.9, VEX Cloud's `.vx-notice` retry
+ * notice: one framed cell on the card ground, at least 48 high, over the
+ * figures it leaves standing. The cross in a 44 column, the sentence (14,
+ * ink), then Retry as a key cell on the right edge, its left rule the
+ * notice's own line. Never red: the cross says it. */
+.vex-pg-notice {
+  display: flex;
+  align-items: stretch;
+  min-height: 48px;
+  margin: 0 0 20px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-notice__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+}
+.vex-pg-notice__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 13px 16px 14px 0;
+}
+.vex-pg-notice__key {
+  flex: none;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-notice__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-notice__key[aria-disabled="true"] {
+  cursor: progress;
+}
+.vex-pg-notice__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
 }
 
 .vex-pf {
@@ -49,64 +271,320 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* ---- the total ------------------------------------------------------- */
+/* ---- the lead line and the tiles --------------------------------------
+ * docs/design/H3-DESKTOP.md sections 1.9 and 2.3 (`PositionBlock`): the quiet
+ * hatch and MAINNET (PD-05) and the lead (at most 760, VEX Cloud's
+ * `.vx-pglead`: "Real money on mainnet." in ink 2, what the total includes
+ * muted, as Cloud's `.vx-pfo-lead > span`), then the tiles: square cells told apart by 1px rules (the grid's
+ * 1px gaps over the rule colour, so two cells share one rule and the frame is
+ * one rule all round), each a caps label (11, muted; VEX Cloud's `.fig
+ * dt`), the figure (sans 18 / 1.1 at -0.01em, 400; the wallet total 24 /
+ * 600, VEX Cloud's `.fig dd` and `.fig.is-hero dd`) and a muted line (12). As
+ * many columns as tiles, up to four in a row where the page is wide, the
+ * wallet total's track a little wider (1.3 to the others' 1, VEX Cloud's
+ * `.vx-fstrip` hero); two in a row when four would not fit (Cloud goes to
+ * three under 900, which would leave four tiles a hole); one under 480. */
 
 .vex-pf-top {
+  margin: 0 0 24px;
+}
+.vex-pf-lead {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px 24px;
+  align-items: center;
+  gap: 8px 20px;
+  max-width: 760px;
   margin: 0 0 20px;
-}
-.vex-pf-top__main {
-  min-width: 0;
-}
-.vex-pf-top__line {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
-}
-/* The money headline: mono 34 / 1.1, 500, -.03em (section 1.3). */
-.vex-pf .vex-pf-top__big {
-  margin: 0;
-  font-size: 34px;
-  font-weight: 500;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
-  color: var(--vex-alias-label-primary);
-}
-.vex-pf-top__sub {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-pf-top__sub .vex-num {
-  font-size: 12px;
-}
-.vex-pf-top__ink {
+  font-size: 14px;
+  line-height: 1.45;
   color: var(--vex-alias-label-secondary);
 }
-/* The snapshot change is ink, never a trading colour; a stale one is muted. */
-.vex-pf .vex-pf-top__pnl {
-  font-size: 13px;
-  color: var(--vex-alias-label-primary);
+.vex-pf-lead__net {
+  flex: none;
 }
-.vex-pf .vex-pf-top__pnl[data-stale="true"] {
+.vex-pf-lead__ink {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pf-lead .vex-pf-top__line {
   color: var(--vex-alias-label-tertiary);
 }
+.vex-pf-tiles {
+  display: grid;
+  grid-template-columns: repeat(var(--vex-pf-tiles, 1), minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-rule);
+}
+.vex-pf-tiles[data-count="2"] {
+  --vex-pf-tiles: 2;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+.vex-pf-tiles[data-count="3"] {
+  --vex-pf-tiles: 3;
+  grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr));
+}
+.vex-pf-tiles[data-count="4"] {
+  --vex-pf-tiles: 4;
+  grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));
+}
+@container vex-pf (width < 900px) {
+  .vex-pf-tiles[data-count="4"] {
+    --vex-pf-tiles: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container vex-pf (width < 480px) {
+  .vex-pf-tiles[data-count] {
+    --vex-pf-tiles: 1;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.vex-pf-tile {
+  min-width: 0;
+  padding: 16px 16px 18px;
+  background: var(--vex-alias-bg-base);
+}
+.vex-pf-tile__l {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-tile__fig {
+  margin: 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vex-alias-label-primary);
+}
+/* The wallet total: the equity figure, 24 / 600 (VEX Cloud's hero tile). */
+.vex-pf-tile[data-vex-tile="total"] .vex-pf-tile__fig {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+/* The snapshot change is a change in wallet value (deposits count), not
+ * trading P&L: it keeps the ink and its sign; past 24 hours it is muted. */
+.vex-pf-top__pnl[data-stale="true"],
+.vex-pf-tile[data-stale="true"] .vex-pf-tile__fig {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-tile__u {
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-tile__sub {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-tile__sub .vex-num {
+  font-size: 11px;
+}
+
+/* ---- the wallet total chart (`EquityChart`) ---------------------------
+ * H3's EQUITY card (sections 1.9 and 4.1 item 12): one framed cell; a head
+ * 48 high with the label at the left (12 caps, 600, VEX Cloud's `.head`) and the range keys as
+ * cells at the right, the selected one underlined in ink as H3 draws 30
+ * DAYS; then the plot on a dotted ground, the values at the left (mono 12,
+ * muted) and the dates under it. The line is ink 1.5; the area under it a
+ * flat white wash (H3 allows no gradient here); a cycle a chain read missed
+ * is a hollow mark off the line. */
+.vex-pf-chart {
+  margin: 0 0 28px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-chart__h {
+  display: flex;
+  min-height: 44px;
+  align-items: stretch;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-chart__t {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+/* The range (C3-E-12): VEX Cloud's segmented control in its brand tone
+ * (`controls.css`, `.vx-seg[data-tone="brand"]`): segments at least 32 high,
+ * 14 in, the 11 caps muted, a rule between them; the chosen one framed in
+ * the chosen rule on the raised ground, in ink. Each segment's press reaches
+ * 44 high with the head. */
+.vex-pf-range {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 16px;
+}
+.vex-pf-range__item {
+  position: relative;
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-left-color: var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-range__item::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+.vex-pf-range__item:first-child,
+.vex-pf-range__item[aria-checked="true"] + .vex-pf-range__item {
+  border-left-color: transparent;
+}
+.vex-pf-range__item:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-range__item[aria-checked="true"] {
+  border-color: var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-range__item:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-pf-chart__b {
+  padding: 20px 20px 16px;
+}
+.vex-pf-chart__b > .vex-pf-note {
+  margin: 0;
+  padding: 40px 0;
+  text-align: center;
+}
+.vex-pf-chart__plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 240px auto;
+  column-gap: 12px;
+}
+.vex-pf-chart__y {
+  position: relative;
+  min-width: 52px;
+}
+.vex-pf-chart__yl {
+  position: absolute;
+  right: 0;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+  transform: translateY(-50%);
+}
+.vex-pf-chart__area {
+  position: relative;
+  background-image: radial-gradient(var(--vex-alias-rule) 1px, transparent 1.2px);
+  background-size: 16px 16px;
+}
+.vex-pf-chart__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.vex-pf-chart__grid {
+  stroke: var(--vex-alias-rule);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.vex-pf-chart__fill {
+  fill: var(--vex-alias-interactive-hover);
+  stroke: none;
+}
+.vex-pf-chart__line {
+  fill: none;
+  stroke: var(--vex-alias-label-primary);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+/* A lone complete cycle (no line yet) is a filled square; a partial cycle is
+ * a hollow one, off the line. */
+.vex-pf-chart__mark {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  background: var(--vex-alias-label-primary);
+  transform: translate(-50%, -50%);
+}
+.vex-pf-chart__mark[data-vex-mark="partial"] {
+  border: 1px solid var(--vex-alias-label-secondary);
+  background: var(--vex-alias-bg-base);
+}
+.vex-pf-chart__x {
+  position: relative;
+  grid-column: 2;
+  height: 26px;
+}
+.vex-pf-chart__xl {
+  position: absolute;
+  top: 10px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+  transform: translateX(-50%);
+}
+.vex-pf-chart__xl:first-child {
+  transform: none;
+}
+.vex-pf-chart__xl:last-child {
+  transform: translateX(-100%);
+}
+.vex-pf-chart__notes {
+  margin-top: 10px;
+}
+.vex-pf-chart__note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-chart__key {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1px solid var(--vex-alias-label-secondary);
+}
+
 .vex-pf-top__empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-}
-.vex-pf-top__side {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
 }
 .vex-pf-warn {
   max-width: 620px;
@@ -122,42 +600,7 @@
   margin-top: 4px;
 }
 
-/* The scope chips: a segmented control, 30 high, 13, a 1px rule border; the
- * selected chip takes the selection fill and blue 500 type. Chips that do not
- * fit wrap onto a second row with their borders still collapsed. */
-.vex-pf-seg {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  padding: 1px 0 0 1px;
-}
-.vex-pf-seg__b {
-  position: relative;
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  margin: -1px 0 0 -1px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: transparent;
-  font-size: 13px;
-  white-space: nowrap;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-pf-seg__b:hover {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-pf-seg__b[aria-pressed="true"] {
-  z-index: 1;
-  background: var(--vex-alias-interactive-active);
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-pf-seg__d {
-  font-weight: 400;
-}
-
-/* The icon key (32 x 32, section 1.5): refresh, and a row's dots. */
+/* The icon key (32 x 32, section 1.5): a row's dots and keys. */
 .vex-pf-key {
   display: inline-flex;
   width: 32px;
@@ -284,23 +727,32 @@
   min-width: 0;
   overflow-x: auto;
 }
+/* 12 under the head, VEX Cloud's section head (`page.css`, `.vx-psec-h`). */
 .vex-pf-sec__h {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 4px;
+  margin: 0 0 12px;
 }
+/* The section head, H3's label (section 2.3: EQUITY, ALLOCATION, OPEN
+ * POSITIONS): the name in 12 caps tracked 0.08em, 600, ink (VEX Cloud's
+ * `.head`); the note after it stays a sentence, 13 muted. */
 .vex-pf-sec__t {
   display: inline-flex;
   min-width: 0;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 0 6px;
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.6;
+}
+.vex-pf-sec__name {
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 .vex-pf-sec__note {
   font-size: 13px;
@@ -311,20 +763,39 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
-/* A section link: 13 / 500, blue. */
+/* A section link: 13, ink, underlined (section 2.3: links are ink with an
+ * underline, never blue); a hover steps to ink 2. */
 .vex-pf-link {
   padding: 0;
   border: 0;
   background: none;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
 }
 .vex-pf-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-color: currentColor;
+  color: var(--vex-alias-label-secondary);
+}
+/* A head inside a section (the Lighter account's OPEN POSITIONS and its
+ * count): the section head's label, with the count a muted figure. */
+.vex-pf-subh {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-subh__n {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
 }
 /* A quiet state line: muted by default, ink for a failure (never a colour). */
 .vex-pf-note {
@@ -349,19 +820,22 @@
   margin-top: 8px;
 }
 
-/* Tables: header 12 muted with a 1px rule under it, rows 36 high on quiet
- * rules, figures mono 13 right aligned, columns 18 apart. */
+/* Tables: H3's table heads (section 2.3: 13 caps tracked, muted) with a 1px
+ * rule under them, rows 36 high on quiet rules, figures mono 13 right
+ * aligned, columns 18 apart. */
 .vex-pf-t {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .vex-pf-t th {
-  padding: 8px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--vex-alias-rule);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
   text-align: left;
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
@@ -456,6 +930,36 @@
   line-height: 1.25;
 }
 
+/* BALANCES and ALL ASSETS in VEX Cloud's data table (`data.css`, the page
+ * kit): one rule frame on the card ground; the head 34 high; the rows 48
+ * high, each cell 12 in on both sides and the first 16 in from the frame;
+ * the quiet wash under a hovering pointer. The positions and activity tables
+ * keep their own frames below. */
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) th {
+  height: 34px;
+  padding: 0 12px;
+  vertical-align: middle;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) td {
+  height: 48px;
+  padding: 0 12px;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) :is(th, td):first-child {
+  padding-left: 16px;
+}
+.vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) tbody tr:last-child > td {
+  border-bottom: 0;
+}
+@media (hover: hover) {
+  .vex-pf-t:is(.vex-pf-t--balances, .vex-pf-t--register) tbody tr:hover > td {
+    background: var(--vex-alias-interactive-hover);
+  }
+}
+
 /* ALL ASSETS draws the same table at full length (`BalancesTable`, variant
  * `register`), on the wide ledger page rather than a `.vex-pf` page (whose
  * sheet width is the Portfolio page's), so it carries the few rules the table
@@ -475,7 +979,9 @@
   background: var(--vex-alias-interactive-hover);
 }
 
-/* Trading values only: the Lighter uPnL, Long and Short, the $VEX change. */
+/* Trading values only: the Lighter uPnL and the $VEX change. A position's
+ * side, Long or Short, is a word in ink (`.vex-pf-side`), never the trading
+ * pair (VEX Cloud's DG5-07, docs/design/H3-DESKTOP.md section 5.3). */
 .vex-pf [data-trade="up"],
 .vex-pf-vex [data-trade="up"] {
   color: var(--vex-alias-trade-up);
@@ -485,32 +991,40 @@
   color: var(--vex-alias-trade-down);
 }
 .vex-pf-side {
+  color: var(--vex-alias-label-primary);
   font-weight: 600;
 }
 .vex-pf-pct {
   font-size: 12px;
 }
 
-/* The Lighter account's four figures, between a rule and a quiet rule. */
+/* The Lighter account's four figures: a row of ruled cells, the tiles'
+ * grammar one step down (the label 13 caps muted, the figure 16). */
 .vex-pf-kv4 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 6px 0 0;
-  border-top: 1px solid var(--vex-alias-rule);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  gap: 1px;
+  margin: 8px 0 0;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-rule);
 }
 .vex-pf-kv4 > div {
   min-width: 0;
-  padding: 8px 12px 8px 0;
+  padding: 14px 18px;
+  background: var(--vex-alias-bg-base);
 }
 .vex-pf-kv4 dt {
-  margin-bottom: 2px;
-  font-size: 12px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-kv4 dd {
   margin: 0;
-  font-size: 14px;
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 @container vex-pf (width < 720px) {
@@ -518,23 +1032,95 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* H3's positions table (A.8, section 4.1 item 13): a framed cell; heads 40
+ * high; rows 54 high, the market's name (15, ink) over a muted line of its
+ * terms (13), the figures mono at the right; the row's key a cell of its own
+ * at the end, the rule on its left, the row's height. */
 .vex-pf-t--positions {
-  margin-top: 6px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-t--positions th {
+  height: 40px;
+  padding: 0 18px;
+  vertical-align: middle;
+}
+.vex-pf-t--positions td {
+  height: 54px;
+  padding: 0 18px;
+}
+.vex-pf-t--positions tbody tr:last-child > td {
+  border-bottom: 0;
+}
+.vex-pf-pos__m {
+  display: block;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.vex-pf-pos__sub {
+  display: block;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-t--positions .vex-pf-act {
+  width: 56px;
+  padding: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  text-align: center;
 }
 
-/* Activity: the caps kind tag (11 / 600, .08em, ink 2), the legs, the figure,
- * the chain and time, and the row's closing word with its fill. */
+/* ---- H3's status mark (every activity row: Portfolio's and Activity's) --
+ * docs/design/H3-DESKTOP.md section 2.2, VEX Cloud's StatusLabel at its row
+ * size (`.vx-sq-word`, sm): the 6px state square 6 before the state word in
+ * caps 11, ink; a failure's word in the refusal ink. The square is the
+ * shared state square (`StateSquare`, ui-primitives/marks.css), so every
+ * status keeps its own drawing: solid green for filled, the blinking hud for
+ * running, the cross for failed, the framed ink hatch for Status unknown,
+ * the target for waiting, an empty muted frame for a word this build does
+ * not know (`StatusMark`). */
+.vex-status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  line-height: 1.3;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-status-mark[data-status="failed"] {
+  color: var(--vex-alias-state-refusal);
+}
+
+/* Activity, in H3's rows (the console's RECENT ACTIVITY grammar): one framed
+ * cell, rows 52 high on the rule, the kind in caps (13, muted), the legs (15,
+ * ink), the figure and the chain and time muted, and the row's closing word
+ * with its square at the right. */
+.vex-pf-t--activity {
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-t--activity td {
+  height: 52px;
+  padding: 0 18px;
+}
+.vex-pf-t--activity tbody tr:last-child > td {
+  border-bottom: 0;
+}
 .vex-pf-t--activity td.vex-pf-kind {
-  width: 120px;
+  width: 150px;
 }
 .vex-pf-t--activity td.vex-pf-when {
-  width: 120px;
+  width: 150px;
 }
 .vex-pf-t--activity td.vex-pf-outcome {
-  width: 230px;
+  width: 280px;
 }
 /* The kind's words are ActivityBadge's; on the page they read as a plain caps
- * tag, not a filled chip. */
+ * label, not a filled chip. */
 .vex-pf-kind > span {
   display: inline;
   height: auto;
@@ -544,35 +1130,38 @@
   border-radius: 0;
   background: none;
   font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-desc {
+  font-size: 15px;
   color: var(--vex-alias-label-primary);
 }
 .vex-pf-arrow {
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf .vex-pf-t .vex-pf-when {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
+/* The explorer link: ink and underlined, like every H3 link. */
 .vex-pf-tx {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-left: 8px;
   font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
 }
-.vex-pf-outcome .vex-state-word {
+.vex-pf-outcome .vex-status-mark {
   justify-content: flex-end;
-  font-size: 12.5px;
 }
 @container vex-pf (width < 720px) {
   .vex-pf-t--activity td.vex-pf-kind,
@@ -580,6 +1169,390 @@
   .vex-pf-t--activity td.vex-pf-outcome {
     width: auto;
   }
+}
+
+/* ---- the ledger pages in H3 rows (Activity, token history, All assets) --
+ * docs/design/H3-DESKTOP.md sections 1.9, 2.2, 2.3 and 4.9: Activity "follows
+ * the page frame, with rows built from the console's and the chats list's
+ * cells". The ledger's R3 grammar (`.vex-scan-*`) lives in `overlay.css`,
+ * which keeps the page sheet; H3's rows are laid over it here, under the
+ * frame (`.vex-ov[data-frame="h3"]`, so each rule outranks its R3 twin):
+ *   - the filter menus are 40-high cells on the rule, their names in caps;
+ *   - a day head is a group head (TODAY): 12 caps tracked, muted;
+ *   - a row is 60 high on the rule: the kind in caps (13, muted), the legs in
+ *     ink (15, figures mono), the meta line 13 muted with its links ink and
+ *     underlined, the value in mono, and the row's end H3's status mark
+ *     (`StatusMark`) with its consequence under it;
+ *   - the state column is wide enough for "Submitted, awaiting
+ *     confirmation" in caps;
+ *   - Load more is a key cell. */
+.vex-ov[data-frame="h3"] .vex-scan-lead {
+  max-width: 760px;
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filters {
+  gap: 0;
+  padding: 20px 0;
+  border-bottom: 0;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter + .vex-scan-filter {
+  margin-left: -1px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key {
+  height: 40px;
+  gap: 10px;
+  padding: 0 14px 0 16px;
+  background: transparent;
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key[aria-expanded="true"],
+.vex-ov[data-frame="h3"] .vex-scan-filter__key:hover {
+  position: relative;
+  z-index: 1;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__name {
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key[data-active] .vex-scan-filter__value {
+  font-weight: 400;
+}
+.vex-ov[data-frame="h3"] .vex-scan-scope {
+  height: 40px;
+  margin-left: 12px;
+  padding: 0 14px;
+  font-weight: 400;
+}
+.vex-ov[data-frame="h3"] .vex-scan-active {
+  font-size: 13px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-day {
+  padding: 22px 0 8px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-row {
+  grid-template-columns: 150px minmax(0, 1fr) 140px 300px;
+  column-gap: 18px;
+  min-height: 60px;
+  padding: 10px 0;
+  border-bottom-color: var(--vex-alias-rule);
+}
+.vex-ov[data-frame="h3"] .vex-scan-kind > span {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ov[data-frame="h3"] .vex-scan-what {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-legs {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-meta {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-meta .vex-num {
+  font-size: 12px;
+}
+/* Every H3 link is ink with an underline, never blue. */
+.vex-ov[data-frame="h3"] .vex-scan-link {
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ov[data-frame="h3"] .vex-scan-link:hover {
+  text-decoration-color: currentColor;
+}
+.vex-ov[data-frame="h3"] .vex-scan-value {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-state {
+  gap: 4px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-sub {
+  font-size: 13px;
+  line-height: 18px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-detail > dt {
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-note {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-more {
+  height: 44px;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* Agent Scan's feed (C3-E-07, VEX Cloud's `.vx-rows` and `.vx-arow`): one
+ * rule frame on the card ground (an inset outline, so the virtual list's
+ * measured heights stay whole), each row at least 56 high and 20 in from the
+ * frame, the day heads on the same inset. The value column, the filters and
+ * the outcome words stay desktop's. */
+.vex-ov[data-frame="h3"] .vex-scan-rows {
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+  background: var(--vex-alias-card);
+}
+.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-row {
+  min-height: 56px;
+  padding: 10px 20px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-rows .vex-scan-day {
+  padding-inline: 20px;
+}
+@container (max-width: 760px) {
+  .vex-ov[data-frame="h3"] .vex-scan-row {
+    grid-template-columns: 110px minmax(0, 1fr) 100px 200px;
+    column-gap: 12px;
+  }
+  .vex-ov[data-frame="h3"] .vex-scan-state .vex-status-mark {
+    white-space: normal;
+    text-align: right;
+  }
+}
+
+/* ---- Markets (the Watchlist page) in H3 rows --------------------------
+ * docs/design/H3-DESKTOP.md sections 2.2 to 2.4 and 4.9 (`WatchlistScreen`).
+ * The plate is VEX Cloud's built watchlist (owner decision 2026-11-09, look
+ * only; Cloud's `WatchlistPage` and `WatchlistRow`, W5 8f701ca2):
+ *   - the lead, then from a 900 page two columns, 1.25 to 1, 24 apart:
+ *     Following at the left, the alerts at the right; one column under 900;
+ *   - a section head is the 12 caps name (600) and its count after it, 12
+ *     muted in tabular figures, 12 above the list;
+ *   - a list stands on the card ground in one rule frame: a caps head 34
+ *     high (11, muted), rows 56 high and 16 in, the name (15) over its chain
+ *     and pool (12, muted), the price (13) over the 24 hour change (12, in
+ *     the gain or loss colour), then the row's keys as cells, the rule on
+ *     their left, 13 caps;
+ *   - the follow form is a framed box on the card ground, 16 in;
+ *   - an alert row is the status mark, its words, where it came from and its
+ *     key. */
+.vex-mk {
+  container: vex-mk / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__lead {
+  max-width: 760px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@container vex-mk (width >= 900px) {
+  .vex-mk__cols {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+}
+.vex-mk__col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.vex-mk__ink {
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__muted {
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vex-mk__hrow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.vex-mk__h {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__table {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-mk__box {
+  padding: 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-mk__item + .vex-mk__item,
+.vex-mk__row--head + .vex-mk__item,
+.vex-mk__alert + .vex-mk__alert {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mk__row {
+  display: grid;
+  /* The keys column is fixed so the head row's columns line up over it. */
+  grid-template-columns: minmax(0, 1fr) 150px 236px;
+  align-items: stretch;
+  column-gap: 12px;
+  min-height: 56px;
+  padding-left: 16px;
+}
+.vex-mk__row > * {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.vex-mk__row--head {
+  min-height: 34px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__r {
+  justify-content: flex-end;
+  text-align: right;
+}
+.vex-mk__row > .vex-mk__name,
+.vex-mk__row > .vex-mk__fig {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.vex-mk__row > .vex-mk__name {
+  align-items: flex-start;
+}
+.vex-mk__row > .vex-mk__fig {
+  align-items: flex-end;
+}
+.vex-mk__label {
+  font-size: 15px;
+}
+.vex-mk__sub {
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__price {
+  font-size: 13px;
+}
+.vex-mk__change {
+  font-size: 12px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk [data-trade="up"] {
+  color: var(--vex-alias-trade-up);
+}
+.vex-mk [data-trade="down"] {
+  color: var(--vex-alias-trade-down);
+}
+.vex-mk__keys {
+  align-self: stretch;
+  justify-content: flex-end;
+}
+/* A key cell: the row's height, the rule on its left, 13 caps, ink 2. */
+.vex-mk__key {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 18px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__key[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__key:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+.vex-mk__key:focus-visible,
+.vex-mk__link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-mk__form {
+  padding: 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mk__alert {
+  display: flex;
+  min-height: 56px;
+  align-items: stretch;
+  gap: 12px;
+  padding-left: 16px;
+}
+.vex-mk__alert > :not(.vex-mk__key) {
+  display: flex;
+  align-items: center;
+}
+.vex-mk__words {
+  min-width: 0;
+  flex: 1;
+  font-size: 15px;
+}
+.vex-mk__link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__foot {
+  margin: 0;
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
 }
 
 /* The Launchpad: square tiles on a 1px rule, then Add image and the launch. */
@@ -785,4 +1758,173 @@
   font-family: var(--font-sans);
   font-size: 12px;
   color: var(--vex-alias-accent-primary);
+}
+
+/* ---- Vex Inference funds (`VexCloudFundingScreen`) ---------------------
+ * docs/design/H3-DESKTOP.md section 4.9. The plate is VEX Cloud's built Vex
+ * Inference page (owner decision 2026-11-09, look only; Cloud's
+ * `inference.css` section 5, `.vx-acct-figs`, and its 760 money forms):
+ *   - the Balance box: one rule frame on the card ground, a 44 head (12 caps
+ *     600, and "As of {time}" 12 muted at the right), then the two figures
+ *     and the keys cut by 1px rules; a figure is an 11 caps muted label over
+ *     a 20 mono figure and a 13 muted line, padding 14 16; Deposit and
+ *     Withdraw stand stacked as cells at the right, at least 160 wide, never
+ *     blue;
+ *   - the tab panels are framed on the card ground, at most 760 wide. */
+.vex-inf-bal {
+  max-width: 1136px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-inf-bal__h {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-inf-bal__t {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-bal__asof {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-inf-figs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 1px;
+  background: var(--vex-alias-rule);
+}
+.vex-inf-fig {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--vex-alias-card);
+}
+.vex-inf-fig__k {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-inf-fig__v {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-fig__n {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+/* While the first read runs the box has no keys: two figure cells. */
+.vex-inf-figs--load {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.vex-inf-keys {
+  display: flex;
+  flex-direction: column;
+  background: var(--vex-alias-bg-base);
+}
+.vex-inf-key {
+  display: inline-flex;
+  min-width: 160px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-inf-key + .vex-inf-key {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-inf-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-inf-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-inf-forms {
+  max-width: 760px;
+}
+.vex-inf-panel {
+  padding: 20px;
+  border: 1px solid var(--vex-alias-rule);
+  border-top: 0;
+  background: var(--vex-alias-card);
+}
+
+/* ---- a page's first read (`PageLoading`, `CoverRows`) ------------------
+ * docs/design/H3-DESKTOP.md sections 1.9 and 5.6 (VEX Cloud's `PageLoading`,
+ * `RowsSkeleton` and `.vx-pfo-load-*`): the loading word over parked covers,
+ * 16 apart; rows of covers in one rule frame on the card ground, each at
+ * least 48 high, 12 16 in, two text covers over each other and a figure
+ * cover at the right; the curve's cover a block on the raised fill with the
+ * scan's head at its left. A page whose tabs row says the word hides it
+ * here. */
+.vex-pgload {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+.vex-pgload[data-word-in-bar] > .vex-loading-word {
+  display: none;
+}
+.vex-load-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-load-rows > li {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-load-rows > li:last-child {
+  border-bottom: 0;
+}
+.vex-load-rows__text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+.vex-pf-load-curve {
+  height: 240px;
+  border: 1px solid var(--vex-alias-rule);
+  border-left-color: var(--vex-alias-scan-head);
+  background: var(--vex-alias-interactive-solid);
 }

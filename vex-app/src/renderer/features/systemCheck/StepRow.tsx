@@ -1,10 +1,12 @@
 /**
- * Single probe row on the System Check page (`docs/design/R3-MINIMAL.md section 10.3`).
+ * Single probe row on the System Check page, in the console's row grammar
+ * (docs/design/H3-DESKTOP.md section 4.9; the plate `stage-system-check`).
  *
- * Layout: the label (15 / 500) with the detail under it in the figure face (12.5, muted), and the
- * state word at the right (13.5): a fill and a word. While a probe is loading the word is
- * "Checking" on the dot screen and the row reads blue; once resolved it prints a swatch (solid =
- * ok, target = warn, ink cross = fail) beside the word. The fill is never a hue.
+ * Layout: the label (15) with the detail under it in the figure face (13,
+ * muted), and the state at the right as H3's status (section 2.2): a square
+ * and an ink word in caps. While a probe is loading the word is "Checking"
+ * beside the grey square; once resolved it is green for ok, ink for a warning
+ * the person can act on (Setup, Low), red for a failure.
  *
  * The `data-step-status` attribute remains the stable selector across
  * refactors (e2e + unit tests rely on it). `badgeLabel` decouples the
@@ -16,8 +18,7 @@
 
 import { type JSX } from "react";
 
-import { StateWord } from "../../components/ui/state-word.js";
-import { type SwatchState } from "../../components/ui/swatch.js";
+import { StageStatus, type StageSquareKind } from "../../components/onboarding/StageFrame.js";
 
 export type StepStatus = "loading" | "ok" | "warn" | "fail";
 
@@ -35,12 +36,12 @@ const defaultBadgeLabel: Record<StepStatus, string> = {
   fail: "Failed",
 };
 
-/** Status by fill: the dot screen while it is in flight, solid, the target, the ink cross. */
-const statusSwatch: Record<StepStatus, SwatchState> = {
-  loading: "ongoing",
+/** H3's squares: grey while in flight, green ok, ink a warning, red a failure. */
+const statusSquare: Record<StepStatus, StageSquareKind> = {
+  loading: "running",
   ok: "done",
-  warn: "warning",
-  fail: "error",
+  warn: "ink",
+  fail: "failed",
 };
 
 export function StepRow({
@@ -57,7 +58,7 @@ export function StepRow({
     >
       <span className="vex-fr-probe__l">{label}</span>
       {detail ? <span className="vex-fr-probe__d vex-num">{detail}</span> : null}
-      <StateWord state={statusSwatch[status]} word={badgeLabel ?? defaultBadgeLabel[status]} />
+      <StageStatus kind={statusSquare[status]} word={badgeLabel ?? defaultBadgeLabel[status]} />
     </li>
   );
 }

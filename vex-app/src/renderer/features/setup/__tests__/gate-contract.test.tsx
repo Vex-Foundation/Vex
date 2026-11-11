@@ -147,6 +147,8 @@ describe("boot gate contract (reduced motion)", () => {
     await waitFor(() =>
       expect(useUiStore.getState().setupGateActive).toBe(false),
     );
+    // The system check stands on the same plate: nothing lifts away.
+    expect(getStageVex().exit).toBe("idle");
   });
 
   it("returning user with a locked vault lands on unlock via openUnlock", async () => {
@@ -162,16 +164,17 @@ describe("boot gate contract (reduced motion)", () => {
     );
   });
 
-  it("tells the plate the pipeline is done, and keeps it for the screen it hands off to", async () => {
+  it("tells the plate the pipeline is done, and lifts it away with the gate over the unlock", async () => {
     stubVex({ setupCompleteFlag: true, vaultConfigured: true, unlocked: false });
     renderGate();
     expect(getStageVex().pipelineReady).toBe(false);
     await waitFor(() => expect(getStageVex().pipelineReady).toBe(true));
+    // The lock screen stands on no stage (docs/design/H3-DESKTOP.md section
+    // 4.13): her stage lifts away with the gate, as it does over the shell.
+    await waitFor(() => expect(getStageVex().exit).toBe("reveal"));
     await waitFor(() =>
       expect(useUiStore.getState().setupGateActive).toBe(false),
     );
-    // The unlock stands on the same plate: nothing lifts away.
-    expect(getStageVex().exit).toBe("idle");
   });
 
   it("lifts the plate away with the gate when the launch lands on the shell", async () => {

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { ProjectRailRow } from "../ProjectRailRow.js";
 import { projectDriftLabel, projectPermissionDescription, STUDIO_DRIFT_SENTENCES } from "../../studio-copy.js";
 import { makeArtifact, makeProject } from "../../__tests__/studio-fixtures.js";
+import { clearAllProjectLive, clearProjectLive, publishProjectLive } from "../../workspace/project-live.js";
 
 afterEach(cleanup);
 
@@ -71,61 +72,26 @@ describe("the drift badge", () => {
 });
 
 describe("standing project permission", () => {
-  it.each(["chronos", "celeris"])("keeps the full-access state outside action replacement in %s", (theme) => {
-    const project = makeProject({ name: "An exceptionally long project name that must truncate before permission", permission: "full" });
-    const view = render(
-      <div data-vex-theme={theme}>
-        <ProjectRailRow project={project} selected onSelect={() => {}} actions={<button type="button">Actions</button>} />
-      </div>,
+  it("says full access in the row's description and tooltip, with no tag on the row (the H3 plate)", () => {
+    const project = makeProject({ name: "An exceptionally long project name that must truncate", permission: "full" });
+    render(
+      <ProjectRailRow project={project} selected onSelect={() => {}} actions={<button type="button">Actions</button>} />,
     );
     const row = screen.getByText(project.name).closest("button");
     if (row === null) throw new Error("Project selection control is missing");
-    // The outlined caps tag (docs/design/R3-MINIMAL.md section 1.3): the
-    // source is sentence case, the tag paints the caps.
-    const permission = screen.getByText("Full access");
-    expect(permission.className).toContain("vex-tag");
-    expect(permission.className).toContain("vex-st-tag");
+    // Our approved Studio plate draws no access tag on a row: the open
+    // project's access is the header's line and the console's This project.
+    // The standing authority stays where it is asked for, on every row.
+    expect(screen.queryByText("Full access")).toBeNull();
+    expect(row.querySelector("[data-vex-project-permission]")).toBeNull();
     expect(screen.getByText(project.name).className).toContain("truncate");
     expect(row.getAttribute("aria-description")).toBe(projectPermissionDescription("full"));
-    // JSDOM does not paint Tailwind: pin the layout seam here, then measure
-    // computed opacity and nonoverlapping boxes in the Electron capture.
-    const assertPersistentLayout = () => {
-      const badge = screen.getByText("Full access");
-      const state = badge.closest("[data-rail-persistent-state]");
-      expect(state).not.toBeNull();
-      for (let node: Element | null = badge; node !== null; node = node.parentElement) {
-        expect(node.className).not.toMatch(/opacity-0|\bhidden\b/);
-      }
-      const actions = screen.getByText("Actions").closest("[data-rail-actions]");
-      expect(actions?.className).toContain("shrink-0");
-      expect(actions?.className).not.toContain("absolute");
-    };
-    assertPersistentLayout();
-    fireEvent.mouseEnter(row);
-    assertPersistentLayout();
     act(() => row.focus());
-    assertPersistentLayout();
     expect(screen.getByRole("tooltip").textContent).toBe(projectPermissionDescription("full"));
-    view.rerender(
-      <div data-theme={theme}>
-        <ProjectRailRow project={project} selected onSelect={() => {}} actions={<button type="button">Actions</button>} actionsPinned />
-      </div>,
-    );
-    assertPersistentLayout();
-  });
-
-  it("retains a compact warning and the complete accessible permission and drift description", () => {
-    const project = makeProject({ permission: "full", files: { lastRenderedScopeVersion: 1, generatorFingerprint: "test", artifacts: [makeArtifact("drifted")] } });
-    render(<ProjectRailRow project={project} selected={false} collapsed onSelect={() => {}} />);
-    const row = screen.getByRole("button", { name: project.name });
-    expect(screen.queryByText("Full access")).toBeNull();
-    // The 14px line warning over the folder key, the smallest line icon size.
-    const warning = row.querySelector('[data-vex-project-permission="full"] svg');
-    expect(warning?.getAttribute("width")).toBe("14");
-    expect(row.querySelector("[data-vex-project-drift]")).not.toBeNull();
-    expect(row.getAttribute("aria-description")).toBe(`${projectPermissionDescription("full")} ${projectDriftLabel(project.name, STUDIO_DRIFT_SENTENCES.drifted ?? "")}`);
-    act(() => row.focus());
-    expect(screen.getByRole("tooltip").textContent).toBe(row.getAttribute("aria-description"));
+    // The actions stay beside the select control, never over it.
+    const actions = screen.getByText("Actions").closest("[data-rail-actions]");
+    expect(actions?.className).toContain("shrink-0");
+    expect(actions?.className).not.toContain("absolute");
   });
 
   it("omits a visual restricted badge and preserves its accessible description", () => {
@@ -133,5 +99,33 @@ describe("standing project permission", () => {
     expect(screen.queryByText("Restricted")).toBeNull();
     expect(document.querySelector("[data-vex-project-permission]")).toBeNull();
     expect(screen.getByRole("button", { name: "atlas" }).getAttribute("aria-description")).toBe("Restricted");
+  });
+});
+
+describe("the RUNNING tag", () => {
+  afterEach(() => {
+    clearAllProjectLive();
+  });
+
+  it("stands while the project's mounted workspace has a live shell, and goes with it", () => {
+    const project = makeProject({ name: "vex-core" });
+    render(<ProjectRailRow project={project} selected={false} onSelect={() => {}} />);
+    // No workspace mounted: the renderer does not know, so the row claims nothing.
+    expect(screen.queryByText("Running")).toBeNull();
+
+    act(() => publishProjectLive(project.id, true));
+    const word = screen.getByText("Running");
+    const tag = word.closest("[data-vex-project-running]");
+    expect(tag?.className).toContain("vex-st-proj__run");
+    // The square is the running blink, beside an ink word (section 2.2).
+    expect(tag?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("ongoing");
+    // The word is part of the row's name, after the project's.
+    expect(screen.getByRole("button", { name: "vex-core Running" })).not.toBeNull();
+
+    act(() => publishProjectLive(project.id, false));
+    expect(screen.queryByText("Running")).toBeNull();
+    act(() => publishProjectLive(project.id, true));
+    act(() => clearProjectLive(project.id));
+    expect(screen.queryByText("Running")).toBeNull();
   });
 });

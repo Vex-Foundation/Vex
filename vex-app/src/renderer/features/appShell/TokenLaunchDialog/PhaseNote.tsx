@@ -12,7 +12,7 @@
  * the state (done = solid, caution and re-review = concerned, failure and
  * refused = error, not available = idle) and the sentence says it again, so no
  * state is ever colour alone and no note is ever red or amber. An ALARM (a
- * condition the user must read before deploying) is the ink callout: a 1.5px
+ * condition the user must read before deploying) is the ink callout: a 1px
  * ink frame around the same swatch and sentence.
  *
  * `NoteRow`, `InkCallout` and `DoneNote` are exported because the lane, the
@@ -67,7 +67,7 @@ export function NoteRow({
 }
 
 /**
- * The ink callout for an alarm: a 1.5px ink frame, the concerned swatch, the
+ * The ink callout for an alarm: a 1px ink frame, the concerned swatch, the
  * sentence in ink. It is the alert itself (`role="alert"`), never a hue.
  */
 export function InkCallout({
@@ -78,7 +78,7 @@ export function InkCallout({
   return (
     <div
       role="alert"
-      className="flex items-start gap-2.5 border-[1.5px] border-rule-ink px-3.5 py-3"
+      className="flex items-start gap-2.5 border border-rule-ink px-3.5 py-3"
     >
       <Swatch state="concerned" size={10} className="mt-[5px] shrink-0" />
       <p className="min-w-0 text-[13.5px] leading-[1.5] text-ink-primary">

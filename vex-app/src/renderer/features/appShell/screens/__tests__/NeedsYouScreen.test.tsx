@@ -38,6 +38,7 @@ const reads = vi.hoisted(() => ({
     data: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined;
     isError?: boolean;
     isFetching?: boolean;
+    dataUpdatedAt?: number;
   },
   sessions: [] as SessionListItem[],
 }));
@@ -261,9 +262,25 @@ describe("NeedsYouScreen: the page", () => {
   it("draws the page with its lead inside the Needs you sheet", () => {
     listed(send());
     renderPage();
-    expect(screen.getByRole("dialog", { name: "Needs you" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Needs you" })).not.toBeNull();
     expect(pageEl().getAttribute("data-state")).toBe("ready");
     expect(within(pageEl()).getByText(LEAD)).not.toBeNull();
+  });
+
+  it("stamps the H3 frame's row with the pending read's own fetch time, and none before it", () => {
+    listed(send());
+    renderPage();
+    // No fetch time yet: no stamp, never a render-time clock.
+    expect(document.querySelector('[data-vex-area="page-updated"]')).toBeNull();
+    cleanup();
+
+    const at = new Date(2026, 10, 3, 14, 30, 5).getTime();
+    reads.pending = { ...reads.pending, dataUpdatedAt: at };
+    renderPage();
+    expect(document.querySelector('[data-vex-area="page-updated"]')?.textContent).toBe(
+      "Updated 14:30",
+    );
+    expect(document.querySelector("[data-vex-chapter]")).toBeNull();
   });
 
   it("asks the inbox for the faster 15s net while it is open", () => {
@@ -313,9 +330,13 @@ describe("NeedsYouScreen: the page", () => {
     const card = cardOf(newer.id);
     expect(card.hasAttribute("data-vex-real-funds")).toBe(true);
     // The same approval can render inline in the session under the page: its
-    // title id carries the "global" variant so aria-labelledby stays unique.
+    // ids carry the "global" variant so aria-labelledby stays unique. The card
+    // is named by its eyebrow and described by its sentence (Cloud's card).
+    const eyebrowId = `approval-card-${newer.id}-global-eyebrow`;
     const titleId = `approval-card-${newer.id}-global-title`;
-    expect(card.getAttribute("aria-labelledby")).toBe(titleId);
+    expect(card.getAttribute("aria-labelledby")).toBe(eyebrowId);
+    expect(card.getAttribute("aria-describedby")).toBe(titleId);
+    expect(document.getElementById(eyebrowId)).not.toBeNull();
     expect(document.getElementById(titleId)).not.toBeNull();
     expect(cardOf(older.id).hasAttribute("data-vex-real-funds")).toBe(false);
   });

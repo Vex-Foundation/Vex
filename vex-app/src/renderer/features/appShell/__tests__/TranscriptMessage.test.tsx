@@ -7,8 +7,10 @@
  * row renders the indicator only. Markers are static - no in-flight animation.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import type {
@@ -237,12 +239,12 @@ describe("TranscriptMessage tool acts (S5)", () => {
     );
     const link = screen.getByRole("button", { name: /waiting for approval/i });
     expect(link.textContent).toBe("Waiting for approval");
-    // The target fill rides the link, so the step's own fill slot stays empty
-    // and the row shows the state once.
-    expect(link.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
+    // The target is the step's own node (VEX Cloud's trace), so the link
+    // carries the word alone and the row shows the state once.
     expect(
-      document.querySelector("[data-vex-tool-status] .vex-swatch"),
-    ).toBeNull();
+      document.querySelector('[data-vex-tool-status="waiting"] .vex-step-node')?.getAttribute("data-step-node"),
+    ).toBe("waiting");
+    expect(link.querySelector(".vex-sq, .vex-step-node")).toBeNull();
   });
 
   it("folds two or more calls of one row into one quiet row that opens to the steps", () => {
@@ -266,16 +268,18 @@ describe("TranscriptMessage tool acts (S5)", () => {
     const fold = screen.getByRole("button", { name: /2 tool calls/ });
     expect(fold.textContent).toContain("2 tool calls · Wallet read, Search web");
     // Time spent in the tools: the measured durations, summed.
-    expect(fold.querySelector("[data-vex-tool-duration]")?.textContent).toBe("2.3 s");
+    expect(fold.querySelector("[data-vex-tool-duration]")?.textContent).toBe("2.3s");
     expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Done")).toBeNull();
+    expect(screen.queryByText("27ms")).toBeNull();
     fireEvent.click(fold);
     expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getAllByText("Done")).toHaveLength(2);
+    // A done step's time column holds its measured time, not a word.
+    expect(screen.getByText("27ms")).not.toBeNull();
+    expect(screen.queryByText("Done")).toBeNull();
     expect(container.querySelector("[data-vex-tool-fold]")).not.toBeNull();
   });
 
-  it("never lets a fold hide a failure: the folded row counts it, in ink with the cross", () => {
+  it("never lets a fold hide a failure: the folded row counts it, beside the ink cross", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -295,9 +299,54 @@ describe("TranscriptMessage tool acts (S5)", () => {
     );
     const failed = container.querySelector("[data-vex-tool-fold-failed]");
     expect(failed?.textContent).toBe("1 failed");
-    expect(failed?.querySelector('.vex-swatch[data-s="error"]')).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 2.2: a step that did not execute is
+    // the ink cross beside its count in the refusal ink.
+    expect(failed?.querySelector('.vex-step-node[data-step-node="failed"]')).not.toBeNull();
     // No member was measured, so the fold prints no time at all.
     expect(container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("draws each outcome as the trace's node, with its time or its word", () => {
+    // docs/design/H3-DESKTOP.md sections 1.7 and 2.2 (VEX Cloud's trace): done
+    // the ink 2 square and its time; failed the ink cross and FAILED; a
+    // broadcast still in flight the blinking node and PENDING.
+    const cases = [
+      { success: true, displayStatus: null, node: "done", word: null, time: "812ms" },
+      { success: false, displayStatus: null, node: "failed", word: "Failed", time: null },
+      { success: false, displayStatus: "pending" as const, node: "running", word: "Pending", time: null },
+    ];
+    for (const c of cases) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: {
+            id: 6,
+            variant: "tool",
+            toolKind: "call",
+            label: "wallet:read",
+            content: "",
+            createdAt: ISO,
+            toolCalls: [],
+            toolActs: [
+              {
+                toolCallId: "a",
+                toolName: "wallet:read",
+                toolArgs: "{}",
+                output: "x",
+                success: c.success,
+                displayStatus: c.displayStatus,
+                durationMs: 812,
+              },
+            ],
+          },
+        }),
+      );
+      const node = container.querySelector("[data-vex-tool-status] .vex-step-node");
+      expect(node?.getAttribute("data-step-node")).toBe(c.node);
+      expect(container.querySelector("[data-vex-step-word]")?.textContent ?? null).toBe(c.word);
+      // The time column: the measured time, or the word where it outranks it.
+      expect(container.querySelector("[data-vex-tool-duration]")?.textContent ?? null).toBe(c.time);
+      cleanup();
+    }
   });
 
   it("keeps a single call as its own step row with its outcome word", () => {
@@ -345,51 +394,51 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
   });
 });
 
-describe("TranscriptMessage agent activity avatar", () => {
-  it("marks the working turn's token, with no state drawn under it: the live row says it", () => {
+describe("TranscriptMessage agent activity seam", () => {
+  it("says which row is the working turn's, with nothing drawn for it: the live row says it", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Preparing the transfer." }),
         agentWorking: true,
       }),
     );
-    const avatar = container.querySelector(
-      '[data-vex-agent-avatar-state="working"]',
-    );
-    expect(avatar).not.toBeNull();
-    // docs/design/R3-MINIMAL.md section 6: the turn in flight is the live
-    // row's fill, word and timer; the token itself carries no swatch and
-    // never spins.
-    expect(avatar?.querySelector(".vex-swatch")).toBeNull();
+    const reply = container.querySelector('[data-vex-agent-state="working"]');
+    expect(reply?.getAttribute("data-vex-message-role")).toBe("assistant");
+    // The turn in flight is the live row's fill, word and timer; the row
+    // itself carries no swatch and nothing spins.
+    expect(reply?.querySelector(".vex-swatch")).toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
-    expect(avatar?.className).not.toMatch(/animate-spin|rounded-full/);
   });
 
-  it("keeps settled agent avatars still", () => {
+  it("keeps settled rows settled", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Transfer prepared." }),
       }),
     );
     expect(
-      container.querySelector('[data-vex-agent-avatar-state="settled"]'),
+      container.querySelector('[data-vex-agent-state="settled"]'),
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
   });
 
-  it("hangs the turn off the token only on the row that heads it", () => {
-    const { container } = render(
-      createElement(TranscriptMessage, {
-        row: row({ variant: "assistant", content: "And the second part." }),
-        turnMark: false,
-      }),
-    );
-    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
-    // The row still sits on the turn's 40px edge, and is still named.
-    expect(
-      container.querySelector('[data-vex-message-role="assistant"]')?.className,
-    ).toContain("vex-reply");
-    expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+  it("marks only the row that heads the turn, and draws no token on either", () => {
+    for (const turnMark of [true, false] as const) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: row({ variant: "assistant", content: "And the second part." }),
+          turnMark,
+        }),
+      );
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.hasAttribute("data-vex-turn-head")).toBe(turnMark);
+      // docs/design/H3-DESKTOP.md section 1.7: H3 draws no token beside Vex's
+      // rows, so neither the head nor a later row carries one.
+      expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
+      expect(reply?.className).toContain("vex-reply");
+      expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+      cleanup();
+    }
   });
 });
 
@@ -403,7 +452,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
   });
 
-  it("mounts the collapsible Reasoned block above the assistant body", () => {
+  it("mounts the collapsible Thought block above the assistant body", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -414,7 +463,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     );
     const block = container.querySelector('[data-vex-reasoning="persisted"]');
     expect(block).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
     // Collapsed: only the trace's FIRST line rides beside the stamp, so the
     // answer stays the first substantial thing read.
     expect(container.textContent).not.toContain("Then I priced the route.");
@@ -468,7 +517,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(
       container.querySelectorAll('[data-vex-reasoning="persisted"]'),
     ).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
   });
 
   it("renders EVERY folded trace, in turn order, above the ledger line", () => {
@@ -524,10 +573,35 @@ describe("TranscriptMessage caption register (contract C2)", () => {
         row: row({ variant: "user", content: "hi" }),
       }),
     );
-    const caption = container.querySelector(".vex-micro");
+    const caption = container.querySelector(".vex-you__meta");
     expect(caption).not.toBeNull();
     expect(caption?.className).not.toContain("font-mono");
     expect(caption?.textContent).toContain("You");
+  });
+
+  it("draws the person's message as H3's bubble beside the avatar cell", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the bubble, then the round avatar
+    // cell at its right, under the meta line (VEX Cloud's `UserMessage`). The
+    // row is named "You", so the meta line's drawn "You" is hidden from
+    // assistive technology.
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "user", content: "Swap 200 USDC to ETH on Base." }),
+      }),
+    );
+    const message = container.querySelector('[data-vex-message-role="user"]');
+    const bubble = message?.querySelector(".vex-you__body");
+    expect(bubble?.textContent).toBe("Swap 200 USDC to ETH on Base.");
+    const avatar = message?.querySelector("[data-vex-you-avatar]");
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    // The disc is SVG geometry, never a CSS radius (base.css's shape law).
+    expect(avatar?.querySelector("svg circle.vex-you__disc")).not.toBeNull();
+    // The avatar is the row's last cell: the bubble sits to its left.
+    expect(message?.lastElementChild).toBe(avatar);
+    expect(message?.getAttribute("aria-label")).toBe("You");
+    expect(message?.querySelector('.vex-you__who > [aria-hidden="true"]')?.textContent).toBe("You");
+    expect(message?.querySelector(".vex-you__who time")).not.toBeNull();
   });
 
   it("puts the assistant clock and actions in a TAIL row, in the same register", () => {
@@ -556,15 +630,15 @@ describe("TranscriptMessage assistant identity", () => {
    * reader still has to be told whose turn this is, so the sr-only speaker
    * label is the text equivalent that replaces them.
    */
-  it("signs an assistant turn with the VexMark and NO visible wordmark", () => {
+  it("signs an assistant turn for assistive technology alone: no token, NO visible wordmark", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Done." }),
       }),
     );
-    const avatar = container.querySelector("[data-vex-agent-avatar]");
-    expect(avatar).not.toBeNull();
-    expect(avatar?.querySelector("svg path")).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 1.7: her presence is the Vex key in
+    // the header; the transcript draws no mark beside her rows.
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
     // No raster portrait anywhere, and no wordmark of any casing.
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByText("VEX")).toBeNull();
@@ -576,7 +650,7 @@ describe("TranscriptMessage assistant identity", () => {
     expect(label?.textContent).toBe("Vex");
   });
 
-  it("says which token belongs to the working turn, for the active turn only", () => {
+  it("says which row belongs to the working turn, for the active turn only", () => {
     for (const working of [true, false] as const) {
       const { container } = render(
         createElement(TranscriptMessage, {
@@ -584,13 +658,11 @@ describe("TranscriptMessage assistant identity", () => {
           agentWorking: working,
         }),
       );
-      const avatar = container.querySelector("[data-vex-agent-avatar]");
-      expect(avatar?.getAttribute("data-vex-agent-avatar-state")).toBe(
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.getAttribute("data-vex-agent-state")).toBe(
         working ? "working" : "settled",
       );
-      // The token is decoration, never the only signal that a turn is live:
-      // the live row, the title bar chip and the Vex sidebar say it in words.
-      expect(avatar?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+      cleanup();
     }
   });
 });
@@ -620,7 +692,7 @@ describe("TranscriptMessage tool card duration", () => {
     );
     expect(
       container.querySelector("[data-vex-tool-duration]")?.textContent,
-    ).toBe("2.3 s");
+    ).toBe("2.3s");
   });
 
   it("shows NO chip for a call that never ran - null must not read as 0 s", () => {
@@ -675,6 +747,25 @@ describe("TranscriptMessage operator acknowledgement (M6)", () => {
     expect(node).not.toBeNull();
     expect(node?.getAttribute("role")).toBeNull();
     expect(node?.getAttribute("aria-live")).toBeNull();
+  });
+
+  it("draws a runtime note as a runtime line: the hud square, then the words, on the column's left", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "notice", content: "Run resumed" }), noticeTone: "runtime" },
+      }),
+    );
+    const node = container.querySelector('[data-vex-notice-tone="runtime"]');
+    expect(node?.firstElementChild?.className).toBe("vex-notice__sq");
+    expect(node?.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(node?.textContent).toBe("Run resumed");
+    expect(node?.parentElement?.className).not.toContain("justify-center");
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-notice \{[^}]*padding-left: 16px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/);
+    expect(css).toMatch(/\.vex-notice__sq \{[^}]*width: 6px;[^}]*height: 6px;/);
   });
 });
 
@@ -739,5 +830,190 @@ describe("TranscriptMessage mission stop result (Kairos E-1 follow-up)", () => {
     expect(container.querySelector('[data-vex-area="mission-stop-result"]')?.textContent).toContain(
       "-0.03%",
     );
+  });
+});
+
+// ── Her bubble runs: code and tables stand out of the bubble (C3-C-02) ──────
+
+describe("TranscriptMessage: Vex's answer in bubble runs", () => {
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const sheet = (name: string): string =>
+    readFileSync(join(process.cwd(), "src/renderer/styles/global-css", name), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+  const RUN = ".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose";
+  const BLOCK = ":is(.vex-code-block, .vex-md-table)";
+
+  function answerParts(): HTMLElement[] {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({
+          variant: "assistant",
+          content: [
+            "First, the plan.",
+            "Then the detail.",
+            "```ts\nconst a = 1;\n```",
+            "After the code.",
+            "| Pair | Price |\n|---|---|\n| ETH | 3200 |",
+            "Done.",
+          ].join("\n\n"),
+        }),
+      }),
+    );
+    const prose = container.querySelector(".vex-reply .vex-answer > .vex-chat-prose");
+    expect(prose, "the answer's prose sits directly in its wrapper").not.toBeNull();
+    return Array.from(prose?.children ?? []) as HTMLElement[];
+  }
+
+  it("renders a code block and a table as the prose's own parts, each with its hook", () => {
+    const parts = answerParts();
+    expect(parts.map((part) => part.className.split(" ")[0] ?? part.tagName)).toEqual([
+      expect.any(String),
+      expect.any(String),
+      "vex-code-block",
+      expect.any(String),
+      "vex-md-table",
+      expect.any(String),
+    ]);
+    expect(parts[0]?.tagName).toBe("P");
+    expect(parts[4]?.querySelector("table")).not.toBeNull();
+  });
+
+  it("lays the prose in a fit-content(82%) column and sets code and tables across the full width, square", () => {
+    const css = sheet("chat-transcript.css");
+    const body = (selector: string): string => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at, `${selector} not found`).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", at) + 1, css.indexOf("}", at));
+    };
+    const grid = body(RUN);
+    expect(grid).toContain("display: grid;");
+    expect(grid).toContain("grid-template-columns: fit-content(82%) minmax(0, 1fr);");
+    const part = body(`${RUN} > *`);
+    expect(part).toContain("grid-column: 1;");
+    expect(part).toContain("background: var(--vex-alias-bubble-vex);");
+    const block = body(`${RUN} > ${BLOCK}`);
+    expect(block).toContain("grid-column: 1 / -1;");
+    expect(block).toContain("background: transparent;");
+    // The wrapper itself is no longer the bubble: no 82% cap, no fill.
+    expect(css).not.toMatch(/\.vex-reply :is\(\.vex-answer, \.vex-answer-resolve\) \{[^}]*max-width: 82%/);
+  });
+
+  it("rounds each run, a new one after every block, and never a block", () => {
+    const base = sheet("base.css");
+    const selectorOf = (corner: string): string => {
+      const match = new RegExp(`([^{}]+)\\{[^}]*${corner}: var\\(--vex-radius-bubble-corner[a-z-]*\\) !important`).exec(base);
+      expect(match, corner).not.toBeNull();
+      return (match?.[1] ?? "").trim();
+    };
+    const parts = answerParts();
+    const top = selectorOf("border-top-left-radius");
+    const bottom = selectorOf("border-bottom-left-radius");
+    const tops = parts.map((part) => part.matches(top));
+    const bottoms = parts.map((part) => part.matches(bottom));
+    // Runs: [plan, detail] code [after] table [done].
+    expect(tops).toEqual([true, false, false, true, false, true]);
+    expect(bottoms).toEqual([false, true, false, true, false, true]);
+  });
+});
+
+describe("TranscriptMessage turn actions (VEX Cloud's TurnActions)", () => {
+  it("draws Vex's keys as message keys under the answer, always shown on the latest turn", () => {
+    const latest = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "answer" }),
+        latest: true,
+      }),
+    );
+    const reply = latest.container.querySelector(".vex-reply");
+    expect(reply?.hasAttribute("data-vex-latest")).toBe(true);
+    const copy = screen.getByRole("button", { name: "Copy message" });
+    expect(copy.className).toContain("vex-msg-key");
+    expect(copy.closest(".vex-reply__tail")).not.toBeNull();
+    latest.unmount();
+    const earlier = render(
+      createElement(TranscriptMessage, { row: row({ variant: "assistant", content: "answer" }) }),
+    );
+    expect(earlier.container.querySelector("[data-vex-latest]")).toBeNull();
+  });
+
+  it("raw-CSS contract: 32 keys with 16 glyphs in a 32 row, the latest turn's shown, the rest revealed over 200 ms", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-reply__tail \{[^}]*gap: 2px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key \{[^}]*width: 32px;[^}]*height: 32px;/);
+    expect(css).toMatch(/\.vex-reply__tail \.vex-msg-key > svg \{[^}]*width: 16px;[^}]*height: 16px;/);
+    expect(css).toMatch(/transition: opacity 200ms/);
+    expect(css).toContain(".vex-reply[data-vex-latest] .vex-reply__tail > :is(.vex-time-reveal, .vex-action-reveal)");
+  });
+});
+
+describe("TranscriptMessage the person's message (VEX Cloud's UserMessage)", () => {
+  it("is an article named You: the meta line of keys and You · time over the bubble, the 34 avatar", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "user", content: "buy the dip" }), createdAt: "2026-05-26T10:00:00" },
+        latest: true,
+      }),
+    );
+    const article = screen.getByRole("article", { name: "You" });
+    expect(article.className).toBe("vex-you");
+    expect(article.hasAttribute("data-vex-latest")).toBe(true);
+    const meta = container.querySelector("[data-vex-user-meta]");
+    expect(meta?.nextElementSibling?.className).toBe("vex-you__stack");
+    expect(screen.getByRole("group", { name: "Message actions" }).contains(
+      screen.getByRole("button", { name: "Copy message" }),
+    )).toBe(true);
+    // "You" is drawn but not read twice; the clock is a <time>.
+    const who = meta?.querySelector(".vex-you__who");
+    expect(who?.textContent).toBe("You · 10:00");
+    expect(who?.querySelector("time")?.getAttribute("dateTime")).toBe("2026-05-26T10:00:00");
+    expect(container.querySelector(".vex-you__avatar svg")?.getAttribute("width")).toBe("34");
+  });
+
+  it("raw-CSS contract: the grid of the column and the 34 avatar, the 28 meta line, the latest row's Copy shown", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.vex-you \{[^}]*grid-template-columns: minmax\(0, 1fr\) 34px;[^}]*column-gap: 12px;/);
+    expect(css).toMatch(/\.vex-you__meta \{[^}]*height: 28px;[^}]*font-size: 11px;[^}]*text-transform: uppercase;/);
+    expect(css).toContain(".vex-you[data-vex-latest] [data-vex-copy-message]");
+  });
+});
+
+describe("TranscriptMessage code and tables in the cell form (VEX Cloud's markdown)", () => {
+  const css = (): string =>
+    readFileSync(join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"), "utf8");
+
+  it("heads a code block with a sticky 40 bar: the language, then Wrap and Copy as 40 cells", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "```ts\nconst a = 1;\n```" }),
+      }),
+    );
+    const block = container.querySelector(".vex-code-block");
+    expect(block?.querySelector(".vex-code-block__lang")?.textContent).toBe("ts");
+    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    expect(wrap.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute("aria-pressed")).toBe("true");
+    expect(block?.hasAttribute("data-wrap")).toBe(true);
+    expect(screen.getByRole("button", { name: "Copy code" }).className).toBe("vex-code-block__key");
+    expect(css()).toMatch(/\.vex-code-block__head \{[^}]*position: sticky;[^}]*height: 40px;[^}]*background: var\(--vex-alias-card\);/);
+    expect(css()).toMatch(/\.vex-code-block__key \{[^}]*width: 40px;[^}]*border-left: 1px solid var\(--vex-alias-rule\);/);
+  });
+
+  it("sets a table on the card ground: a 36 head in caps, 42 cells in ink 2, the first column in ink", () => {
+    const sheet = css();
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table \{[^}]*border: 1px solid var\(--vex-alias-rule\);[^}]*background: var\(--vex-alias-card\);/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-chat-prose th \{[^}]*height: 36px;[^}]*text-transform: uppercase;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td \{[^}]*height: 42px;[^}]*font-size: 14px;/);
+    expect(sheet).toMatch(/\.vex-reply \.vex-md-table td:first-child \{[^}]*white-space: nowrap;/);
+    expect(sheet).toContain(".vex-reply :is(.vex-answer, .vex-answer-resolve) > .vex-chat-prose > .vex-md-table {");
   });
 });
