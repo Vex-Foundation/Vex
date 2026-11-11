@@ -304,7 +304,10 @@ describe("the budgets fit the columns the tile floor leaves", () => {
   /** The widest glyph the proportional allowlist admits, `A` 9.20, rounded up. */
   const SLOT = 9.25;
   /** `24h Volume`, the widest stat label, in Be Vietnam Pro 11.5. */
-  const WIDEST_STAT_LABEL = 66.48;
+  // "24h Volume" in sans 11, Be Vietnam Pro, on Linux Chromium (the widest engine).
+  const WIDEST_STAT_LABEL = 67;
+  // The four figures stand 4 apart (board-layout.css, `.vex-board-card-stats`).
+  const STAT_GAP = 4;
 
   it("fits the widest price, delta and window on one row at the floor", () => {
     const row =
@@ -336,14 +339,14 @@ describe("the budgets fit the columns the tile floor leaves", () => {
   });
 
   it("fits the widest stat value in a column of four, and one more slot would not", () => {
-    const column = (FLOOR_INNER - 3 * 6) / 4;
+    const column = (FLOOR_INNER - 3 * STAT_GAP) / 4;
     expect(BOARD_CARD_STAT_MAX_SLOTS * MONO_13).toBeLessThanOrEqual(column);
     expect((BOARD_CARD_STAT_MAX_SLOTS + 1) * MONO_13).toBeGreaterThan(column);
   });
 
   it("fits the widest stat label in a column of four", () => {
-    // 66.48 in a 67.5 column: the label sits over its value whole.
-    expect(WIDEST_STAT_LABEL).toBeLessThanOrEqual((FLOOR_INNER - 3 * 6) / 4);
+    // 67 in a 69 column: the label sits over its value whole.
+    expect(WIDEST_STAT_LABEL).toBeLessThanOrEqual((FLOOR_INNER - 3 * STAT_GAP) / 4);
   });
 
   it("keeps a ten-slot ticker inside the identity column", () => {

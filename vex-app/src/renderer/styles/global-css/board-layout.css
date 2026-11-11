@@ -220,12 +220,13 @@
 }
 
 /* THE FOUR FIGURES: one row of four equal columns under a quiet rule, 9px
- * below it. A 6px gap keeps two neighbours apart at the floor, where the
- * widest label (63px) sits in a 67.5px column. */
+ * below it. A 4px gap keeps two neighbours apart at the floor, where the
+ * widest label ("24h Volume", sans 11 in Be Vietnam Pro: 67px on Linux
+ * Chromium, the widest engine) sits in a 69px column. */
 .vex-board-card-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 6px;
+  column-gap: 4px;
   padding-top: 9px;
   border-top: 1px solid var(--vex-alias-rule-quiet);
 }

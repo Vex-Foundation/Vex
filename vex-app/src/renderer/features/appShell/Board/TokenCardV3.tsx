@@ -583,8 +583,9 @@ function Stat({
   // NEITHER LINE ELLIPSIZES IN CSS, and that is why the value arrives already
   // decided. A stat label is fixed product copy and a stat value is a figure
   // a reader is about to act on; the floor in `board-layout.css` is sized so
-  // every realistic pair fits whole (binding label "24h Volume" at 63px in
-  // sans 11.5, widest value "$1234.5B" at 62px in mono 13). A schema extreme
+  // every realistic pair fits whole (binding label "24h Volume" at 67px in
+  // sans 11, Be Vietnam Pro on Linux Chromium, in a 69px column; widest value
+  // "$1234.5B" at 62px in mono 13). A schema extreme
   // that cannot fit is shortened by `boardCardValueBudget.ts` BEFORE it gets
   // here, so what reaches this cell always fits and always says whether it
   // is the whole figure - rather than being clipped by the tile with nothing
@@ -592,7 +593,7 @@ function Stat({
   // is a figure (mono, tabular).
   return (
     <div className="min-w-0">
-      <dt className="whitespace-nowrap text-[11.5px] leading-[16px] text-ink-tertiary">
+      <dt className="whitespace-nowrap text-[11px] leading-[16px] text-ink-tertiary">
         {label}
       </dt>
       <dd
