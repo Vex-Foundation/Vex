@@ -16,7 +16,8 @@
  */
 
 import { useCallback, useRef, type JSX, type KeyboardEvent, type Ref } from "react";
-import { LineClose, LineSearch } from "../../../components/icons/line/index.js";
+import { LineChevronLeft, LineClose, LineSearch } from "../../../components/icons/line/index.js";
+import { Tooltip } from "../../../components/ui/tooltip.js";
 import type { SessionModeFilter } from "../../../stores/uiStore.js";
 import { SESSION_MODE_FILTERS } from "../sessionListModel.js";
 
@@ -90,12 +91,19 @@ export function SessionModeTabs({
   value,
   counts,
   onChange,
+  onBack,
 }: {
   readonly value: SessionModeFilter;
   readonly counts: Readonly<Record<SessionModeFilter, number>>;
   readonly onChange: (next: SessionModeFilter) => void;
+  /**
+   * Back to the menu: the same close Escape makes (the query clears, the nav
+   * and the Chats heading come back). A visible way out, since a press on
+   * Missions or a typed query takes the nav's place and Escape is not seen.
+   */
+  readonly onBack?: () => void;
 }): JSX.Element {
-  return (
+  const tabs = (
     <div role="tablist" aria-label="Filter chats" className="vex-ls-tabs">
       {SESSION_MODE_FILTERS.map((filter) => (
         <button
@@ -112,6 +120,17 @@ export function SessionModeTabs({
           </span>
         </button>
       ))}
+    </div>
+  );
+  if (onBack === undefined) return tabs;
+  return (
+    <div className="vex-ls-tabrow">
+      <Tooltip label="Back to menu">
+        <button type="button" aria-label="Back to menu" onClick={onBack} className="vex-ls-tabs__back">
+          <LineChevronLeft size={16} />
+        </button>
+      </Tooltip>
+      {tabs}
     </div>
   );
 }

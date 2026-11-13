@@ -372,6 +372,40 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   padding: 10px 24px 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
+/* The tabs row with its way back (search mode): the back key, a 32 square
+ * cell at the row's start, then the tabs; the row carries the quiet rule. */
+.vex-ls-tabrow {
+  display: flex;
+  align-items: flex-end;
+  padding-left: 12px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-tabrow > .vex-ls-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 4px;
+  border-bottom: 0;
+}
+.vex-ls-tabs__back {
+  display: inline-flex;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-tabs__back:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-tabs__back:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
 .vex-ls-tabs__tab {
   display: inline-flex;
   align-items: flex-start;

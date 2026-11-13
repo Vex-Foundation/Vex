@@ -395,6 +395,7 @@ export function SessionsList({
                 value={sessionModeFilter}
                 counts={tabCounts}
                 onChange={setSessionModeFilter}
+                onBack={closeSearch}
               />
             ) : (
               // The nav block stands between two rules, the field's and its

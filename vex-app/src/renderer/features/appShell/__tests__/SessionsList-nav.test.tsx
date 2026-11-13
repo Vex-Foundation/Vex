@@ -257,6 +257,29 @@ describe("the nav", () => {
     expect(useUiStore.getState().sessionModeFilter).toBe("all");
     expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
   });
+
+  it("Back to menu takes the tabs away and brings the nav back, the visible twin of Escape", () => {
+    renderSidebar();
+    // From Missions: the Mission tab holds, as Escape keeps it.
+    fireEvent.click(navRow("Missions"));
+    expect(screen.getByRole("tablist", { name: "Filter chats" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back to menu" }));
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(nav()).not.toBeNull();
+    expect(navRow("Missions").getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("heading", { name: "Chats" })).not.toBeNull();
+
+    // From a typed query: the query clears with the tabs.
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
+    fireEvent.change(field, { target: { value: "btc" } });
+    expect(screen.getByRole("tablist", { name: "Filter chats" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back to menu" }));
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect((field as HTMLInputElement).value).toBe("");
+    expect(nav()).not.toBeNull();
+    // Out of the search mode there is no back key: the menu is already there.
+    expect(screen.queryByRole("button", { name: "Back to menu" })).toBeNull();
+  });
 });
 
 describe("the selected nav row follows the real destination", () => {
