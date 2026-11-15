@@ -20,6 +20,7 @@
 import { KIMM_LIVE_LIBS, KIMM_LIVE_MODEL_BASE, KIMM_LIVE_MODEL_FILE } from "./kimm-assets.js";
 import type { KimmEmbed, KimmEmbedOptions } from "./kimm-embed.js";
 import type { KimmFitOptions } from "./kimm-fit.js";
+import type { KimmReaction } from "./kimm-rig.js";
 import { KIMM_MIN_TEXTURE, probeGpu } from "./kimm-gates.js";
 import type { KimmEvent, KimmLiveMood } from "./kimm-live-moods.js";
 
@@ -78,6 +79,11 @@ export interface KimmLive {
    * her), her rig runs livelier and her ticker is capped at 30 fps (`KIMM_LIVELY`). Off, Cloud's behaviour.
    */
   lively(on: boolean): void;
+  /**
+   * Desktop's lock screen, lively only: a reaction to a typed signal (`KIMM_REACT`), which wakes her. `at` is where
+   * the password field stands, a point in client px, never the element.
+   */
+  react(signal: KimmReaction, at?: { readonly x: number; readonly y: number }): void;
   sleep(): void;
   wake(): void;
   destroy(): void;
@@ -215,12 +221,20 @@ export function createKimmLive(options: KimmLiveOptions = {}): KimmLive {
     },
     hover(on) {
       hovered = on;
+      /* the hover smile and tilt are the lock screen's (lively) alone; the card only stays awake */
+      embed?.hover(on && livelyOn);
+      touch();
+    },
+    react(signal, at) {
+      if (!livelyOn || !embed) return;
+      embed.react(signal, at);
       touch();
     },
     lively(on) {
       if (on === livelyOn) return;
       livelyOn = on;
       embed?.lively(on);
+      embed?.hover(hovered && on);
       touch();
     },
     sleep,

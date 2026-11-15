@@ -27,6 +27,7 @@ import type { KimmMood } from "./kimm-assets.js";
 import type { KimmFitOptions } from "./kimm-fit.js";
 import { createKimmLive, type KimmLive, type KimmLiveOptions, type KimmLiveStatus } from "./kimm-live.js";
 import { KIMM_LIVE_CUE } from "./kimm-live-moods.js";
+import type { KimmReaction } from "./kimm-rig.js";
 
 /** She lets her model go this long after the last seat is given up (Cloud's `PHONE_DISPOSE_MS`). */
 export const KIMM_RELEASE_MS = 30_000;
@@ -41,6 +42,8 @@ export interface KimmLiveSeat {
   hover(on: boolean): void;
   /** This seat asks for the lock screen's lively mode (`KimmLive.lively`); it applies while the seat holds her. */
   lively(on: boolean): void;
+  /** A reaction (`KIMM_REACT`), played only while this seat holds her in its lively mode. */
+  react(signal: KimmReaction, at?: { readonly x: number; readonly y: number }): void;
   release(): void;
 }
 
@@ -169,6 +172,9 @@ export function createKimmLiveStage(options: KimmLiveStageOptions = {}): KimmLiv
         },
         hover(on) {
           if (holder() === entry) live?.hover(on);
+        },
+        react(signal, at) {
+          if (holder() === entry && entry.lively) live?.react(signal, at);
         },
         lively(on) {
           if (entry.lively === on) return;

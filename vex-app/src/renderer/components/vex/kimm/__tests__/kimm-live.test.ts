@@ -163,6 +163,30 @@ describe("createKimmLive", () => {
     expect(embed?.awake).toBe(true);
   });
 
+  it("plays reactions and the hover smile only in lively mode (the lock screen), never in the calm card", async () => {
+    const kit = fakeEmbedKit();
+    const live = createKimmLive({ loaders: kit.loaders, page: kit.page, gpu: GOOD_GPU });
+    live.attach(document.createElement("div"), {});
+    live.show(true);
+    await live.start();
+    const embed = kit.mounts[0];
+    live.react("failed");
+    live.hover(true);
+    expect(embed?.reactions).toEqual([]);
+    expect(embed?.hovered).toBe(false);
+    live.lively(true);
+    // the pointer already resting over her: the lively switch brings the smile
+    expect(embed?.hovered).toBe(true);
+    live.react("typing", { x: 10, y: 20 });
+    live.react("failed");
+    expect(embed?.reactions).toEqual([
+      { signal: "typing", at: { x: 10, y: 20 } },
+      { signal: "failed", at: undefined },
+    ]);
+    live.lively(false);
+    expect(embed?.hovered).toBe(false);
+  });
+
   it("follows her panel: attach moves her host and refits, detach takes it out and lets her sleep", async () => {
     const kit = fakeEmbedKit();
     const live = createKimmLive({ loaders: kit.loaders, page: kit.page, gpu: GOOD_GPU });

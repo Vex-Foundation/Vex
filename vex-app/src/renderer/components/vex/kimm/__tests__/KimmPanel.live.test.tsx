@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fitKimm, kimmSeatFit } from "../kimm-fit.js";
 import { createKimmLiveStage, KIMM_RELEASE_MS, KimmLiveStageContext, type KimmLiveStage } from "../kimm-live-stage.js";
 import { KimmPanel } from "../KimmPanel.js";
+import { createKimmLockSignals } from "../kimm-lock-signals.js";
 import { KIMM_IDLE_FALLBACK_MS } from "../use-kimm-live.js";
 import { fakeEmbedKit, flush, GOOD_GPU, type FakeEmbedKit } from "./fake-kimm-embed.js";
 
@@ -298,6 +299,75 @@ describe("KimmPanel, her live figure", () => {
     view.rerender(wrap(<KimmPanel mood="rest" figure lively />));
     expect(motes()).toBeNull();
     expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("calm");
+  });
+
+  it("reacts to the lock screen's words on the lock screen: typing toward the field, shown, hidden, failed, unlocked", async () => {
+    const { kit, wrap } = setup();
+    const signals = createKimmLockSignals();
+    render(wrap(<KimmPanel mood="rest" figure lively signals={signals} />));
+    await idle();
+    const embed = kit.mounts[0];
+    act(() => {
+      for (const word of ["typing", "shown", "hidden", "failed", "unlocked"] as const) signals.emit(word);
+    });
+    expect(embed?.reactions.map((reaction) => reaction.signal)).toEqual(["typing", "shown", "hidden", "failed", "unlocked"]);
+    // typing carries a point where the field stands, right of her panel; every other word carries nothing
+    const typing = embed?.reactions[0]?.at as { x: number; y: number } | undefined;
+    expect(typeof typing?.x).toBe("number");
+    expect(typing?.y).toBeCloseTo(window.innerHeight * 0.55, 6);
+    for (const reaction of embed?.reactions.slice(1) ?? []) expect(reaction.at).toBeUndefined();
+  });
+
+  it("the card hears no words, and reduced motion turns the reactions off", async () => {
+    const card = setup();
+    const signals = createKimmLockSignals();
+    render(card.wrap(<KimmPanel mood="rest" figure seat="card" signals={signals} />));
+    await idle();
+    act(() => signals.emit("failed"));
+    expect(card.kit.mounts[0]?.reactions).toEqual([]);
+    cleanup();
+    still.current = true;
+    const quiet = setup();
+    render(quiet.wrap(<KimmPanel mood="rest" figure lively signals={signals} />));
+    await idle();
+    act(() => signals.emit("failed"));
+    expect(quiet.kit.mounts).toHaveLength(0);
+  });
+
+  it("a pointer over her panel smiles and tilts her on the lock screen only", async () => {
+    const { kit, wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure lively />));
+    await idle();
+    const layer = panelOf(view.container).querySelector<HTMLElement>("[data-vex-area='kimm-live']");
+    if (layer === null) throw new Error("no layer");
+    vi.spyOn(layer, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 720, 900));
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 300 }));
+    });
+    expect(kit.mounts[0]?.hovered).toBe(true);
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 1200, clientY: 300 }));
+    });
+    expect(kit.mounts[0]?.hovered).toBe(false);
+  });
+
+  it("gives the lock screen depth while lively, and none where her still stands", async () => {
+    const { wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure lively />));
+    const panel = panelOf(view.container);
+    expect(panel.style.getPropertyValue("--vex-kimm-shift-figure")).toBe("");
+    await idle();
+    expect(panel.style.getPropertyValue("--vex-kimm-shift-figure")).toBe("0.00px, 0.00px");
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(Number.parseFloat(panel.style.getPropertyValue("--vex-kimm-shift-figure"))).toBeGreaterThan(5);
+    still.current = true;
+    view.rerender(wrap(<KimmPanel mood="rest" figure lively />));
+    expect(panel.style.getPropertyValue("--vex-kimm-shift-figure")).toBe("");
   });
 
   it("unmounted, lets her go: her canvas leaves at once and her model 30 s later", async () => {

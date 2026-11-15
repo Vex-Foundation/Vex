@@ -21,6 +21,7 @@ import type { KimmEvent, KimmLiveMood } from "./kimm-live-moods.js";
 import {
   createKimmRig,
   KIMM_LIVELY,
+  type KimmReaction,
   type KimmLookTarget,
   type KimmTargets,
 } from "./kimm-rig.js";
@@ -131,6 +132,10 @@ export interface KimmEmbed {
   readonly awake: boolean;
   /** Desktop's lively mode on or off: the rig's (`KIMM_LIVELY`) and the ticker cap (30 fps on, none off). */
   lively(on: boolean): void;
+  /** Desktop's lock screen: a reaction to a typed signal (`KIMM_REACT`); `at` is a point, never an element. */
+  react(signal: KimmReaction, at?: { readonly x: number; readonly y: number }): void;
+  /** The pointer rests over her panel (a smile at rest, and a head tilt when lively). */
+  hover(on: boolean): void;
   destroy(): void;
 }
 
@@ -431,6 +436,10 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     get awake() {
       return app?.ticker.started === true;
     },
+    react: (signal, at) => {
+      if (ready) rig.react(signal, at);
+    },
+    hover: (on) => rig.hover(on),
     lively: (on) => {
       if (on === lively) return;
       lively = on;

@@ -72,6 +72,34 @@ export interface KimmRigOptions {
  * Reduced motion never reaches it: the panel never seats her live under it, and the rig zeroes sway and bob anyway.
  * `fps` is the ticker cap the embed applies in lively mode, to spare the battery.
  */
+/**
+ * THE LOCK SCREEN'S REACTIONS (desktop only, lively mode; owner decision 2026-11-15). `react()` takes one of a few
+ * typed signals and nothing else (`kimm-lock-signals.ts`: never the password, its length or any content):
+ *   - `typing`: her gaze goes to the password field for `typingLookMs` after each key and no idle act starts for
+ *     `typingQuietMs`; then she looks back to the pointer or to centre;
+ *   - `shown` (the password is visible): she looks away, down and to her side, eyes nearly shut (`avertShut`), her
+ *     head turned `avertTilt` degrees, and plays no idle act, until `hidden`. The model has no hand over her eyes, so
+ *     she does not peek instead;
+ *   - `failed`: a short head shake (`shakeDeg` at most, `shakeCycles` in `shakeMs`, fading out) and her refused mood
+ *     (Cloud's `refused`: arms crossed, 3.4 s);
+ *   - `unlocked`: a happy beat, Cloud's `done` (her V sign, a smile and a hop), played as the curtain lifts: it adds no
+ *     wait to the unlock;
+ * and, lively, a pointer resting over her panel tilts her head `hoverTilt` degrees with Cloud's hover smile.
+ */
+export const KIMM_REACT = {
+  typingLookMs: 1200,
+  typingQuietMs: 3000,
+  avertShut: 0.85,
+  avertTilt: 7,
+  shakeMs: 900,
+  shakeDeg: 12,
+  shakeCycles: 2,
+  hoverTilt: 5,
+} as const;
+
+/** What `react()` takes: a signal, never content. */
+export type KimmReaction = "typing" | "shown" | "hidden" | "failed" | "unlocked";
+
 export const KIMM_LIVELY = {
   sway: 1.8,
   bobPx: 2.4,
@@ -233,6 +261,8 @@ export function createKimmRig(options: KimmRigOptions = {}) {
   let shut = 0;
   let lastT = 0;
   let lively = options.lively === true;
+  let averted = false;
+  let shakeT0 = -1e9;
   if (lively) nextIdle = now() + KIMM_LIVELY.firstActMs;
   const actNames = (options.acts ?? KIMM_ACTS).filter((name) => name in ACTS);
   const targetOf = (name: string): KimmLookTarget | null => {
@@ -366,7 +396,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       !speaking &&
       options.idle !== false
     )
-      startAct();
+      if (!averted) startAct();
     let P: ActPose = {};
     let env = 0;
     if (act) {
@@ -409,6 +439,12 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         ty = fo.y;
       }
     }
+    /* DESKTOP, the lock screen: while the password shows she looks away, down and to her side, never toward it */
+    if (averted) {
+      tx = hx - 520;
+      ty = hy + 300;
+    }
+    const turn = averted ? -KIMM_REACT.avertTilt : lively && hover ? KIMM_REACT.hoverTilt : 0;
     const dx = clamp((tx - hx) / 520, -1, 1);
     const dy = clamp((ty - hy) / 420, -1, 1);
     const sw = RM ? 0 : lively ? KIMM_LIVELY.sway : 1;
@@ -423,7 +459,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         ay +
         sw * Math.sin(t * 0.37) * 1.5,
     );
-    set("ParamAngleZ", -dx * 6 + (mood === "think" ? 7 : 0) + az + swz);
+    set("ParamAngleZ", -dx * 6 + (mood === "think" ? 7 : 0) + az + swz + turn);
     set("ParamBodyAngleX", dx * 9 + swb * 1.4);
     set("ParamBodyAngleY", -dy * 4);
     set("ParamBodyAngleZ", -dx * 3 + bz + swb);
@@ -516,7 +552,8 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         cur[id] = a + (goal - a) * (1 - Math.exp(-dt / tau));
       }
     }
-    shut += ((P.shut ? 1 : 0) - shut) * (1 - Math.exp(-dt / 0.07));
+    const shutGoal = P.shut ? 1 : averted ? KIMM_REACT.avertShut : 0;
+    shut += (shutGoal - shut) * (1 - Math.exp(-dt / 0.07));
     if (hop > 0) {
       hv -= 150 * hop;
       hop = 0;
@@ -536,6 +573,13 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       "ParamBreath",
       0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S),
     );
+    /* DESKTOP, the lock screen's failed unlock: a short head shake on top of the springs, fading out */
+    const since = t0 - shakeT0;
+    if (!RM && since >= 0 && since < KIMM_REACT.shakeMs) {
+      const u = since / KIMM_REACT.shakeMs;
+      const shake = KIMM_REACT.shakeDeg * Math.sin(u * 2 * Math.PI * KIMM_REACT.shakeCycles) * (1 - u);
+      params.set("ParamAngleX", clamp((params.get("ParamAngleX") ?? 0) + shake, -30, 30));
+    }
     for (const [id, value] of Object.entries(raw)) params.set(id, value);
     /* lively: a slow bounce with her breath, up to `bobPx` up at the top of each breath */
     const bob = lively && !RM ? -KIMM_LIVELY.bobPx * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S)) : 0;
@@ -562,6 +606,36 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       lively = on;
       if (on && !act) nextIdle = Math.min(nextIdle, now() + KIMM_LIVELY.firstActMs);
     },
+    /**
+     * DESKTOP, the lock screen: a reaction to a typed signal (`KIMM_REACT`). `at` is where the password field stands
+     * in client px, for `typing`; never an element, so nothing here can read the field.
+     */
+    react: (signal: KimmReaction, at?: { readonly x: number; readonly y: number }) => {
+      const t = now();
+      switch (signal) {
+        case "typing":
+          if (!averted && at) look({ x: at.x, y: at.y }, KIMM_REACT.typingLookMs);
+          nextIdle = Math.max(nextIdle, t + KIMM_REACT.typingQuietMs);
+          break;
+        case "shown":
+          averted = true;
+          act = null;
+          focus = null;
+          break;
+        case "hidden":
+          averted = false;
+          nextIdle = Math.max(nextIdle, t + 1500);
+          break;
+        case "failed":
+          shakeT0 = t;
+          on("refused");
+          break;
+        case "unlocked":
+          averted = false;
+          on("done");
+          break;
+      }
+    },
     /** The pointer left the window: she stops following it and eases back to centre on her springs. */
     pointerAway: () => {
       lastMove = -1e9;
@@ -586,6 +660,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         mood,
         active,
         lively,
+        averted,
         act: act?.name ?? null,
         hands: Object.fromEntries(
           KIMM_HANDS.map((hand) => [hand, Number((cur[hand] ?? 0).toFixed(3))]),

@@ -26,6 +26,7 @@ import { kimmSeatFit, type KimmSeat } from "./kimm-fit.js";
 import { kimmGateReasons, readKimmDevice } from "./kimm-gates.js";
 import type { KimmLiveStatus } from "./kimm-live.js";
 import { KimmLiveStageContext, sharedKimmLiveStage, type KimmLiveSeat } from "./kimm-live-stage.js";
+import type { KimmLockSignals } from "./kimm-lock-signals.js";
 
 /** Without `requestIdleCallback` she starts this long after her seat is taken (Cloud's `IDLE_FALLBACK_MS`). */
 export const KIMM_IDLE_FALLBACK_MS = 2_000;
@@ -44,6 +45,17 @@ export interface UseKimmLiveOptions {
   readonly seat: KimmSeat;
   /** The lock screen's lively mode (`KimmLive.lively`); the card never asks for it. */
   readonly lively?: boolean;
+  /** The lock screen's typed signals (`kimm-lock-signals.ts`): words only, never the password. Lively only. */
+  readonly signals?: KimmLockSignals;
+}
+
+/**
+ * Where the lock screen's password field stands, in client px, without touching it: the screen's column is centred
+ * in the room right of her panel, its field a little under the window's middle (section 4.13). A point, never the
+ * element, so no Kimm code can read the field.
+ */
+export function kimmLockFieldPoint(panel: DOMRect, windowWidth: number, windowHeight: number): { readonly x: number; readonly y: number } {
+  return { x: (panel.right + windowWidth) / 2, y: windowHeight * 0.55 };
 }
 
 const SEAT_FITS = { lock: kimmSeatFit("lock"), card: kimmSeatFit("card") } as const;
@@ -98,6 +110,20 @@ export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options:
     livelyRef.current = lively;
     seatRef.current?.lively(lively);
   }, [lively, enabled]);
+
+  // The lock screen's signals become her reactions, while she stands live here in the lively mode.
+  const signals = options.signals;
+  useEffect(() => {
+    if (!enabled || !lively || signals === undefined) return undefined;
+    return signals.subscribe((signal) => {
+      const layer = layerRef.current;
+      const at =
+        signal === "typing" && layer !== null
+          ? kimmLockFieldPoint(layer.getBoundingClientRect(), window.innerWidth, window.innerHeight)
+          : undefined;
+      seatRef.current?.react(signal, at);
+    });
+  }, [enabled, lively, signals, layerRef]);
 
   // Start her once the renderer is idle.
   useEffect(() => {

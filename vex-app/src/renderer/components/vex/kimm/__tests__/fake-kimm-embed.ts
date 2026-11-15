@@ -19,6 +19,10 @@ export interface FakeEmbed {
   destroyed: boolean;
   /** The last `lively()` value (the mount option until then). */
   lively: boolean;
+  /** Every reaction it was asked to play, with its point. */
+  readonly reactions: Array<{ readonly signal: string; readonly at: unknown }>;
+  /** The last `hover()` value. */
+  hovered: boolean;
   /** Settle `ready`: true (she is on screen) or false (a file or a library failed). */
   settle(ok: boolean): void;
 }
@@ -62,6 +66,8 @@ export function fakeEmbedKit(): FakeEmbedKit {
               awake: false,
               destroyed: false,
               lively: options.lively === true,
+              reactions: [],
+              hovered: false,
               settle: (ok) => settle(ok),
             };
             kit.mounts.push(fake);
@@ -95,6 +101,12 @@ export function fakeEmbedKit(): FakeEmbedKit {
               lively: (on) => {
                 fake.calls.push(on ? "lively" : "calm");
                 fake.lively = on;
+              },
+              react: (signal, at) => {
+                fake.reactions.push({ signal, at });
+              },
+              hover: (on) => {
+                fake.hovered = on;
               },
               destroy: () => {
                 fake.calls.push("destroy");

@@ -35,7 +35,12 @@
  *     breath, more sway, idle acts more often, her gaze on the pointer across
  *     the window) at 30 fps, the field takes its lively tempo
  *     (`KIMM_FIELD_LIVELY`) and a few light motes rise behind her
- *     (`KimmMotes`). Wherever her still stands instead, none of it runs.
+ *     (`KimmMotes`); she reacts to the lock screen's typed signals
+ *     (`signals`: typing, the password shown or hidden, a failed or a
+ *     successful unlock; words only, never the password); and her figure,
+ *     the field and the motes shift a few pixels against the pointer, the
+ *     nearer the more (`useKimmParallax`). Wherever her still stands
+ *     instead, none of it runs.
  *
  * Decorative: `aria-hidden`, nothing in it takes focus or a pointer, so the
  * screen beside it says everything in words.
@@ -48,7 +53,9 @@ import { useKimmArt } from "./kimm-art-context.js";
 import { KimmField } from "./KimmField.js";
 import { KimmMotes } from "./KimmMotes.js";
 import { kimmGroundStyle } from "./KimmSection.js";
+import type { KimmLockSignals } from "./kimm-lock-signals.js";
 import { useKimmLive } from "./use-kimm-live.js";
+import { useKimmParallax } from "./use-kimm-parallax.js";
 
 export interface KimmPanelProps {
   /** Her mood: which still stands. */
@@ -65,6 +72,8 @@ export interface KimmPanelProps {
   readonly hold?: boolean;
   /** The lock screen's lively mode (the lock screen alone asks for it). */
   readonly lively?: boolean;
+  /** The lock screen's typed signals to her (`kimm-lock-signals.ts`): words only, never the password. */
+  readonly signals?: KimmLockSignals;
   readonly className?: string;
 }
 
@@ -74,17 +83,21 @@ export function KimmPanel({
   seat = "lock",
   hold = false,
   lively = false,
+  signals,
   className,
 }: KimmPanelProps): JSX.Element {
   const art = useKimmArt();
   const still = art.sections[mood];
   const [fieldDrawn, setFieldDrawn] = useState(false);
   const liveRef = useRef<HTMLDivElement | null>(null);
-  const live = useKimmLive(liveRef, { mood, figure, seat, lively });
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const live = useKimmLive(liveRef, { mood, figure, seat, lively, signals });
   // Everything lively runs only while her live figure stands here; her still never comes with any of it.
   const livelyOn = lively && live === "live";
+  useKimmParallax(panelRef, livelyOn);
   return (
     <div
+      ref={panelRef}
       aria-hidden="true"
       data-vex-area="kimm-panel"
       data-kimm-mood={mood}
