@@ -352,9 +352,40 @@ hidden each turn all of it off, and her still stands exactly as before.
   run gate stops them with a hidden window or a panel out of view, and they
   exist only while the lively switch is on.
 
+- **She reacts to the lock screen** (`KIMM_REACT`, `kimm-rig.ts`), told by
+  five fixed words and nothing else (`kimm-lock-signals.ts`: `typing`,
+  `shown`, `hidden`, `failed`, `unlocked`; no payload, so the password, its
+  length and the field never reach her code). Typing turns her gaze to the
+  field for 1.2 s after each key and holds her idle acts back for 3 s; while
+  the password is shown she looks away, down and to her side, eyes nearly
+  shut, her head turned 7 degrees, and plays no act until it is hidden (the
+  model has no hand over her eyes); a refusal plays a head shake of at most
+  12 degrees, two swings in 0.9 s fading out, with her refused mood (3.4 s);
+  the unlock plays her happy beat (Cloud's `done`: the V sign, a smile, a
+  hop) as the curtain lifts, adding no wait; a pointer resting over her
+  panel tilts her head 5 degrees with Cloud's hover smile.
+- **Depth** (`kimm-parallax.ts`, `use-kimm-parallax.ts`): her field, the
+  motes and her figure shift against the pointer by up to 3, 6 and 10 px
+  (the vertical 0.6 of it), eased with a 280ms time constant at most 30
+  times a second, only while the eased point still moves, and home when the
+  pointer leaves the window. A transform inside the panel, which clips it;
+  her layer bleeds 16px and the field 8px past the panel, so no edge shows.
+
 No new library and no network: all of it is the rig, the field port and one
 canvas of ours. Nothing moves in the layout. Her arrival keeps its 900ms fade
 (`--vex-duration-kimm-in`).
+
+### Kimm's hand swap is a cut
+
+Everywhere she stands live, the card included: her hand pose changes as a
+cut, never a crossfade (`KIMM_HAND_CUT`, `kimmHandBlend` in `kimm-rig.ts`;
+owner decision 2026-11-15, the "ghost arm"). Measured on the shipped model,
+each hand toggle crossfades two whole drawings, so any value between 0 and 1
+draws the old and the new arm (and sleeve) see-through. The swap keeps
+Cloud's clock (340ms, 260ms into or out of crossed arms, a 650ms hold, 350ms
+at rest) and the body dip that starts it, but each toggle is exactly 0 or 1
+on every frame: the old pose holds until the middle of the leg, at the bottom
+of the dip, and the new one stands from there.
 
 ### Vex's bars
 
