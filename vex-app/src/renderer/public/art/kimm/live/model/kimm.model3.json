@@ -1,0 +1,1 @@
+{"Version": 3, "FileReferences": {"Moc": "kimm.moc.wasm", "Textures": ["t0_4096.webp", "t1_4096.webp", "t2_4096.webp"], "Physics": "kimm.physics3.json", "Motions": {"Idle": [{"File": "idle.motion3.json"}]}}, "Groups": [{"Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]}, {"Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"]}]}

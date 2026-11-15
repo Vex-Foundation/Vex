@@ -23,6 +23,8 @@
  *      registered before its file exists (`awaited`) is skipped while the
  *      file is absent from the renderer's public source and checked in full
  *      once it is there.
+ *   6b. Kimm's live model (dist/renderer/art/kimm/live/) holds exactly its
+ *      pinned files, each matching its pinned size and sha256.
  *   7. Compiled CSS contains no bare `--color-*` references in property values
  *      (must be wrapped in `var(...)`). Catches Tailwind v4 arbitrary-value
  *      footgun: `text-[--color-foo]` compiles to `color:--color-foo` (broken)
@@ -68,7 +70,7 @@ import {
   privilegedBundleChecks,
 } from "./check-privileged-bundles.mjs";
 import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
-import { brandAssetPlan, KIMM_BRAND_ASSETS } from "./kimm-brand-assets.mjs";
+import { brandAssetPlan, KIMM_BRAND_ASSETS, kimmLiveFindings } from "./kimm-brand-assets.mjs";
 import {
   builtLighterSignerDir,
   evaluateBuiltLighterSigners,
@@ -355,6 +357,17 @@ await checkAsync("brand assets — exist, decode, dimensions, byte budget, no EX
   for (const file of awaiting) console.log(`    awaited, not in the source yet: ${file}`);
   if (issues.length > 0) {
     throw new Error(`Brand asset issues:\n    ${issues.join("\n    ")}`);
+  }
+});
+
+// 6b. Kimm's live model (owner decision 2026-11-15): dist/renderer/art/kimm/live/
+// holds exactly the pinned files, each byte-identical to its pin (size and
+// sha256, the pins of VEX Cloud's own guard). The pins and their reasons are
+// in kimm-brand-assets.mjs.
+check("Kimm's live model - exactly the pinned files, byte-identical (size + sha256)", () => {
+  const findings = kimmLiveFindings(path.join(root, "dist", "renderer"));
+  if (findings.length > 0) {
+    throw new Error(`Kimm live model issues:\n    ${findings.join("\n    ")}`);
   }
 });
 
