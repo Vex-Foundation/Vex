@@ -23,6 +23,7 @@ import { fitKimm, kimmSeatFit } from "../kimm-fit.js";
 import { createKimmLiveStage, KIMM_RELEASE_MS, KimmLiveStageContext, type KimmLiveStage } from "../kimm-live-stage.js";
 import { KimmPanel } from "../KimmPanel.js";
 import { createKimmLockSignals } from "../kimm-lock-signals.js";
+import { resetKimmLockLifeMemory } from "../use-kimm-lock-life.js";
 import { KIMM_IDLE_FALLBACK_MS } from "../use-kimm-live.js";
 import { fakeEmbedKit, flush, GOOD_GPU, type FakeEmbedKit } from "./fake-kimm-embed.js";
 
@@ -36,6 +37,9 @@ let cores = 8;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // midday by the local clock: the lock screen's day pace
+  vi.setSystemTime(new Date(2026, 10, 15, 12, 0, 0));
+  resetKimmLockLifeMemory();
   still.current = false;
   cores = 8;
   vi.spyOn(navigator, "hardwareConcurrency", "get").mockImplementation(() => cores);
@@ -236,14 +240,32 @@ describe("KimmPanel, her live figure", () => {
     expect(panel.getAttribute("data-kimm-lively")).toBe("on");
     const embed = kit.mounts[0];
     expect(embed?.options.lively).toBe(true);
+    // by day (the local clock read at 12:00)
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("lively");
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
+    // a minute alone: her ticker still runs (no idle sleep), though she has grown sleepy
     expect(embed?.awake).toBe(true);
-    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("lively");
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("drowsy");
+    expect(panel.getAttribute("data-kimm-pace")).toBe("drowsy");
+    expect(panel.querySelector("[data-vex-area='kimm-motes']")?.getAttribute("data-kimm-motes-speed")).toBe("0.45");
     const motes = panel.querySelector("[data-vex-area='kimm-motes']");
     expect(motes?.getAttribute("data-kimm-motes-running")).toBe("true");
     expect(motes?.getAttribute("data-kimm-motes-fps")).toBe("30");
+  });
+
+  it("greets once on the lock screen as she goes live, never in the card", async () => {
+    const lock = setup();
+    render(lock.wrap(<KimmPanel mood="rest" figure lively />));
+    await idle();
+    expect(lock.kit.mounts[0]?.reactions.map((reaction) => reaction.signal)).toContain("greet");
+    cleanup();
+    resetKimmLockLifeMemory();
+    const card = setup();
+    render(card.wrap(<KimmPanel mood="rest" figure seat="card" />));
+    await idle();
+    expect(card.kit.mounts[0]?.reactions).toEqual([]);
   });
 
   it("the card never asks: calm, asleep after 12 s, no motes, the calm field", async () => {
@@ -310,12 +332,14 @@ describe("KimmPanel, her live figure", () => {
     act(() => {
       for (const word of ["typing", "shown", "hidden", "failed", "unlocked"] as const) signals.emit(word);
     });
-    expect(embed?.reactions.map((reaction) => reaction.signal)).toEqual(["typing", "shown", "hidden", "failed", "unlocked"]);
+    const words = new Set(["typing", "shown", "hidden", "failed", "unlocked"]);
+    const heard = embed?.reactions.filter((reaction) => words.has(reaction.signal)) ?? [];
+    expect(heard.map((reaction) => reaction.signal)).toEqual(["typing", "shown", "hidden", "failed", "unlocked"]);
     // typing carries a point where the field stands, right of her panel; every other word carries nothing
-    const typing = embed?.reactions[0]?.at as { x: number; y: number } | undefined;
+    const typing = heard[0]?.at as { x: number; y: number } | undefined;
     expect(typeof typing?.x).toBe("number");
     expect(typing?.y).toBeCloseTo(window.innerHeight * 0.55, 6);
-    for (const reaction of embed?.reactions.slice(1) ?? []) expect(reaction.at).toBeUndefined();
+    for (const reaction of heard.slice(1)) expect(reaction.at).toBeUndefined();
   });
 
   it("the card hears no words, and reduced motion turns the reactions off", async () => {

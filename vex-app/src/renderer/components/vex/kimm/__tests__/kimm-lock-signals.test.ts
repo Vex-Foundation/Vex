@@ -12,8 +12,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createKimmLockSignals, KIMM_LOCK_SIGNALS, type KimmLockSignal } from "../kimm-lock-signals.js";
 
 describe("the lock screen's signals", () => {
-  it("are five words", () => {
-    expect([...KIMM_LOCK_SIGNALS]).toEqual(["typing", "shown", "hidden", "failed", "unlocked"]);
+  it("are seven words", () => {
+    expect([...KIMM_LOCK_SIGNALS]).toEqual(["typing", "focus", "blur", "shown", "hidden", "failed", "unlocked"]);
   });
 
   it("pass each word on alone, as the canonical constant", () => {

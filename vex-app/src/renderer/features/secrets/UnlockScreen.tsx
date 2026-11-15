@@ -100,6 +100,11 @@ export function UnlockScreen(): JSX.Element {
   // away while it is shown, shakes her head on a refusal, smiles on success.
   // Guarded by `UnlockScreen-kimm-signals.test.tsx`.
   const kimmSignals = useMemo(() => createKimmLockSignals(), []);
+  // The field takes focus as it mounts (autoFocus), before her panel listens:
+  // say so once her panel is there (a child's effects run before ours).
+  useEffect(() => {
+    if (passwordRef.current !== null && document.activeElement === passwordRef.current) kimmSignals.emit("focus");
+  }, [kimmSignals]);
   const beginUnlockCurtain = useUiStore((s) => s.beginUnlockCurtain);
   // Her stored choice is the chat's, as on the stage (section 4.10): hidden, her
   // panel keeps the field without her figure. Read only: the lock screen has no key for it.
@@ -306,6 +311,12 @@ export function UnlockScreen(): JSX.Element {
                   }}
                   onVisibleChange={(visible) => {
                     kimmSignals.emit(visible ? "shown" : "hidden");
+                  }}
+                  onFocus={() => {
+                    kimmSignals.emit("focus");
+                  }}
+                  onBlur={() => {
+                    kimmSignals.emit("blur");
                   }}
                 />
                 {/* SIGNATURE STROKE - rests at scale 0 on the field's foot;

@@ -19,14 +19,14 @@
  * view stops her, and her ticker is capped at 30 fps (`KimmLive.lively`).
  */
 
-import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
 import type { KimmMood } from "./kimm-assets.js";
 import { kimmSeatFit, type KimmSeat } from "./kimm-fit.js";
 import { kimmGateReasons, readKimmDevice } from "./kimm-gates.js";
 import type { KimmLiveStatus } from "./kimm-live.js";
 import { KimmLiveStageContext, sharedKimmLiveStage, type KimmLiveSeat } from "./kimm-live-stage.js";
-import type { KimmLockSignals } from "./kimm-lock-signals.js";
+import type { KimmReaction } from "./kimm-rig.js";
 
 /** Without `requestIdleCallback` she starts this long after her seat is taken (Cloud's `IDLE_FALLBACK_MS`). */
 export const KIMM_IDLE_FALLBACK_MS = 2_000;
@@ -45,8 +45,12 @@ export interface UseKimmLiveOptions {
   readonly seat: KimmSeat;
   /** The lock screen's lively mode (`KimmLive.lively`); the card never asks for it. */
   readonly lively?: boolean;
-  /** The lock screen's typed signals (`kimm-lock-signals.ts`): words only, never the password. Lively only. */
-  readonly signals?: KimmLockSignals;
+}
+
+/** What a panel gets back: what it shows, and a way to tell her a reaction while its seat holds her (lively only). */
+export interface KimmLiveHandle {
+  readonly view: KimmLiveView;
+  readonly react: (signal: KimmReaction, at?: { readonly x: number; readonly y: number }) => void;
 }
 
 /**
@@ -75,7 +79,7 @@ function useDevicePasses(): boolean {
   return passes;
 }
 
-export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options: UseKimmLiveOptions): KimmLiveView {
+export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options: UseKimmLiveOptions): KimmLiveHandle {
   const provided = useContext(KimmLiveStageContext);
   const stage = useMemo(() => provided ?? sharedKimmLiveStage(), [provided]);
   const still = useStillFrame();
@@ -110,20 +114,6 @@ export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options:
     livelyRef.current = lively;
     seatRef.current?.lively(lively);
   }, [lively, enabled]);
-
-  // The lock screen's signals become her reactions, while she stands live here in the lively mode.
-  const signals = options.signals;
-  useEffect(() => {
-    if (!enabled || !lively || signals === undefined) return undefined;
-    return signals.subscribe((signal) => {
-      const layer = layerRef.current;
-      const at =
-        signal === "typing" && layer !== null
-          ? kimmLockFieldPoint(layer.getBoundingClientRect(), window.innerWidth, window.innerHeight)
-          : undefined;
-      seatRef.current?.react(signal, at);
-    });
-  }, [enabled, lively, signals, layerRef]);
 
   // Start her once the renderer is idle.
   useEffect(() => {
@@ -173,5 +163,8 @@ export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options:
     };
   }, [view, stage, layerRef]);
 
-  return view;
+  const react = useCallback<KimmLiveHandle["react"]>((signal, at) => {
+    seatRef.current?.react(signal, at);
+  }, []);
+  return useMemo(() => ({ view, react }), [view, react]);
 }

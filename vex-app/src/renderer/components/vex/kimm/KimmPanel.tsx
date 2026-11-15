@@ -39,7 +39,10 @@
  *     (`signals`: typing, the password shown or hidden, a failed or a
  *     successful unlock; words only, never the password); and her figure,
  *     the field and the motes shift a few pixels against the pointer, the
- *     nearer the more (`useKimmParallax`). Wherever her still stands
+ *     nearer the more (`useKimmParallax`); she greets the viewer once a
+ *     launch, leans in while the field has focus or keys go in, plays chained
+ *     idle moments, grows sleepy after 45 s alone and calmer at night by the
+ *     local clock (`useKimmLockLife`, `KIMM_LIFE`). Wherever her still stands
  *     instead, none of it runs.
  *
  * Decorative: `aria-hidden`, nothing in it takes focus or a pointer, so the
@@ -56,6 +59,8 @@ import { kimmGroundStyle } from "./KimmSection.js";
 import type { KimmLockSignals } from "./kimm-lock-signals.js";
 import { useKimmLive } from "./use-kimm-live.js";
 import { useKimmParallax } from "./use-kimm-parallax.js";
+import { useKimmLockLife } from "./use-kimm-lock-life.js";
+import { KIMM_MOTES } from "./kimm-motes.js";
 
 export interface KimmPanelProps {
   /** Her mood: which still stands. */
@@ -91,10 +96,13 @@ export function KimmPanel({
   const [fieldDrawn, setFieldDrawn] = useState(false);
   const liveRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const live = useKimmLive(liveRef, { mood, figure, seat, lively, signals });
+  const { view: live, react } = useKimmLive(liveRef, { mood, figure, seat, lively });
   // Everything lively runs only while her live figure stands here; her still never comes with any of it.
   const livelyOn = lively && live === "live";
   useKimmParallax(panelRef, livelyOn);
+  // The lock screen's life: the screen's words, her greeting, sleepiness, the local clock's night.
+  const life = useKimmLockLife({ active: livelyOn, signals, react, layerRef: liveRef });
+  const pace = life.sleepy ? "drowsy" : life.night ? "night" : "day";
   return (
     <div
       ref={panelRef}
@@ -107,12 +115,13 @@ export function KimmPanel({
       data-kimm-seat={seat}
       data-kimm-live={live}
       data-kimm-lively={lively ? (livelyOn ? "on" : "waiting") : "off"}
+      data-kimm-pace={livelyOn ? pace : undefined}
       className={cn("vex-kimm-panel", seat === "card" && "vex-kimm-panel--card", className)}
       style={kimmGroundStyle(art.field)}
     >
       <div className="vex-kimm-panel__ground" />
-      <KimmField open={figure} hold={hold} onDrawn={setFieldDrawn} lively={livelyOn} />
-      <KimmMotes active={livelyOn} />
+      <KimmField open={figure} hold={hold} onDrawn={setFieldDrawn} lively={livelyOn} pace={pace} />
+      <KimmMotes active={livelyOn} speed={KIMM_MOTES.pace[pace]} />
       {figure && isKimmArtReady(still) ? (
         <img
           src={still.src}

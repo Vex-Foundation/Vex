@@ -1,10 +1,10 @@
 /**
  * The vault screen's words to Kimm (owner decision 2026-11-15): `UnlockScreen` tells her panel what happens beside
- * her (typing, the password shown or hidden, a failed or a successful unlock) through `kimm-lock-signals.ts`, and
+ * her (typing, the field's focus, the password shown or hidden, a failed or a successful unlock) through `kimm-lock-signals.ts`, and
  * this spec proves that nothing of the password reaches her code.
  *
  * Asserted, with a SENTINEL password typed, shown, hidden, refused and then accepted:
- *   1. her panel hears only the five words, each call one argument, in the order the person acted;
+ *   1. her panel hears only the seven words, each call one argument, in the order the person acted;
  *   2. nothing she is handed (the words, her props) carries the password, any part of it, or its length;
  *   3. no module of hers imports the vault screen, the password field or the secrets bridge, and none reads an
  *      input's value.
@@ -80,7 +80,7 @@ function scalars(value: unknown, seen = new Set<unknown>()): Array<string | numb
 }
 
 describe("UnlockScreen's words to Kimm", () => {
-  it("tells her only the five words, never the password, any part of it or its length", async () => {
+  it("tells her only the seven words, never the password, any part of it or its length", async () => {
     mockUnlock
       .mockResolvedValueOnce({ ok: false, error: { code: "secrets.invalid_password", message: "Wrong password." } } as never)
       .mockResolvedValueOnce({ ok: true, value: {} } as never);
@@ -104,7 +104,9 @@ describe("UnlockScreen's words to Kimm", () => {
       expect(args).toHaveLength(1);
       return args[0];
     });
+    // the field takes focus as the screen opens, and says so once her panel listens
     expect(words).toEqual([
+      "focus",
       "typing",
       "typing",
       "typing",
