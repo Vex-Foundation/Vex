@@ -397,7 +397,9 @@
  * collapse below. The canvas takes no pointer, as the panel takes none. */
 .vex-kimm-panel__live {
   position: absolute;
-  inset: 0;
+  /* it bleeds 16 past the panel (`KIMM_LIVE_BLEED`, which her fit takes
+   * back), so the lock screen's depth never uncovers an edge */
+  inset: -16px;
   opacity: 0;
   transition: opacity var(--vex-duration-kimm-in) var(--vex-ease-standard);
 }
@@ -410,6 +412,25 @@
 .vex-kimm-live__host {
   position: absolute;
   inset: 0;
+}
+/* THE LOCK SCREEN'S DEPTH (owner decision 2026-11-15; kimm-parallax.ts,
+ * use-kimm-parallax.ts): while her live figure stands there in the lively
+ * mode, her field, the motes and her figure shift against the pointer by up
+ * to 3, 6 and 10 px (the vertical 0.6 of it), eased in JS at most 30 times a
+ * second and written as `--vex-kimm-shift-*`. A transform only, inside the
+ * panel, which clips it; the field bleeds 8 past the panel and her layer 16,
+ * more than their shifts, so no edge shows. Off, nothing reads the shifts. */
+.vex-kimm-panel > .vex-kimm__field {
+  inset: -8px;
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm__field {
+  transform: translate(var(--vex-kimm-shift-field, 0px, 0px));
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm-panel__motes {
+  transform: translate(var(--vex-kimm-shift-motes, 0px, 0px));
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm-panel__live {
+  transform: translate(var(--vex-kimm-shift-figure, 0px, 0px));
 }
 /* THE LOCK SCREEN'S LIGHT MOTES (owner decision 2026-11-15; KimmMotes.tsx):
  * a few soft points of light on one canvas over her field and under her

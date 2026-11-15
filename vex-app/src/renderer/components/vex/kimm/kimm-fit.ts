@@ -185,15 +185,22 @@ export function kimmStillFrame(seat: KimmSeat, width: number, height: number): {
 }
 
 /**
+ * How far her live layer bleeds past the panel on every side (kimm.css, `.vex-kimm-panel__live`), so the lock
+ * screen's depth can shift her figure (at most 10 px, `KIMM_PARALLAX`) without uncovering an edge; the panel clips it.
+ */
+export const KIMM_LIVE_BLEED = 16;
+
+/**
  * Her live fit in a seat: the scale and hair line of the still the seat draws (`kimmStillFrame`), her face on the
  * box's centre line as the still is centred, cut by the box's foot as the still is. Both terms of `fitKimm` give the
- * same scale, so neither the box's height nor its width moves her off her still's frame.
+ * same scale, so neither the box's height nor its width moves her off her still's frame. The box is her live layer,
+ * `bleed` px larger than the panel on every side; the still's frame is solved in the panel and moved into the layer.
  */
-export function kimmSeatFit(seat: KimmSeat): KimmFitOptions {
+export function kimmSeatFit(seat: KimmSeat, bleed: number = KIMM_LIVE_BLEED): KimmFitOptions {
   const solve = (width: number, height: number): { readonly s: number; readonly head: number } => {
-    const frame = kimmStillFrame(seat, width, height);
+    const frame = kimmStillFrame(seat, Math.max(1, width - 2 * bleed), Math.max(1, height - 2 * bleed));
     const k = frame.width / KIMM_STILL_WIDTH;
-    return { s: k / KIMM_STILL_UNITS_PER_PX, head: frame.top + KIMM_STILL_HAIR_PX * k };
+    return { s: k / KIMM_STILL_UNITS_PER_PX, head: bleed + frame.top + KIMM_STILL_HAIR_PX * k };
   };
   return {
     headroom: (width, height) => solve(width, height).head,

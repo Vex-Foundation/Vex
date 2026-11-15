@@ -16,6 +16,7 @@
 import { describe, expect, test } from "vitest";
 import {
   fitKimm,
+  KIMM_LIVE_BLEED,
   KIMM_STILL_HAIR_PX,
   KIMM_STILL_UNITS_PER_PX,
   kimmSeatFit,
@@ -100,7 +101,7 @@ describe("desktop's seats", () => {
   });
 
   test("the card seat in Cloud's own 432 x 563 section lands on Cloud's section fit: 52 over her hair, 0.92 of the width", () => {
-    const seat = fitKimm(432, 563, kimmSeatFit("card"));
+    const seat = fitKimm(432, 563, kimmSeatFit("card", 0));
     const cloud = fitKimm(432, 563, sectionFitOptions());
     expect(seat.s).toBeCloseTo(cloud.s, 9);
     expect(seat.head).toBeCloseTo(52, 9);
@@ -109,7 +110,7 @@ describe("desktop's seats", () => {
 
   test("the card seat (280 x 359) frames her as the card's still: 48 from the top, 88% of the width", () => {
     expect(kimmStillFrame("card", 280, 359)).toEqual({ top: 48, width: 0.88 * 280 });
-    const fit = fitKimm(280, 359, kimmSeatFit("card"));
+    const fit = fitKimm(280, 359, kimmSeatFit("card", 0));
     const k = (0.88 * 280) / 720;
     expect(fit.s).toBeCloseTo(k / KIMM_STILL_UNITS_PER_PX, 9);
     expect(fit.head).toBeCloseTo(48 + KIMM_STILL_HAIR_PX * k, 9);
@@ -120,15 +121,31 @@ describe("desktop's seats", () => {
   test("the lock seat frames her as the lock screen's still: on the foot, the panel's height less 64, her width free", () => {
     expect(kimmStillFrame("lock", 720, 900).top).toBe(64);
     expect(kimmStillFrame("lock", 720, 900).width).toBeCloseTo((836 * 720) / 1032, 9);
-    const wide = fitKimm(720, 900, kimmSeatFit("lock"));
+    const wide = fitKimm(720, 900, kimmSeatFit("lock", 0));
     const k = 836 / 1032;
     expect(wide.s).toBeCloseTo(k / KIMM_STILL_UNITS_PER_PX, 9);
     expect(wide.s).toBeCloseTo(0.18478, 4);
     expect(wide.head).toBeCloseTo(64 + KIMM_STILL_HAIR_PX * k, 9);
     // The still is sized by the panel's height alone, so a narrow panel (the 400 at the 1000 floor) cuts her as it
     // cuts the still, never shrinks her.
-    const narrow = fitKimm(400, 900, kimmSeatFit("lock"));
+    const narrow = fitKimm(400, 900, kimmSeatFit("lock", 0));
     expect(narrow.s).toBeCloseTo(wide.s, 9);
     expect(narrow.x + KM.face * narrow.s).toBeCloseTo(200, 9);
+  });
+
+  test("her live layer bleeds 16 past the panel and the fit takes it back: the same scale, the same place on screen", () => {
+    expect(KIMM_LIVE_BLEED).toBe(16);
+    for (const [seat, width, height] of [
+      ["lock", 720, 900],
+      ["lock", 400, 900],
+      ["card", 280, 359],
+    ] as const) {
+      const panel = fitKimm(width, height, kimmSeatFit(seat, 0));
+      const layer = fitKimm(width + 32, height + 32, kimmSeatFit(seat));
+      expect(layer.s).toBeCloseTo(panel.s, 9);
+      // the layer starts 16 above and left of the panel, so her hair and face land on the same screen pixels
+      expect(layer.head - 16).toBeCloseTo(panel.head, 9);
+      expect(layer.faceX - 16).toBeCloseTo(panel.faceX, 9);
+    }
   });
 });
