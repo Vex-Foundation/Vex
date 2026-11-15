@@ -115,7 +115,29 @@ export const KIMM_FIELD_CALM = { speed: 1, flow: 0.5, flicker: 0.2, glow: 0.2, p
  */
 export const KIMM_FIELD_LIVELY = { speed: 1.8, flow: 0.85, flicker: 0.32, glow: 0.4, pulse: 0.45 } as const;
 
-/** The tempo the field takes: lively on the lock screen while her live figure stands, calm everywhere else. */
-export function kimmFieldTempo(lively: boolean): typeof KIMM_FIELD_CALM | typeof KIMM_FIELD_LIVELY {
-  return lively ? KIMM_FIELD_LIVELY : KIMM_FIELD_CALM;
+/** The lively tempo at night by the local clock (22:00 to 06:00): calmer, between the calm and the day's. */
+export const KIMM_FIELD_NIGHT = { speed: 1.2, flow: 0.65, flicker: 0.24, glow: 0.3, pulse: 0.3 } as const;
+
+/** The lively tempo while she is sleepy: slower than the calm field, a faint slow pulse. */
+export const KIMM_FIELD_DROWSY = { speed: 0.6, flow: 0.4, flicker: 0.15, glow: 0.25, pulse: 0.2 } as const;
+
+/** The lock screen's pace: the day's, the night's, or sleepy. */
+export type KimmFieldPace = "day" | "night" | "drowsy";
+
+export type KimmFieldTempo =
+  | typeof KIMM_FIELD_CALM
+  | typeof KIMM_FIELD_LIVELY
+  | typeof KIMM_FIELD_NIGHT
+  | typeof KIMM_FIELD_DROWSY;
+
+/** The tempo the field takes: on the lock screen while her live figure stands, by its pace; calm everywhere else. */
+export function kimmFieldTempo(lively: boolean, pace: KimmFieldPace = "day"): KimmFieldTempo {
+  if (!lively) return KIMM_FIELD_CALM;
+  return pace === "drowsy" ? KIMM_FIELD_DROWSY : pace === "night" ? KIMM_FIELD_NIGHT : KIMM_FIELD_LIVELY;
+}
+
+/** The tempo's name, as `KimmField` writes it on its box (`data-kimm-field-tempo`). */
+export function kimmFieldTempoName(lively: boolean, pace: KimmFieldPace = "day"): "calm" | "lively" | "night" | "drowsy" {
+  if (!lively) return "calm";
+  return pace === "drowsy" ? "drowsy" : pace === "night" ? "night" : "lively";
 }

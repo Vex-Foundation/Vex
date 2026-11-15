@@ -30,6 +30,8 @@ export const KIMM_MOTES = {
    * mixes in its own colour space too), never a sheet token, since the canvas draws them.
    */
   colors: ["#a5d8ff", "#f6f8ff"] as const,
+  /** Their pace by the lock screen's: the day's, the night's, sleepy. */
+  pace: { day: 1, night: 0.7, drowsy: 0.45 } as const,
 } as const;
 
 export interface KimmMote {

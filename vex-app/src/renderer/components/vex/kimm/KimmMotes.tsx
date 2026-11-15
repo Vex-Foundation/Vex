@@ -20,11 +20,17 @@ import { createMotes, KIMM_MOTES, moteFrameDue, motePose, stepMotes } from "./ki
 export interface KimmMotesProps {
   /** Her live figure stands on the lock screen: the motes exist. */
   readonly active: boolean;
+  /** Their pace: 1 by day, slower at night or while she is sleepy (`KIMM_MOTES.pace`). */
+  readonly speed?: number;
 }
 
-export function KimmMotes({ active }: KimmMotesProps): JSX.Element | null {
+export function KimmMotes({ active, speed = 1 }: KimmMotesProps): JSX.Element | null {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [onScreen, setOnScreen] = useState(false);
+  const speedRef = useRef(speed);
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,12 +50,14 @@ export function KimmMotes({ active }: KimmMotesProps): JSX.Element | null {
     let raf = 0;
     let last = 0;
     let stepped = 0;
+    let clock = 0;
     const draw = (now: number): void => {
       raf = requestAnimationFrame(draw);
       if (!moteFrameDue(now, last)) return;
       last = now;
-      const dt = stepped === 0 ? 0 : (now - stepped) / 1000;
+      const dt = (stepped === 0 ? 0 : (now - stepped) / 1000) * speedRef.current;
       stepped = now;
+      clock += Math.min(0.1, dt);
       stepMotes(motes, dt);
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const width = canvas.clientWidth;
@@ -60,7 +68,7 @@ export function KimmMotes({ active }: KimmMotesProps): JSX.Element | null {
       }
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
-      const t = now / 1000;
+      const t = clock;
       for (const m of motes) {
         const pose = motePose(m, t, width, height);
         if (pose.alpha <= 0.005) continue;
@@ -88,6 +96,7 @@ export function KimmMotes({ active }: KimmMotesProps): JSX.Element | null {
       data-vex-area="kimm-motes"
       data-kimm-motes-running={running ? "true" : "false"}
       data-kimm-motes-fps={KIMM_MOTES.fps}
+      data-kimm-motes-speed={speed}
       className="vex-kimm-panel__motes"
     />
   );
