@@ -19,18 +19,27 @@
  *     hidden window (MOTION-POLICY.md, "Kimm's glyph field");
  *   - her figure: her section still for the mood (`KimmArtSet.sections`),
  *     only while `figure` is set; a still whose file is missing draws the
- *     field alone, never another mood's figure.
+ *     field alone, never another mood's figure;
+ *   - her live figure (owner decision 2026-11-15): VEX Cloud's Live2D Kimm,
+ *     seated in a layer over her still (`useKimmLive`, `kimm-live-stage.ts`),
+ *     framed as the seat frames the still (`kimmSeatFit`), playing the mood
+ *     her still shows (`KIMM_LIVE_CUE`). It fades in over the still once she
+ *     is on screen, and the still leaves only then (kimm.css,
+ *     `data-kimm-live="live"`). Anywhere she cannot stand live (her figure
+ *     hidden, reduced motion, Save-Data, a weak device or GPU, a failed load,
+ *     another panel holding her) the still stands exactly as before.
  *
  * Decorative: `aria-hidden`, nothing in it takes focus or a pointer, so the
  * screen beside it says everything in words.
  */
 
-import { useState, type JSX } from "react";
+import { useRef, useState, type JSX } from "react";
 import { cn } from "../../../lib/utils.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { KimmField } from "./KimmField.js";
 import { kimmGroundStyle } from "./KimmSection.js";
+import { useKimmLive } from "./use-kimm-live.js";
 
 export interface KimmPanelProps {
   /** Her mood: which still stands. */
@@ -52,6 +61,8 @@ export function KimmPanel({ mood, figure, seat = "lock", hold = false, className
   const art = useKimmArt();
   const still = art.sections[mood];
   const [fieldDrawn, setFieldDrawn] = useState(false);
+  const liveRef = useRef<HTMLDivElement | null>(null);
+  const live = useKimmLive(liveRef, { mood, figure, seat });
   return (
     <div
       aria-hidden="true"
@@ -61,6 +72,7 @@ export function KimmPanel({ mood, figure, seat = "lock", hold = false, className
       data-kimm-art={isKimmArtReady(still) ? "ready" : "missing"}
       data-kimm-field={fieldDrawn ? "live" : undefined}
       data-kimm-seat={seat}
+      data-kimm-live={live}
       className={cn("vex-kimm-panel", seat === "card" && "vex-kimm-panel--card", className)}
       style={kimmGroundStyle(art.field)}
     >
@@ -77,6 +89,7 @@ export function KimmPanel({ mood, figure, seat = "lock", hold = false, className
           className="vex-kimm-panel__figure"
         />
       ) : null}
+      <div ref={liveRef} data-vex-area="kimm-live" className="vex-kimm-panel__live" />
     </div>
   );
 }

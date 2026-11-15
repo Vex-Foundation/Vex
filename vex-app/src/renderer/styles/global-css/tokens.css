@@ -668,6 +668,13 @@
    * Hovering pointers only; reduced motion lands it at once. */
   --vex-duration-key-fill: 420ms;
 
+  /* HER LIVE FIGURE'S ARRIVAL (owner decision 2026-11-15; kimm.css): Kimm's
+   * Live2D figure fades in over her still in 900ms once she is on screen,
+   * VEX Cloud's --vx-dur-kimm-in. A NAMED EXCEPTION to the scale
+   * (MOTION-POLICY lists it), hers alone, opacity only; reduced motion and
+   * Save-Data never seat her, so the still stands. */
+  --vex-duration-kimm-in: 900ms;
+
   /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
    * section 2). Theme-independent like the motion vocabulary. The left
    * sidebar is 264 (224 from 1180 to 1359, the 56 rail under 1180); the Vex

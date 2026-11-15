@@ -385,6 +385,46 @@
   height: auto;
 }
 
+/* HER LIVE FIGURE (owner decision 2026-11-15; VEX Cloud's `.vx-kimm-live`):
+ * the Live2D model's layer over her still, the panel's whole box (her canvas
+ * is framed in it by `kimmSeatFit`, as the still is framed above). It stays
+ * transparent until she is on screen (`data-kimm-live="live"`, set by
+ * `useKimmLive`), then fades in over `--vex-duration-kimm-in` (900ms, Cloud's
+ * `--vx-dur-kimm-in`) and her still leaves, as Cloud's does. Any other state
+ * (still, gated, failed, loading, another panel holding her) leaves the still
+ * exactly as before. Opacity only, inside the panel's fixed box, so nothing
+ * moves; reduced motion never seats her (the still stands) and states its own
+ * collapse below. The canvas takes no pointer, as the panel takes none. */
+.vex-kimm-panel__live {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--vex-duration-kimm-in) var(--vex-ease-standard);
+}
+.vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__live {
+  opacity: 1;
+}
+.vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__figure {
+  display: none;
+}
+.vex-kimm-live__host {
+  position: absolute;
+  inset: 0;
+}
+.vex-kimm-live__host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-kimm-panel__live {
+    transition: none;
+  }
+}
+html[data-still] .vex-kimm-panel__live {
+  transition: none;
+}
+
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
  * Reduced motion and Save-Data open and close her at once. Her wipe, its
  * scan head and her drop are Web Animations, which no sheet can collapse:
