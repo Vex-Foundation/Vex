@@ -76,13 +76,17 @@ describe("useKimmLockLife", () => {
     expect(greets()).toBe(1);
     hidden = true;
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    vi.setSystemTime(Date.now() + 5 * 60_000);
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000);
+    });
     hidden = false;
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     expect(greets()).toBe(1);
     hidden = true;
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    vi.setSystemTime(Date.now() + KIMM_GREET_AFTER_HIDDEN_MS);
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_AFTER_HIDDEN_MS);
+    });
     hidden = false;
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     expect(greets()).toBe(2);
@@ -112,6 +116,16 @@ describe("useKimmLockLife", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
     });
     expect(view.result.current.sleepy).toBe(false);
+  });
+
+  it("measures her time alone on the monotonic clock: a wall clock that stands still or jumps changes nothing", () => {
+    // the wall clock pinned (as the H3 harness pins it) while time passes
+    vi.spyOn(Date, "now").mockReturnValue(new Date(2026, 10, 15, 12, 0, 0).getTime());
+    const { view } = mount();
+    act(() => {
+      vi.advanceTimersByTime(KIMM_SLEEP_AFTER_MS);
+    });
+    expect(view.result.current.sleepy).toBe(true);
   });
 
   it("keeps her awake while keys go in", () => {

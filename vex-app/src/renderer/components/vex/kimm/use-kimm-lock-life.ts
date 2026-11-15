@@ -11,7 +11,8 @@
  *   - SLEEPY: no pointer movement, key or focus change for `KIMM_SLEEP_AFTER_MS`; any of them wakes her.
  *   - NIGHT: the computer's local clock (`kimmIsNight`, read here and nowhere else, never sent anywhere), checked
  *     every `KIMM_LIFE_TICK_MS`.
- * It returns `sleepy` and `night` for her panel's field and motes. Inactive, nothing listens but the screen's focus.
+ * Elapsed time (the 45 s, the 10 minutes) is measured on `performance.now()`, a monotonic clock, so a change of the
+ * wall clock never wakes, greets or sleeps her; only the hour of day reads `Date`. It returns `sleepy` and `night` for her panel's field and motes. Inactive, nothing listens but the screen's focus.
  */
 
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -60,7 +61,7 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
   const focusedRef = useRef(false);
   const nightRef = useRef(night);
   const activeRef = useRef(active);
-  const activityRef = useRef(Date.now());
+  const activityRef = useRef(performance.now());
   const sleepyRef = useRef(false);
   const reactRef = useRef(react);
   useEffect(() => {
@@ -75,7 +76,7 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
 
   // Any pointer movement, key or focus change: she is not alone; sleepy, she wakes.
   const stir = (): void => {
-    activityRef.current = Date.now();
+    activityRef.current = performance.now();
     if (!sleepyRef.current) return;
     sleepyRef.current = false;
     setSleepy(false);
@@ -98,7 +99,7 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
   // She stands live: the clock's tempo, the field's focus, and her greeting once a launch.
   useEffect(() => {
     if (!active) return undefined;
-    activityRef.current = Date.now();
+    activityRef.current = performance.now();
     const isNight = kimmIsNight(new Date());
     nightRef.current = isNight;
     setNight(isNight);
@@ -116,7 +117,7 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
         setNight(nowNight);
         reactRef.current(nowNight ? "night" : "day");
       }
-      if (!sleepyRef.current && Date.now() - activityRef.current >= KIMM_SLEEP_AFTER_MS) {
+      if (!sleepyRef.current && performance.now() - activityRef.current >= KIMM_SLEEP_AFTER_MS) {
         sleepyRef.current = true;
         setSleepy(true);
         reactRef.current("sleep");
@@ -124,13 +125,13 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
     }, KIMM_LIFE_TICK_MS);
     const onVisibility = (): void => {
       if (document.hidden) {
-        KIMM_LOCK_LIFE_MEMORY.hiddenAt = Date.now();
+        KIMM_LOCK_LIFE_MEMORY.hiddenAt = performance.now();
         return;
       }
       const hiddenAt = KIMM_LOCK_LIFE_MEMORY.hiddenAt;
       KIMM_LOCK_LIFE_MEMORY.hiddenAt = null;
       stir();
-      if (hiddenAt !== null && Date.now() - hiddenAt >= KIMM_GREET_AFTER_HIDDEN_MS) reactRef.current("greet", fieldPoint());
+      if (hiddenAt !== null && performance.now() - hiddenAt >= KIMM_GREET_AFTER_HIDDEN_MS) reactRef.current("greet", fieldPoint());
     };
     window.addEventListener("pointermove", stir, { passive: true });
     window.addEventListener("pointerdown", stir, { passive: true });
