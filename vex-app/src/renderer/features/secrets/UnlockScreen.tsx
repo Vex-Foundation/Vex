@@ -18,7 +18,10 @@
  * vault as its keys. She rests while the screen waits, is concerned (as the
  * stage maps it) on a failure, a throttle or the reset panel, and says hi
  * once the vault opens (`stageVexLockMood`); with her stored choice hidden
- * (`vexOpenChat`), the panel keeps her field without her figure. The
+ * (`vexOpenChat`), the panel keeps her field without her figure. Her live
+ * figure stands here in the lock screen's lively mode (`KimmPanel` `lively`,
+ * owner decision 2026-11-15): never resting, her gaze on the pointer, a
+ * livelier field and light motes, all off wherever her still stands. The
  * in-flight signing stroke travels the field's foot ONLY while the unlock
  * IPC is in flight (the sanctioned in-flight loop).
  *
@@ -251,7 +254,7 @@ export function UnlockScreen(): JSX.Element {
         (the mac lights stand over Kimm's top left, the caption overlay at the
         top right). The column below starts under it. */}
       <div aria-hidden="true" className="vex-lock__head vex-drag" />
-      <KimmPanel mood={mood} figure={figure} className="vex-lock__kimm" />
+      <KimmPanel mood={mood} figure={figure} lively className="vex-lock__kimm" />
       <div className="vex-lock__side">
         <div className="vex-lock__col vex-no-drag">
           <p className="vex-lock__brand">

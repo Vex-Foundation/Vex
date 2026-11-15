@@ -223,6 +223,83 @@ describe("KimmPanel, her live figure", () => {
     expect(embed?.awake).toBe(true);
   });
 
+  it("lively on the lock screen: she never sleeps, the field takes its lively tempo, the motes rise", async () => {
+    const { kit, wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure lively />));
+    const panel = panelOf(view.container);
+    expect(panel.getAttribute("data-kimm-lively")).toBe("waiting");
+    // nothing lively before her live figure stands
+    expect(panel.querySelector("[data-vex-area='kimm-motes']")).toBeNull();
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("calm");
+    await idle();
+    expect(panel.getAttribute("data-kimm-lively")).toBe("on");
+    const embed = kit.mounts[0];
+    expect(embed?.options.lively).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(embed?.awake).toBe(true);
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("lively");
+    const motes = panel.querySelector("[data-vex-area='kimm-motes']");
+    expect(motes?.getAttribute("data-kimm-motes-running")).toBe("true");
+    expect(motes?.getAttribute("data-kimm-motes-fps")).toBe("30");
+  });
+
+  it("the card never asks: calm, asleep after 12 s, no motes, the calm field", async () => {
+    const { kit, wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure seat="card" />));
+    await idle();
+    const panel = panelOf(view.container, "card");
+    expect(panel.getAttribute("data-kimm-live")).toBe("live");
+    expect(panel.getAttribute("data-kimm-lively")).toBe("off");
+    expect(kit.mounts[0]?.options.lively).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(12_000);
+    });
+    expect(kit.mounts[0]?.awake).toBe(false);
+    expect(panel.querySelector("[data-vex-area='kimm-motes']")).toBeNull();
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("calm");
+  });
+
+  it("reduced motion turns all of the lively mode off: her still, the calm field, no motes, nothing loaded", async () => {
+    still.current = true;
+    const { kit, wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure lively />));
+    await idle();
+    const panel = panelOf(view.container);
+    expect(panel.getAttribute("data-kimm-live")).toBe("still");
+    expect(panel.getAttribute("data-kimm-lively")).toBe("waiting");
+    expect(panel.querySelector("[data-vex-area='kimm-motes']")).toBeNull();
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("calm");
+    expect(kit.loads).toBe(0);
+  });
+
+  it("the motes and the field stop with her: a hidden window stops them, her still standing takes them away", async () => {
+    let hidden = false;
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    const { wrap } = setup();
+    const view = render(wrap(<KimmPanel mood="rest" figure lively />));
+    await idle();
+    const panel = panelOf(view.container);
+    const motes = () => panel.querySelector("[data-vex-area='kimm-motes']");
+    expect(motes()?.getAttribute("data-kimm-motes-running")).toBe("true");
+    hidden = true;
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(motes()?.getAttribute("data-kimm-motes-running")).toBe("false");
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-running")).toBe("false");
+    hidden = false;
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(motes()?.getAttribute("data-kimm-motes-running")).toBe("true");
+    still.current = true;
+    view.rerender(wrap(<KimmPanel mood="rest" figure lively />));
+    expect(motes()).toBeNull();
+    expect(panel.querySelector("[data-vex-area='kimm-field']")?.getAttribute("data-kimm-field-tempo")).toBe("calm");
+  });
+
   it("unmounted, lets her go: her canvas leaves at once and her model 30 s later", async () => {
     const { kit, wrap } = setup();
     const view = render(wrap(<KimmPanel mood="rest" figure />));

@@ -290,6 +290,8 @@ describe("UnlockScreen", () => {
     expect(panel?.querySelector("img.vex-kimm-panel__figure")?.getAttribute("src")).toBe(
       "/art/kimm/still-rest.webp",
     );
+    // The lock screen alone asks for her lively mode; it waits for her live figure (jsdom has no WebGL).
+    expect(panel?.getAttribute("data-kimm-lively")).toBe("waiting");
     // Her field: the live field's box over the tall baked frame.
     expect(panel?.querySelector("[data-vex-area='kimm-field']")).not.toBeNull();
     expect(panel?.style.getPropertyValue("--vex-kimm-baked-wide")).toBe(
