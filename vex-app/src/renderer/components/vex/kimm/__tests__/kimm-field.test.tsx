@@ -27,7 +27,14 @@ import { fileURLToPath } from "node:url";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GradientAsciiOptions } from "../kimm-field.js";
-import { KIMM_FIELD_RECIPE, kimmFieldOptions, kimmFieldRuns } from "../kimm-field.js";
+import {
+  KIMM_FIELD_CALM,
+  KIMM_FIELD_LIVELY,
+  KIMM_FIELD_RECIPE,
+  kimmFieldOptions,
+  kimmFieldRuns,
+  kimmFieldTempo,
+} from "../kimm-field.js";
 
 /** Reduced motion or Save-Data, as the still-frame read answers it. */
 const still = vi.hoisted(() => ({ current: false }));
@@ -41,12 +48,13 @@ vi.mock("../../../../lib/motion/use-still-frame.js", () => ({
 interface FakeField {
   readonly options: GradientAsciiOptions;
   readonly still: boolean[];
+  readonly tempos: unknown[];
   disposed: boolean;
 }
 const port = vi.hoisted(() => ({ mounts: [] as FakeField[], drawn: true }));
 vi.mock("../gradient-ascii.js", () => ({
   mountGradientAscii: (_container: HTMLElement, options: GradientAsciiOptions) => {
-    const field: FakeField = { options, still: [], disposed: false };
+    const field: FakeField = { options, still: [], tempos: [], disposed: false };
     port.mounts.push(field);
     return {
       drawn: port.drawn,
@@ -56,6 +64,9 @@ vi.mock("../gradient-ascii.js", () => ({
       wake: () => undefined,
       setStill: (on: boolean) => {
         field.still.push(on);
+      },
+      tune: (tempo: unknown) => {
+        field.tempos.push(tempo);
       },
     };
   },
@@ -90,6 +101,28 @@ describe("the field's recipe", () => {
     expect(kimmFieldOptions("live", true, 3)).toMatchObject({ still: false, mouseInteraction: true, dpr: 2 });
     expect(kimmFieldOptions("live", false, 1)).toMatchObject({ still: true, dpr: 1 });
     expect(kimmFieldOptions("frame", false, 0)).toMatchObject({ still: true, mouseInteraction: false, dpr: 1 });
+  });
+});
+
+describe("the field's lively tempo", () => {
+  it("is calm everywhere but the lock screen: the port's defaults, no pulse", () => {
+    expect(KIMM_FIELD_CALM).toEqual({ speed: 1, flow: 0.5, flicker: 0.2, glow: 0.2, pulse: 0 });
+    expect(kimmFieldTempo(false)).toBe(KIMM_FIELD_CALM);
+  });
+
+  it("on the lock screen moves more visibly with a slow light pulse, inside the port's ranges", () => {
+    const lively = kimmFieldTempo(true);
+    expect(lively).toBe(KIMM_FIELD_LIVELY);
+    expect(lively.speed).toBeGreaterThan(KIMM_FIELD_CALM.speed);
+    expect(lively.flow).toBeGreaterThan(KIMM_FIELD_CALM.flow);
+    expect(lively.glow).toBeGreaterThan(KIMM_FIELD_CALM.glow);
+    expect(lively.pulse).toBeGreaterThan(0);
+    expect(lively.pulse).toBeLessThanOrEqual(1);
+    expect(lively.flow).toBeLessThanOrEqual(2);
+    expect(lively.flicker).toBeLessThanOrEqual(1);
+    // the port reads the tempo every frame, so a change needs no remount
+    expect(PORT_SOURCE).toMatch(/tune: \(tempo\) => \{/);
+    expect(PORT_SOURCE).toMatch(/pulseClock \+= dt;/);
   });
 });
 
@@ -189,6 +222,26 @@ describe("the field's mount", () => {
     // Mounted holding a frame, then set running because the gate is open.
     expect(field.still.at(-1)).toBe(false);
     expect(runningAttr()).toBe("true");
+  });
+
+  it("takes the lock screen's lively tempo in place, never remounting, and gives it back", async () => {
+    const view = render(<KimmField open />);
+    await settle();
+    // calm by default: the port's own tempo, never touched
+    expect(only().tempos).toEqual([]);
+    view.rerender(<KimmField open lively />);
+    expect(only().tempos).toEqual([KIMM_FIELD_LIVELY]);
+    view.rerender(<KimmField open />);
+    expect(only().tempos).toEqual([KIMM_FIELD_LIVELY, KIMM_FIELD_CALM]);
+    expect(port.mounts).toHaveLength(1);
+  });
+
+  it("mounted lively, takes the lively tempo at once; the run gate still decides whether it moves", async () => {
+    still.current = true;
+    render(<KimmField open lively />);
+    await settle();
+    expect(only().tempos).toEqual([KIMM_FIELD_LIVELY]);
+    expect(runningAttr()).toBe("false");
   });
 
   it("holds its frame when she closes, and runs again from it when she opens, never remounting", async () => {

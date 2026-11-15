@@ -411,6 +411,18 @@
   position: absolute;
   inset: 0;
 }
+/* THE LOCK SCREEN'S LIGHT MOTES (owner decision 2026-11-15; KimmMotes.tsx):
+ * a few soft points of light on one canvas over her field and under her
+ * figure, mounted only while her live figure stands on the lock screen. The
+ * canvas draws its own light; the box only places it and takes no pointer. */
+.vex-kimm-panel__motes {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 .vex-kimm-live__host canvas {
   display: block;
   width: 100%;

@@ -102,3 +102,20 @@ export function kimmFieldOptions(
     dpr: Math.min(2, devicePixelRatio || 1),
   };
 }
+
+/** The port's own tempo, which the recipe leaves at its defaults: the field as every surface draws it. */
+export const KIMM_FIELD_CALM = { speed: 1, flow: 0.5, flicker: 0.2, glow: 0.2, pulse: 0 } as const;
+
+/**
+ * THE LOCK SCREEN'S LIVELY TEMPO (owner decision 2026-11-15; MOTION-POLICY.md "The lock screen's lively Kimm"):
+ * the same field, moving more visibly while her live figure stands on the lock screen. The gradient flows at 1.8
+ * times its pace and further (flow 0.85), the glyphs turn over faster and flicker a little more, and the glow is
+ * stronger with a slow pulse (one cycle in 4.8 s, `PULSE_SECONDS`). Tuned in place by the port's `tune`, never a
+ * remount; the run gate and the still frame bind it exactly as they bind the calm field.
+ */
+export const KIMM_FIELD_LIVELY = { speed: 1.8, flow: 0.85, flicker: 0.32, glow: 0.4, pulse: 0.45 } as const;
+
+/** The tempo the field takes: lively on the lock screen while her live figure stands, calm everywhere else. */
+export function kimmFieldTempo(lively: boolean): typeof KIMM_FIELD_CALM | typeof KIMM_FIELD_LIVELY {
+  return lively ? KIMM_FIELD_LIVELY : KIMM_FIELD_CALM;
+}
