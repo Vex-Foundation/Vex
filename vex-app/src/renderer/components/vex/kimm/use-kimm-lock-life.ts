@@ -6,7 +6,8 @@
  *   - THE SCREEN'S WORDS (`kimm-lock-signals.ts`): typing, focus, blur, shown, hidden, failed, unlocked, with the
  *     field's place (a point, never the element) for typing and focus. The field's focus is remembered while she is
  *     not yet live, so she leans in as soon as she is.
- *   - THE GREETING: the first time she stands live in an app launch (`KIMM_LOCK_LIFE_MEMORY`, module memory: a launch
+ *   - THE GREETING: `KIMM_GREET_DELAY_MS` after the first time she stands live in an app launch (keys already going
+ *     in skip it) (`KIMM_LOCK_LIFE_MEMORY`, module memory: a launch
  *     is a renderer's life), and again when the window is shown after `KIMM_GREET_AFTER_HIDDEN_MS` hidden.
  *   - SLEEPY: no pointer movement, key or focus change for `KIMM_SLEEP_AFTER_MS`; any of them wakes her.
  *   - NIGHT: the computer's local clock (`kimmIsNight`, read here and nowhere else, never sent anywhere), checked
@@ -25,6 +26,9 @@ export const KIMM_SLEEP_AFTER_MS = 45_000;
 
 /** Hidden at least this long, the window shown again greets her anew. */
 export const KIMM_GREET_AFTER_HIDDEN_MS = 600_000;
+
+/** Her greeting waits this long after she stands live, so her live figure has faded in (`--vex-duration-kimm-in`). */
+export const KIMM_GREET_DELAY_MS = 700;
 
 /** How often the sleep timer and the clock are read. */
 export const KIMM_LIFE_TICK_MS = 1000;
@@ -105,10 +109,19 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
     setNight(isNight);
     reactRef.current(isNight ? "night" : "day");
     if (focusedRef.current) reactRef.current("focus", fieldPoint());
-    if (!KIMM_LOCK_LIFE_MEMORY.greeted) {
-      KIMM_LOCK_LIFE_MEMORY.greeted = true;
-      reactRef.current("greet", fieldPoint());
-    }
+    // her greeting, once she has faded in; keys already going in by then skip it
+    let typedBeforeGreeting = false;
+    const stopWatchingKeys = signals?.subscribe((word) => {
+      if (word === "typing") typedBeforeGreeting = true;
+    });
+    const greeting = KIMM_LOCK_LIFE_MEMORY.greeted
+      ? null
+      : window.setTimeout(() => {
+          stopWatchingKeys?.();
+          if (typedBeforeGreeting) return;
+          KIMM_LOCK_LIFE_MEMORY.greeted = true;
+          reactRef.current("greet", fieldPoint());
+        }, KIMM_GREET_DELAY_MS);
 
     const tick = window.setInterval(() => {
       const nowNight = kimmIsNight(new Date());
@@ -139,6 +152,8 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
     window.addEventListener("focusin", stir);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      if (greeting !== null) window.clearTimeout(greeting);
+      stopWatchingKeys?.();
       window.clearInterval(tick);
       window.removeEventListener("pointermove", stir);
       window.removeEventListener("pointerdown", stir);
@@ -148,8 +163,8 @@ export function useKimmLockLife({ active, signals, react, layerRef }: UseKimmLoc
       sleepyRef.current = false;
       setSleepy(false);
     };
-    // `stir` and `fieldPoint` read refs only, so this follows `active` alone
-  }, [active]);
+    // `stir` and `fieldPoint` read refs only, so this follows `active` (and the screen's words) alone
+  }, [active, signals]);
 
   return { sleepy: active && sleepy, night: active && night };
 }

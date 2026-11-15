@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createKimmLockSignals } from "../kimm-lock-signals.js";
 import {
   KIMM_GREET_AFTER_HIDDEN_MS,
+  KIMM_GREET_DELAY_MS,
   KIMM_SLEEP_AFTER_MS,
   kimmIsNight,
   resetKimmLockLifeMemory,
@@ -62,17 +63,42 @@ describe("the night by the local clock", () => {
 });
 
 describe("useKimmLockLife", () => {
-  it("greets once a launch, never on a later lock screen", () => {
+  it("greets once a launch, once she has faded in, never on a later lock screen", () => {
     const first = mount();
+    expect(first.said()).toEqual(["day"]);
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_DELAY_MS);
+    });
     expect(first.said()).toEqual(["day", "greet"]);
     first.view.unmount();
     const second = mount();
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_DELAY_MS * 3);
+    });
     expect(second.said()).toEqual(["day"]);
+  });
+
+  it("skips the greeting when keys already go in, and greets on the next launch's lock screen instead", () => {
+    const typed = mount();
+    act(() => typed.signals.emit("typing"));
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_DELAY_MS * 3);
+    });
+    expect(typed.said()).not.toContain("greet");
+    typed.view.unmount();
+    const later = mount();
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_DELAY_MS);
+    });
+    expect(later.said()).toContain("greet");
   });
 
   it("greets again when shown after 10 minutes hidden, not after 5", () => {
     const { said } = mount();
     const greets = () => said().filter((word) => word === "greet").length;
+    act(() => {
+      vi.advanceTimersByTime(KIMM_GREET_DELAY_MS);
+    });
     expect(greets()).toBe(1);
     hidden = true;
     act(() => document.dispatchEvent(new Event("visibilitychange")));

@@ -60,7 +60,9 @@ here is a defect:
   `DURATION_KIMM_IN_MS`) - VEX Cloud's `--vx-dur-kimm-in` (owner decision
   2026-11-15; `docs/design/H3-DESKTOP.md` section 1.6, "Her live figure"):
   once her Live2D model is on screen, its layer fades in over her still on
-  the standard curve and the still leaves. Opacity only, inside her panel's
+  the standard curve; her still stands under the fade and leaves only when
+  it ends (a visibility switch delayed by the same 900ms: Cloud hides it at
+  once, which left her field alone for a moment). Opacity only, inside her panel's
   fixed box, so nothing moves; kimm.css states its own collapse, and reduced
   motion and Save-Data never seat her, so her still stands.
 - Kimm's live figure itself (`kimm-embed.ts`, `kimm-rig.ts`) is a canvas loop
@@ -371,9 +373,10 @@ hidden each turn all of it off, and her still stands exactly as before.
   pointer leaves the window. A transform inside the panel, which clips it;
   her layer bleeds 16px and the field 8px past the panel, so no edge shows.
 
-- **She greets the viewer** (`KIMM_LIFE`, `use-kimm-lock-life.ts`): the
-  first time she stands live in an app launch, and again when the window is
-  shown after 10 minutes or more hidden. A hop, a smile and an 8 degree head
+- **She greets the viewer** (`KIMM_LIFE`, `use-kimm-lock-life.ts`): 700ms
+  after she first stands live in an app launch (once she has faded in; keys
+  already going in skip it), and again when the window is shown after 10
+  minutes or more hidden (measured on the monotonic clock). A hop, a smile and an 8 degree head
   tilt toward the viewer for 1.2 s, then her gaze settles on the field, 2 s in
   all. Typing ends it at once; the field's focus as the screen opens waits
   for it. It never holds a key back.

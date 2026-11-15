@@ -406,8 +406,12 @@
 .vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__live {
   opacity: 1;
 }
+/* Her still stands under the fade and leaves only once it has ended, so no
+ * frame shows the panel without her (Cloud hides it at once, which leaves
+ * her field alone while her live layer is still near transparent). */
 .vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__figure {
-  display: none;
+  visibility: hidden;
+  transition: visibility 0s linear var(--vex-duration-kimm-in);
 }
 .vex-kimm-live__host {
   position: absolute;
@@ -450,11 +454,13 @@
   height: 100%;
 }
 @media (prefers-reduced-motion: reduce) {
-  .vex-kimm-panel__live {
+  .vex-kimm-panel__live,
+  .vex-kimm-panel__figure {
     transition: none;
   }
 }
-html[data-still] .vex-kimm-panel__live {
+html[data-still] .vex-kimm-panel__live,
+html[data-still] .vex-kimm-panel__figure {
   transition: none;
 }
 

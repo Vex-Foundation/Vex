@@ -16,6 +16,9 @@
  * again wakes her.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { act, cleanup, render } from "@testing-library/react";
 import type { JSX, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -259,6 +262,10 @@ describe("KimmPanel, her live figure", () => {
     const lock = setup();
     render(lock.wrap(<KimmPanel mood="rest" figure lively />));
     await idle();
+    // once she has faded in
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(lock.kit.mounts[0]?.reactions.map((reaction) => reaction.signal)).toContain("greet");
     cleanup();
     resetKimmLockLifeMemory();
@@ -405,5 +412,19 @@ describe("KimmPanel, her live figure", () => {
       vi.advanceTimersByTime(KIMM_RELEASE_MS);
     });
     expect(embed?.destroyed).toBe(true);
+  });
+});
+
+describe("her arrival in the sheet", () => {
+  it("keeps her still standing under the live layer's fade and hides it only once the fade has ended", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(path.join(here, "..", "..", "..", "..", "styles", "global-css", "kimm.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const rule = /\.vex-kimm-panel\[data-kimm-live="live"\] \.vex-kimm-panel__figure \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/visibility:\s*hidden/);
+    expect(rule).toMatch(/transition:\s*visibility 0s linear var\(--vex-duration-kimm-in\)/);
+    expect(rule).not.toMatch(/display:\s*none/);
   });
 });
