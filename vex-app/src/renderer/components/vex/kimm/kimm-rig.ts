@@ -20,6 +20,12 @@ import {
   type KimmEvent,
   type KimmLiveMood,
 } from "./kimm-live-moods.js";
+import {
+  KIMM_MOMENTS,
+  pickMoment,
+  type MomentPose,
+  type MomentStep,
+} from "./kimm-moments.js";
 
 /** What she glances at: an element (its box) or a point in client px. */
 export type KimmLookTarget =
@@ -97,8 +103,64 @@ export const KIMM_REACT = {
   hoverTilt: 5,
 } as const;
 
-/** What `react()` takes: a signal, never content. */
-export type KimmReaction = "typing" | "shown" | "hidden" | "failed" | "unlocked";
+/**
+ * What `react()` takes: a signal, never content. The first seven are the lock screen's words
+ * (`kimm-lock-signals.ts`); `greet`, `sleep`, `wake`, `night` and `day` come from her panel's own life
+ * (`use-kimm-lock-life.ts`).
+ */
+export type KimmReaction =
+  | "typing"
+  | "shown"
+  | "hidden"
+  | "failed"
+  | "unlocked"
+  | "focus"
+  | "blur"
+  | "greet"
+  | "sleep"
+  | "wake"
+  | "night"
+  | "day";
+
+/**
+ * THE LOCK SCREEN'S LIFE (desktop only, lively mode; owner decision 2026-11-15). Off in the card.
+ *   - GREETING (`greet`): a hop, a smile and a head tilt toward the viewer for `greetViewerMs`, then her gaze settles
+ *     on the password field, `greetMs` in all. Typing, Show, a refusal or the unlock end it at once; focus waits for it.
+ *   - LEANING IN (`focus`, `typing`): she leans toward the form (body `leanBody`, head `leanHead` degrees toward the
+ *     field) and steps a little closer (up to `leanZoom` of her size, about her face), eased with `leanTauS`; she eases
+ *     back on `blur`, or `leanHoldMs` after the last key or focus.
+ *   - SLEEPY (`sleep`, `wake`): her eyes half closed (`sleepShut`), her sway at `sleepSwayRate` of its pace, her breath
+ *     `sleepBreath` slower, a small yawn-like head drop every `yawnGapMs`, no moments; eased in over `sleepTauS`.
+ *     `wake` perks her up: a small hop and a smile for `perkMs`.
+ *   - NIGHT (`night`, `day`): a calmer idle, her sway at `nightSwayRate`, her bob at `nightBob`, her moments every
+ *     `nightActGapMs` (fewer).
+ * THE PRIORITY, highest first: the unlock's happy beat, a refusal, the password shown, typing and focus, the
+ * greeting, sleepiness, the idle moments. A higher one ends or holds the lower ones: the beat, a refusal and Show each
+ * end the greeting and stand her back from her lean; typing ends the greeting, and typing and focus hold the moments
+ * back, the lean waiting for the greeting to end; while
+ * she is sleepy or greeting, no moment starts. The depth (`kimm-parallax.ts`) is a layer of its own and adds to all.
+ */
+export const KIMM_LIFE = {
+  greetMs: 2000,
+  greetViewerMs: 1200,
+  greetHop: 0.7,
+  greetTilt: 8,
+  leanHoldMs: 4000,
+  leanTauS: 0.35,
+  leanZoom: 0.04,
+  leanBody: 7,
+  leanHead: 4,
+  sleepTauS: 1.2,
+  sleepShut: 0.5,
+  sleepSwayRate: 0.5,
+  sleepBreath: 0.6,
+  yawnGapMs: [9000, 15000] as const,
+  yawnMs: 1800,
+  perkMs: 900,
+  nightSwayRate: 0.75,
+  nightBob: 0.7,
+  nightActGapMs: [2600, 6000] as const,
+} as const;
 
 export const KIMM_LIVELY = {
   sway: 1.8,
@@ -127,6 +189,10 @@ export interface KimmRigFrame {
   readonly shut: number;
   /** The time in seconds (the breath and sways read it). */
   readonly t: number;
+  /** DESKTOP, the lock screen: how much nearer she has stepped (1: her own size; `KIMM_LIFE.leanZoom` at most). */
+  readonly zoom: number;
+  /** DESKTOP, the lock screen: how sleepy she is, 0 to 1 (her blink reads it). */
+  readonly sleep: number;
 }
 
 /** Spring stiffness per parameter (`kimm.js:43`): eyes quick, head calm, body slow; marks 11, the rest 9. */
@@ -163,23 +229,9 @@ export function kimmHandBlend(u: number): 0 | 1 {
 /** The breath's cycle in seconds (ParamBreath = 0.5 + 0.5 sin(2 pi t / 3.4)). */
 export const KIMM_BREATH_S = 3.4;
 
-interface ActPose {
-  readonly ax?: number;
-  readonly ay?: number;
-  readonly az?: number;
-  readonly bz?: number;
-  readonly mouth?: number;
-  readonly shut?: boolean;
-  readonly to?: string | null;
-}
-
-interface Act {
-  readonly ms: number;
-  readonly mood?: KimmLiveMood;
-  readonly hop?: number;
-  readonly clean?: boolean;
-  readonly pose?: (u: number) => ActPose;
-}
+/* an idle act is a one-step moment (`kimm-moments.ts` holds the lock screen's chained ones) */
+type ActPose = MomentPose;
+type Act = MomentStep;
 
 /** The idle acts (`kimm.js:48-65`), with the page's selectors replaced by named targets. */
 const ACTS = {
@@ -249,7 +301,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
   let focusUntil = 0;
   let active = false;
   let nextIdle = now() + 5000;
-  let act: { readonly name: KimmActName; readonly t0: number } | null = null;
+  let act: { readonly name: string; t0: number; readonly steps: readonly Act[]; step: number } | null = null;
   let lastAct = "";
   let px = -1;
   let py = -1;
@@ -263,6 +315,19 @@ export function createKimmRig(options: KimmRigOptions = {}) {
   let lively = options.lively === true;
   let averted = false;
   let shakeT0 = -1e9;
+  /* DESKTOP, the lock screen's life (`KIMM_LIFE`) */
+  let fieldAt: { readonly x: number; readonly y: number } | null = null;
+  let greetT0 = -1e9;
+  let leanUntil = 0;
+  let lean = 0;
+  let sleepGoal = 0;
+  let sleep = 0;
+  let night = false;
+  let perkUntil = 0;
+  let nextYawn = 0;
+  let yawnT0 = -1e9;
+  let swayT = now() / 1000;
+  let breathPhase = ((now() / 1000) * 2 * Math.PI) / KIMM_BREATH_S;
   if (lively) nextIdle = now() + KIMM_LIVELY.firstActMs;
   const actNames = (options.acts ?? KIMM_ACTS).filter((name) => name in ACTS);
   const targetOf = (name: string): KimmLookTarget | null => {
@@ -280,13 +345,11 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     set("ParamMouthForm", rig.form ?? 0);
     set("ParamEyeRSmile", rig.smile ?? 0);
   };
-  const startAct = () => {
-    const names = actNames.filter((name) => name !== lastAct);
-    if (!names.length) return;
-    const name = names[Math.floor(random() * names.length)] as KimmActName;
-    const A: Act = ACTS[name];
-    lastAct = name;
-    act = { name, t0: now() };
+  /* a step begins: its hand pose and marks (rest when it names none after a step that did), its hop */
+  const enterStep = () => {
+    if (!act) return;
+    const A = act.steps[act.step];
+    if (!A) return;
     if (A.mood) {
       setMood(A.mood, A.ms);
       if (A.clean) {
@@ -294,8 +357,24 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         set("FeceAngry", 0);
         set("ParamMouthForm", 0.3);
       }
-    }
+    } else if (act.step > 0 && mood !== "rest") setMood("rest");
     if (A.hop) hop = A.hop;
+  };
+  const startAct = () => {
+    /* DESKTOP, the lock screen: a chained moment, never the one just played */
+    if (lively) {
+      const name = pickMoment(random, lastAct || null);
+      lastAct = name;
+      act = { name, t0: now(), steps: KIMM_MOMENTS[name], step: 0 };
+      enterStep();
+      return;
+    }
+    const names = actNames.filter((name) => name !== lastAct);
+    if (!names.length) return;
+    const name = names[Math.floor(random() * names.length)] as KimmActName;
+    lastAct = name;
+    act = { name, t0: now(), steps: [ACTS[name]], step: 0 };
+    enterStep();
   };
   const talk = (ms: number) => {
     talkUntil = Math.max(talkUntil, now() + ms);
@@ -388,6 +467,13 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     lastT = t0;
     if (moodUntil && t0 > moodUntil) setMood("rest");
     const speaking = options.speaking?.() ?? false;
+    /* DESKTOP, the lock screen's life: the greeting, sleepiness, the lean, each eased on her own clock */
+    const greetU = (t0 - greetT0) / KIMM_LIFE.greetMs;
+    const greeting = lively && greetU >= 0 && greetU < 1;
+    sleep += (sleepGoal - sleep) * (1 - Math.exp(-dt / KIMM_LIFE.sleepTauS));
+    const leanGoal =
+      lively && t0 < leanUntil && !averted && mood !== "no" && mood !== "v" && !greeting ? 1 : 0;
+    lean += (leanGoal - lean) * (1 - Math.exp(-dt / KIMM_LIFE.leanTauS));
     if (
       !active &&
       !act &&
@@ -396,26 +482,47 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       !speaking &&
       options.idle !== false
     )
-      if (!averted) startAct();
+      if (!averted && !greeting && sleep < 0.5) startAct();
     let P: ActPose = {};
     let env = 0;
     if (act) {
-      const A: Act = ACTS[act.name];
-      const u = (t0 - act.t0) / A.ms;
-      if (u >= 1) {
+      let A = act.steps[act.step];
+      let u = A ? (t0 - act.t0) / A.ms : 1;
+      /* DESKTOP: a chained moment steps on to its next pose */
+      while (A && u >= 1 && act.step + 1 < act.steps.length) {
+        act.t0 += A.ms;
+        act.step += 1;
+        enterStep();
+        A = act.steps[act.step];
+        u = A ? (t0 - act.t0) / A.ms : 1;
+      }
+      if (!A || u >= 1) {
         act = null;
-        const [gapMin, gapMax] = lively ? KIMM_LIVELY.actGapMs : ([3500, 7000] as const);
+        const [gapMin, gapMax] = lively
+          ? night
+            ? KIMM_LIFE.nightActGapMs
+            : KIMM_LIVELY.actGapMs
+          : ([3500, 7000] as const);
         nextIdle = t0 + gapMin + random() * (gapMax - gapMin);
       } else {
         env = smoothstep(0, 0.2, u) * (1 - smoothstep(0.8, 1, u));
         if (A.pose) P = A.pose(u);
       }
     }
-    const ax = (P.ax ?? 0) * env;
-    const ay = (P.ay ?? 0) * env;
-    const az = (P.az ?? 0) * env;
-    const bz = (P.bz ?? 0) * env;
-    const mouth = (P.mouth ?? 0) * env;
+    /* sleepy: an occasional yawn-like head drop */
+    if (lively && !RM && sleep > 0.8 && t0 > nextYawn) {
+      yawnT0 = t0;
+      nextYawn = t0 + KIMM_LIFE.yawnGapMs[0] + random() * (KIMM_LIFE.yawnGapMs[1] - KIMM_LIFE.yawnGapMs[0]);
+    }
+    const yawnU = (t0 - yawnT0) / KIMM_LIFE.yawnMs;
+    const yawn = yawnU >= 0 && yawnU < 1 ? Math.sin(yawnU * Math.PI) : 0;
+    const greetEnv = greeting ? Math.sin(greetU * Math.PI) : 0;
+    const ax = (P.ax ?? 0) * env + KIMM_LIFE.leanHead * lean;
+    const ay = (P.ay ?? 0) * env - 12 * yawn;
+    const az = (P.az ?? 0) * env + KIMM_LIFE.greetTilt * greetEnv - 3 * lean;
+    const bz = (P.bz ?? 0) * env - 2 * lean;
+    const by = (P.by ?? 0) * env;
+    const mouth = (P.mouth ?? 0) * env + 0.55 * yawn;
     if (focus && t0 > focusUntil) focus = null;
     /* where to look: a target, else the pointer if it moved in the last 5 s (3 s lively), else a slow drift
        (`kimm.js:170-177`) */
@@ -428,7 +535,20 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       tx = px;
       ty = py;
     }
-    const fo = focus ?? (P.to ? targetOf(P.to) : null);
+    /* DESKTOP: the lock screen's named places, and the greeting's gaze (the viewer, then the field) */
+    const placeOf = (name: string): KimmLookTarget | null => {
+      if (name === "field") return fieldAt;
+      if (name === "viewer") return { x: hx, y: hy + 40 };
+      if (name === "left") return { x: hx - 600, y: hy + 60 };
+      if (name === "right") return { x: hx + 600, y: hy + 60 };
+      return targetOf(name);
+    };
+    const greetLook = greeting
+      ? t0 - greetT0 < KIMM_LIFE.greetViewerMs || fieldAt === null
+        ? placeOf("viewer")
+        : fieldAt
+      : null;
+    const fo = focus ?? greetLook ?? (P.to ? placeOf(P.to) : null);
     if (fo) {
       if ("getBoundingClientRect" in fo) {
         const box = fo.getBoundingClientRect();
@@ -448,26 +568,39 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     const dx = clamp((tx - hx) / 520, -1, 1);
     const dy = clamp((ty - hy) / 420, -1, 1);
     const sw = RM ? 0 : lively ? KIMM_LIVELY.sway : 1;
-    const swx = sw * (2.2 * Math.sin(t * 0.47) + 1.3 * Math.sin(t * 0.83 + 2));
-    const swz = sw * (1.8 * Math.sin(t * 0.31 + 1) + 0.9 * Math.sin(t * 0.71));
-    const swb = sw * 1.3 * Math.sin(t * 0.29 + 0.5);
+    /* DESKTOP, lively: the sways run on their own clock, slower when sleepy or at night (the card reads `t`) */
+    const rate =
+      (1 - (1 - KIMM_LIFE.sleepSwayRate) * sleep) * (night ? KIMM_LIFE.nightSwayRate : 1);
+    swayT += dt * rate;
+    breathPhase += (dt * 2 * Math.PI) / (KIMM_BREATH_S * (1 + KIMM_LIFE.sleepBreath * sleep));
+    const st = lively ? swayT : t;
+    const swx = sw * (2.2 * Math.sin(st * 0.47) + 1.3 * Math.sin(st * 0.83 + 2));
+    const swz = sw * (1.8 * Math.sin(st * 0.31 + 1) + 0.9 * Math.sin(st * 0.71));
+    const swb = sw * 1.3 * Math.sin(st * 0.29 + 0.5);
     set("ParamAngleX", clamp(dx * 28 + ax + swx, -30, 30));
     set(
       "ParamAngleY",
       -dy * 22 +
         (mood === "think" ? -6 : 0) +
         ay +
-        sw * Math.sin(t * 0.37) * 1.5,
+        sw * Math.sin(st * 0.37) * 1.5,
     );
     set("ParamAngleZ", -dx * 6 + (mood === "think" ? 7 : 0) + az + swz + turn);
-    set("ParamBodyAngleX", dx * 9 + swb * 1.4);
-    set("ParamBodyAngleY", -dy * 4);
+    set("ParamBodyAngleX", dx * 9 + swb * 1.4 + KIMM_LIFE.leanBody * lean);
+    set("ParamBodyAngleY", -dy * 4 + by);
     set("ParamBodyAngleZ", -dx * 3 + bz + swb);
     set("ParamEyeBallX", dx * 0.9);
     set("ParamEyeBallY", -dy * 0.8);
     if (mood === "rest") {
       set("ParamMouthForm", hover ? 0.8 : 0.15);
       set("ParamEyeRSmile", hover ? 0.5 : 0);
+    }
+    /* DESKTOP: a moment's mouth and smile, the greeting's smile and the perk after waking */
+    if (env > 0.3 && P.form !== undefined) set("ParamMouthForm", P.form);
+    if (env > 0.3 && P.smile !== undefined) set("ParamEyeRSmile", P.smile);
+    if (greeting || t0 < perkUntil) {
+      set("ParamMouthForm", 0.9);
+      set("ParamEyeRSmile", 0.65);
     }
     /* lip sync: the voice level while she speaks, else a soft flap while text types (`kimm.js:186-188`) */
     if (speaking && options.level)
@@ -552,7 +685,11 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         cur[id] = a + (goal - a) * (1 - Math.exp(-dt / tau));
       }
     }
-    const shutGoal = P.shut ? 1 : averted ? KIMM_REACT.avertShut : 0;
+    const actShut = P.shut === true ? 1 : typeof P.shut === "number" ? P.shut * env : 0;
+    const shutGoal = Math.min(
+      1,
+      Math.max(actShut, averted ? KIMM_REACT.avertShut : 0, KIMM_LIFE.sleepShut * sleep + 0.4 * yawn),
+    );
     shut += (shutGoal - shut) * (1 - Math.exp(-dt / 0.07));
     if (hop > 0) {
       hv -= 150 * hop;
@@ -569,10 +706,8 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     for (const hand of KIMM_HANDS) params.set(hand, cur[hand] ?? 0);
     for (const id of Object.keys(tgt))
       if (!isHand(id)) params.set(id, cur[id] ?? 0);
-    params.set(
-      "ParamBreath",
-      0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S),
-    );
+    const breath = lively ? Math.sin(breathPhase) : Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S);
+    params.set("ParamBreath", 0.5 + 0.5 * breath);
     /* DESKTOP, the lock screen's failed unlock: a short head shake on top of the springs, fading out */
     const since = t0 - shakeT0;
     if (!RM && since >= 0 && since < KIMM_REACT.shakeMs) {
@@ -582,8 +717,10 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     }
     for (const [id, value] of Object.entries(raw)) params.set(id, value);
     /* lively: a slow bounce with her breath, up to `bobPx` up at the top of each breath */
-    const bob = lively && !RM ? -KIMM_LIVELY.bobPx * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S)) : 0;
-    return { params, y: RM ? 0 : jy + bob, shut, t };
+    const bobScale = (night ? KIMM_LIFE.nightBob : 1) * (1 - 0.6 * sleep);
+    const bob = lively && !RM ? -KIMM_LIVELY.bobPx * bobScale * (0.5 + 0.5 * breath) : 0;
+    const zoom = lively && !RM ? 1 + KIMM_LIFE.leanZoom * lean : 1;
+    return { params, y: RM ? 0 : jy + bob, shut, t, zoom, sleep };
   };
 
   setMood("rest");
@@ -612,15 +749,53 @@ export function createKimmRig(options: KimmRigOptions = {}) {
      */
     react: (signal: KimmReaction, at?: { readonly x: number; readonly y: number }) => {
       const t = now();
+      if (at) fieldAt = { x: at.x, y: at.y };
       switch (signal) {
         case "typing":
           if (!averted && at) look({ x: at.x, y: at.y }, KIMM_REACT.typingLookMs);
           nextIdle = Math.max(nextIdle, t + KIMM_REACT.typingQuietMs);
+          greetT0 = -1e9;
+          leanUntil = t + KIMM_LIFE.leanHoldMs;
+          break;
+        case "focus":
+          /* the field is focused as the screen opens: the greeting plays on, and she leans in once it ends */
+          leanUntil = t + KIMM_LIFE.leanHoldMs;
+          nextIdle = Math.max(nextIdle, t + KIMM_REACT.typingQuietMs);
+          break;
+        case "blur":
+          leanUntil = 0;
+          break;
+        case "greet":
+          if (averted) break;
+          greetT0 = t;
+          hop = KIMM_LIFE.greetHop;
+          act = null;
+          nextIdle = Math.max(nextIdle, t + KIMM_LIFE.greetMs + 600);
+          break;
+        case "sleep":
+          sleepGoal = 1;
+          act = null;
+          nextYawn = t + 4000;
+          break;
+        case "wake":
+          if (sleepGoal > 0 || sleep > 0.2) {
+            hop = 0.5;
+            perkUntil = t + KIMM_LIFE.perkMs;
+          }
+          sleepGoal = 0;
+          nextIdle = Math.max(nextIdle, t + 1500);
+          break;
+        case "night":
+          night = true;
+          break;
+        case "day":
+          night = false;
           break;
         case "shown":
           averted = true;
           act = null;
           focus = null;
+          greetT0 = -1e9;
           break;
         case "hidden":
           averted = false;
@@ -628,10 +803,16 @@ export function createKimmRig(options: KimmRigOptions = {}) {
           break;
         case "failed":
           shakeT0 = t;
+          greetT0 = -1e9;
+          leanUntil = 0;
+          act = null;
           on("refused");
           break;
         case "unlocked":
           averted = false;
+          greetT0 = -1e9;
+          leanUntil = 0;
+          act = null;
           on("done");
           break;
       }
@@ -661,6 +842,12 @@ export function createKimmRig(options: KimmRigOptions = {}) {
         active,
         lively,
         averted,
+        greeting: lively && now() - greetT0 >= 0 && now() - greetT0 < KIMM_LIFE.greetMs,
+        lean,
+        sleep,
+        sleepy: sleepGoal > 0,
+        night,
+        step: act?.step ?? null,
         act: act?.name ?? null,
         hands: Object.fromEntries(
           KIMM_HANDS.map((hand) => [hand, Number((cur[hand] ?? 0).toFixed(3))]),

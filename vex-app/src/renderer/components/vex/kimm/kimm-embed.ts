@@ -16,7 +16,7 @@
  * the rig's livelier idle and a 30 fps cap), eases her gaze home when the pointer leaves the window, and pauses her
  * model's own update with the render ticker.
  */
-import { fitKimm, type KimmFitOptions } from "./kimm-fit.js";
+import { fitKimm, KM, type KimmFitOptions } from "./kimm-fit.js";
 import type { KimmEvent, KimmLiveMood } from "./kimm-live-moods.js";
 import {
   createKimmRig,
@@ -179,6 +179,19 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
   let visible = true;
   let y0 = 0;
   let jy = 0;
+  /* DESKTOP, the lock screen: her fit's scale, face line and hair, so a lean-in can zoom about her face */
+  let fitS = 1;
+  let fitFace = 0;
+  let fitHead = 0;
+  let zoom = 1;
+  let sleepNow = 0;
+  const place = () => {
+    if (!model) return;
+    model.scale.set(fitS * zoom);
+    model.x = fitFace - KM.face * fitS * zoom;
+    y0 = fitHead - KM.head * fitS * zoom;
+    model.y = y0 + jy;
+  };
   let ro: ResizeObserver | null = null;
   let io: IntersectionObserver | null = null;
   const queued: [KimmEvent, unknown][] = [];
@@ -216,10 +229,10 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     )
       app.renderer.resize(W, H);
     const solved = fitKimm(W, H, fitOptions);
-    model.scale.set(solved.s);
-    model.x = solved.x;
-    y0 = solved.y;
-    model.y = y0 + jy;
+    fitS = solved.s;
+    fitFace = solved.faceX;
+    fitHead = solved.head;
+    place();
     if (arcEl && solved.arc) {
       arcEl.style.left = `${solved.faceX}px`;
       arcEl.style.top = `${solved.arc.top}px`;
@@ -248,7 +261,11 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
       }
     }
     jy = frame.y;
-    model.y = y0 + jy;
+    sleepNow = frame.sleep;
+    if (frame.zoom !== zoom) {
+      zoom = frame.zoom;
+      place();
+    } else model.y = y0 + jy;
   };
 
   /* the ticker runs while she is awake, in view and the tab is visible; stopping paints the last frame first.
@@ -332,9 +349,10 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
       if (o.blink !== false && !RM) {
         let at = now() + 2000 + Math.random() * 3000;
         im.on("beforeModelUpdate", () => {
-          const u = (now() - at) / 150;
+          /* DESKTOP: sleepy, her blink is longer and comes less often */
+          const u = (now() - at) / (150 * (1 + 1.5 * sleepNow));
           if (u > 1) {
-            at = now() + 2500 + Math.random() * 4000;
+            at = now() + (2500 + Math.random() * 4000) * (1 + 0.8 * sleepNow);
             return;
           }
           if (u < 0 || !core) return;
