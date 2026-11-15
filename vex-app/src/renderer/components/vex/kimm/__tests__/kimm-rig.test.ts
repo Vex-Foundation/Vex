@@ -11,8 +11,10 @@
  * - reduced motion still moving her (values jump, no hop, no sway);
  * - idle acts during a run, or never at rest.
  *
- * Ported unchanged from VEX Cloud's `apps/web/src/components/kimm/kimm-rig.test.ts` (owner decision 2026-11-15). The
- * last case is desktop's: a mood pinned after its cue's event holds, as desktop's clock holds her still.
+ * Ported from VEX Cloud's `apps/web/src/components/kimm/kimm-rig.test.ts` (owner decision 2026-11-15). Desktop's
+ * changes: the first two cases assert the hand swap as desktop's cut (`KIMM_HAND_CUT`, the "ghost arm" fix: every
+ * toggle 0 or 1 on every frame, the pose changing at the middle of Cloud's 340 or 260 ms leg) where Cloud's assert a
+ * crossfade; and the last case: a mood pinned after its cue's event holds, as desktop's clock holds her still.
  */
 import { describe, expect, test } from "vitest";
 import { createKimmRig } from "../kimm-rig.js";
@@ -45,7 +47,7 @@ function run(
 }
 
 describe("kimm-rig", () => {
-  test("a hand swap is one crossfade: 340 ms into the pose, the other hands at zero, never two raised", () => {
+  test("a hand swap is one cut at the middle of its 340 ms leg: the other hands at zero, never two raised", () => {
     const clock = clockAt();
     const rig = createKimmRig({ now: clock.now, idle: false, random: () => 0 });
     rig.frame(HOST);
@@ -56,8 +58,9 @@ describe("kimm-rig", () => {
     };
     const start = at(0);
     expect(start.get("T7")).toBe(0);
-    const mid = at(170);
-    expect(mid.get("T7")).toBeCloseTo(0.5, 6);
+    expect(at(169).get("T7")).toBe(0);
+    const mid = at(1);
+    expect(mid.get("T7")).toBe(1);
     const end = at(170);
     expect(end.get("T7")).toBe(1);
     for (const hand of ["T4", "T5", "T6", "T8"]) expect(end.get(hand)).toBe(0);
@@ -75,10 +78,14 @@ describe("kimm-rig", () => {
     expect(rig.frame(HOST).params.get("T7")).toBe(1);
     clock.advance(170);
     rig.frame(HOST);
-    clock.advance(130);
-    const mid = rig.frame(HOST).params;
-    expect(mid.get("T4")).toBeCloseTo(0.5, 6);
-    expect((mid.get("T4") ?? 0) + (mid.get("T7") ?? 0)).toBeCloseTo(1, 6);
+    clock.advance(129);
+    const before = rig.frame(HOST).params;
+    expect(before.get("T4")).toBe(0);
+    expect(before.get("T7")).toBe(1);
+    clock.advance(1);
+    const cut = rig.frame(HOST).params;
+    expect(cut.get("T4")).toBe(1);
+    expect(cut.get("T7")).toBe(0);
     clock.advance(130);
     const end = rig.frame(HOST).params;
     expect(end.get("T4")).toBe(1);

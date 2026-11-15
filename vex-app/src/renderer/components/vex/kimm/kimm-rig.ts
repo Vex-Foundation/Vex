@@ -113,8 +113,24 @@ export const KIMM_SPRINGS: Readonly<Record<string, number>> = {
   ParamBodyAngleZ: 3.6,
 };
 
-/** The hand crossfade (`kimm.js:195-203`): 340 ms, 260 ms into or out of crossed arms; a pose holds 650 ms, rest 350. */
+/** The hand swap (`kimm.js:195-203`): 340 ms, 260 ms into or out of crossed arms; a pose holds 650 ms, rest 350. */
 export const KIMM_HAND_MS = { swap: 340, crossed: 260, hold: 650, rest: 350 };
+
+/**
+ * DESKTOP: THE HAND SWAP IS A CUT, NEVER A CROSSFADE (owner decision 2026-11-15, the "ghost arm"). Measured on the
+ * shipped model: each hand toggle (`T4` to `T8`) is a straight opacity crossfade between two drawings, so at a value
+ * v the raised arm draws at v and the rest arm (with its sleeve) at 1 - v. Any value between 0 and 1 draws both arms,
+ * see-through; there is no in-between drawing to fade through. So the swap keeps Cloud's clock (the 340 or 260 ms leg,
+ * the hold, and the body dip toward the raised side that starts it) but each toggle is exactly 0 or 1 on every frame:
+ * the old pose holds until `KIMM_HAND_CUT` of the leg, at the bottom of the dip, and the new one stands from there.
+ * The dip hides the cut, and no frame ever shows two arms.
+ */
+export const KIMM_HAND_CUT = 0.5;
+
+/** How far a hand swap has gone at `u` (0 to 1 of its leg): 0 (the old pose) until the cut, then 1 (the new). */
+export function kimmHandBlend(u: number): 0 | 1 {
+  return u >= KIMM_HAND_CUT ? 1 : 0;
+}
 
 /** The breath's cycle in seconds (ParamBreath = 0.5 + 0.5 sin(2 pi t / 3.4)). */
 export const KIMM_BREATH_S = 3.4;
@@ -427,8 +443,9 @@ export function createKimmRig(options: KimmRigOptions = {}) {
           ? 0.25 + 0.55 * Math.abs(Math.sin(t * 13) * Math.sin(t * 7.3 + 1))
           : mouth,
       );
-    /* hands, as the model was rigged (`kimm.js:191-203`): one crossfade clock for all five toggles, smootherstep,
-       340 ms (260 ms into or out of crossed arms), a 650 ms hold per pose, and a dip toward the raised side */
+    /* hands, as the model was rigged (`kimm.js:191-203`): one clock for all five toggles, 340 ms (260 ms into or out
+       of crossed arms), a 650 ms hold per pose, and a dip toward the raised side. DESKTOP: a cut at the leg's middle,
+       never a crossfade (`KIMM_HAND_CUT`): every toggle is 0 or 1 on every frame, so no frame draws two arms */
     const want = KIMM_HANDS.find((hand) => (tgt[hand] ?? 0) > 0.5) ?? null;
     if (want !== hands.want && t0 - hands.t0 > hands.hold) {
       hands.from = {};
@@ -458,11 +475,11 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     }
     {
       const u = Math.min(1, (t0 - hands.t0) / hands.dur);
-      const e = u * u * u * (u * (u * 6 - 15) + 10);
+      const e = kimmHandBlend(u);
       for (const hand of KIMM_HANDS) {
         const from = hands.from[hand] ?? 0;
         const goal = hand === hands.want ? 1 : 0;
-        cur[hand] = from + (goal - from) * e;
+        cur[hand] = (from >= 0.5 ? 1 : 0) + (goal - (from >= 0.5 ? 1 : 0)) * e;
       }
     }
     const steps = Math.max(1, Math.ceil(dt * 60));
