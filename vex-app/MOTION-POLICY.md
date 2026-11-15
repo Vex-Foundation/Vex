@@ -353,8 +353,8 @@ hidden each turn all of it off, and her still stands exactly as before.
   exist only while the lively switch is on.
 
 - **She reacts to the lock screen** (`KIMM_REACT`, `kimm-rig.ts`), told by
-  five fixed words and nothing else (`kimm-lock-signals.ts`: `typing`,
-  `shown`, `hidden`, `failed`, `unlocked`; no payload, so the password, its
+  seven fixed words and nothing else (`kimm-lock-signals.ts`: `typing`,
+  `focus`, `blur`, `shown`, `hidden`, `failed`, `unlocked`; no payload, so the password, its
   length and the field never reach her code). Typing turns her gaze to the
   field for 1.2 s after each key and holds her idle acts back for 3 s; while
   the password is shown she looks away, down and to her side, eyes nearly
@@ -370,6 +370,38 @@ hidden each turn all of it off, and her still stands exactly as before.
   times a second, only while the eased point still moves, and home when the
   pointer leaves the window. A transform inside the panel, which clips it;
   her layer bleeds 16px and the field 8px past the panel, so no edge shows.
+
+- **She greets the viewer** (`KIMM_LIFE`, `use-kimm-lock-life.ts`): the
+  first time she stands live in an app launch, and again when the window is
+  shown after 10 minutes or more hidden. A hop, a smile and an 8 degree head
+  tilt toward the viewer for 1.2 s, then her gaze settles on the field, 2 s in
+  all. Typing ends it at once; the field's focus as the screen opens waits
+  for it. It never holds a key back.
+- **She leans in** while the field has focus or keys go in: her body 7 and
+  her head 4 degrees toward the form and a step closer, up to 4% of her size
+  about her face (inside her layer's 16px bleed), eased with a 0.35 s time
+  constant; she eases back on blur or 4 s after the last key or focus.
+- **The order when they meet**, highest first: the unlock's happy beat, a
+  refusal, the password shown, typing and focus, the greeting, sleepiness,
+  the idle moments. The beat, a refusal and Show end the greeting and stand
+  her back from the lean; typing ends the greeting; nothing starts a moment
+  while she greets or is sleepy. The depth adds to all of them.
+- **Chained moments instead of lone acts** (`kimm-moments.ts`): seven short
+  sequences of her own poses (hand to mouth then a playful tilt; arms crossed,
+  a sigh, arms down; a look left, right and back with a smile; a slow stretch;
+  a V sign with a hop; a point at the field then an open hand; a glance and a
+  nod), 2.4 to 4.1 s each, at the lively pause between them, picked at random
+  and never the same twice in a row. Their hand poses change through the cut
+  below, never a crossfade.
+- **Sleepy** after 45 s with no pointer movement, key or focus change: eyes
+  half closed, her blink longer and rarer, her breath 60% slower, her sway at
+  half its pace and her bob at 0.4, a yawn-like head drop every 9 to 15 s, no
+  moments, eased in over 1.2 s; the field takes its drowsy tempo and the
+  motes 0.45 of their pace. Any pointer movement or key wakes her with a small
+  hop and a smile (0.9 s).
+- **Night by the local clock** (22:00 to 06:00, read in the renderer and sent
+  nowhere): her sway at 0.75 and her bob at 0.7 of the day's, her moments
+  every 2.6 to 6 s, the field's night tempo and the motes at 0.7.
 
 No new library and no network: all of it is the rig, the field port and one
 canvas of ours. Nothing moves in the layout. Her arrival keeps its 900ms fade
