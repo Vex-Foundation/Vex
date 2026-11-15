@@ -309,6 +309,53 @@ moves nothing in the layout and no transition or keyframe of it exists to
 collapse; the bounds above are the whole of its motion. Where WebGL2 is
 missing it draws nothing and her ground keeps the field's baked frame.
 
+### The lock screen's lively Kimm
+
+The lock screen alone (`UnlockScreen`'s `KimmPanel`, `lively`; owner decision
+2026-11-15: "like a game login screen, never standing still") runs a livelier
+Kimm. The Vex card never asks for it and keeps the calm behaviour above. It
+is one switch, and it is on only while her live Live2D figure stands on the
+lock screen (`data-kimm-lively="on"`): wherever her still stands instead, it
+is entirely off. So reduced motion, Save-Data, a device under 4 GB or 4
+cores, a GPU without WebGL2 or 4096 textures, a failed load and her figure
+hidden each turn all of it off, and her still stands exactly as before.
+
+- **She never rests on a timer.** No 12 s idle sleep (`IDLE_SLEEP_MS` applies
+  to the card only): her breath, blink, hair physics, idle loop and idle acts
+  run continuously while the window is shown.
+- **She pauses with the window.** A hidden or minimised window, a screen that
+  hides the page, or her panel out of view stops her render ticker on a
+  painted frame and pauses her model's own update (the embed's visibility and
+  intersection gate); shown again, she wakes.
+- **30 fps.** Her render ticker and the shared ticker her model updates on are
+  capped at 30 frames a second (`KIMM_LIVELY.fps`), to spare the battery.
+- **Livelier, still natural** (`KIMM_LIVELY`, `kimm-rig.ts`): her head and
+  body sways run at 1.8 times the calm amplitude, inside the same angle
+  clamps; she bobs up to 2.4px with each 3.4 s breath (a slow bounce, never
+  a jitter: under a quarter pixel a frame at 30 fps); her first idle act
+  comes 2 s after the switch and the next every 1.4 to 3.2 s (calm: 5 s, then
+  3.5 to 7 s), 2 s after a run ends (calm: 4 s).
+- **She looks toward the pointer** anywhere over the lock-screen window,
+  head and eyes on their springs and within their limits (the eyes at most
+  0.9 and 0.8 of their range, the head at most 30 degrees), for 3 s after the
+  pointer last moved (calm: 5 s); then, or at once when the pointer leaves
+  the window or the window loses focus, she eases back to centre.
+- **The field moves more visibly** (`KIMM_FIELD_LIVELY`, tuned in place by
+  the port's `tune`, never a remount): the gradient at 1.8 times its pace
+  with a longer flow, a little more flicker, and a stronger glow with a slow
+  pulse, one cycle in 4.8 s (`PULSE_SECONDS`). The field's four bounds above
+  still decide whether it moves at all.
+- **A few light motes** (`KimmMotes.tsx` over `kimm-motes.ts`): 14 soft
+  points of the field's own pale blue and near white rise behind her over 30
+  to 80 s each, swaying and twinkling, on one 2D canvas drawn by our own code,
+  at most 30 redraws a second, each step clamped to a tenth of a second. The
+  run gate stops them with a hidden window or a panel out of view, and they
+  exist only while the lively switch is on.
+
+No new library and no network: all of it is the rig, the field port and one
+canvas of ours. Nothing moves in the layout. Her arrival keeps its 900ms fade
+(`--vex-duration-kimm-in`).
+
 ### Vex's bars
 
 The bars on the foot of Vex's column, under her line
