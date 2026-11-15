@@ -138,6 +138,31 @@ describe("createKimmLive", () => {
     expect(embed?.awake).toBe(false);
   });
 
+  it("lively (the lock screen) never sleeps on the idle timer; calm again, it does", async () => {
+    const kit = fakeEmbedKit();
+    const live = createKimmLive({ loaders: kit.loaders, page: kit.page, gpu: GOOD_GPU });
+    live.lively(true);
+    live.attach(document.createElement("div"), {});
+    live.show(true);
+    await live.start();
+    const embed = kit.mounts[0];
+    // the mount carries the mode, so she is lively from her first frame
+    expect(embed?.options.lively).toBe(true);
+    vi.advanceTimersByTime(IDLE_SLEEP_MS * 10);
+    expect(embed?.awake).toBe(true);
+    // not showing her still sleeps her (the window hidden is the embed's own gate, kimm-embed.test.ts)
+    live.show(false);
+    expect(embed?.awake).toBe(false);
+    live.show(true);
+    live.lively(false);
+    expect(embed?.lively).toBe(false);
+    vi.advanceTimersByTime(IDLE_SLEEP_MS);
+    expect(embed?.awake).toBe(false);
+    live.lively(true);
+    expect(embed?.lively).toBe(true);
+    expect(embed?.awake).toBe(true);
+  });
+
   it("follows her panel: attach moves her host and refits, detach takes it out and lets her sleep", async () => {
     const kit = fakeEmbedKit();
     const live = createKimmLive({ loaders: kit.loaders, page: kit.page, gpu: GOOD_GPU });

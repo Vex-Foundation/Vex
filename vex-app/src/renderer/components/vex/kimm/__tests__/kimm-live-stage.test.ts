@@ -91,6 +91,24 @@ describe("the live stage", () => {
     expect(stage.status).toBe("idle");
   });
 
+  it("applies the holder's lively mode only: the lock screen's lively, the card's calm", async () => {
+    const { kit, stage } = stageWith();
+    const lock = stage.seat(document.createElement("div"), {}, "rest", true);
+    stage.start();
+    await flush();
+    const embed = kit.mounts[0];
+    expect(embed?.options.lively).toBe(true);
+    const card = stage.seat(document.createElement("div"), {}, "rest");
+    expect(embed?.lively).toBe(false);
+    card.lively(false);
+    lock.lively(true);
+    expect(embed?.lively).toBe(false);
+    card.release();
+    expect(embed?.lively).toBe(true);
+    lock.lively(false);
+    expect(embed?.lively).toBe(false);
+  });
+
   it("a seat taken within 30 s keeps her model", async () => {
     const { kit, stage } = stageWith();
     const first = stage.seat(document.createElement("div"), {}, "rest");

@@ -15,7 +15,8 @@
  * origin. A hidden window or a panel out of view stops her ticker on a painted frame (the embed's own visibility and
  * intersection gate); shown again, she wakes. She sleeps 12 s after her last change of mood unless the pointer rests
  * over her panel (Cloud's `IDLE_SLEEP_MS` and hover; the panel takes no pointer, so the pointer is read from the
- * window).
+ * window). On the lock screen (`lively`) she never sleeps on that timer: only a hidden window or a panel out of
+ * view stops her, and her ticker is capped at 30 fps (`KimmLive.lively`).
  */
 
 import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
@@ -41,6 +42,8 @@ export interface UseKimmLiveOptions {
   /** Her figure stands in this panel. */
   readonly figure: boolean;
   readonly seat: KimmSeat;
+  /** The lock screen's lively mode (`KimmLive.lively`); the card never asks for it. */
+  readonly lively?: boolean;
 }
 
 const SEAT_FITS = { lock: kimmSeatFit("lock"), card: kimmSeatFit("card") } as const;
@@ -68,13 +71,15 @@ export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options:
   const enabled = options.figure && !still && devicePasses;
   const seatRef = useRef<KimmLiveSeat | null>(null);
   const moodRef = useRef(options.mood);
+  const lively = options.lively === true;
+  const livelyRef = useRef(lively);
 
   // Her seat: taken while she may stand live here, given up when she may not or the panel leaves. It is taken in
   // the mood last seen, and the effect below sets the current one in the same commit.
   useEffect(() => {
     const layer = layerRef.current;
     if (!enabled || layer === null) return undefined;
-    const seat = stage.seat(layer, SEAT_FITS[options.seat], moodRef.current);
+    const seat = stage.seat(layer, SEAT_FITS[options.seat], moodRef.current, livelyRef.current);
     seatRef.current = seat;
     return () => {
       seat.release();
@@ -87,6 +92,12 @@ export function useKimmLive(layerRef: RefObject<HTMLDivElement | null>, options:
     moodRef.current = options.mood;
     seatRef.current?.mood(options.mood);
   }, [options.mood, enabled]);
+
+  // The lively mode, as the panel asks.
+  useEffect(() => {
+    livelyRef.current = lively;
+    seatRef.current?.lively(lively);
+  }, [lively, enabled]);
 
   // Start her once the renderer is idle.
   useEffect(() => {

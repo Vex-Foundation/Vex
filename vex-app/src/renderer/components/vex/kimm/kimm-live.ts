@@ -73,6 +73,11 @@ export interface KimmLive {
   show(shown: boolean): void;
   /** The pointer rests on her: no sleep while it does. */
   hover(on: boolean): void;
+  /**
+   * Desktop's lock screen: she never sleeps on her idle timer (only a hidden window or a panel out of view stops
+   * her), her rig runs livelier and her ticker is capped at 30 fps (`KIMM_LIVELY`). Off, Cloud's behaviour.
+   */
+  lively(on: boolean): void;
   sleep(): void;
   wake(): void;
   destroy(): void;
@@ -89,6 +94,7 @@ export function createKimmLive(options: KimmLiveOptions = {}): KimmLive {
   let fit: KimmFitOptions = {};
   let shown = false;
   let hovered = false;
+  let livelyOn = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   /* a destroy while loading ends that load: its model never mounts */
   let generation = 0;
@@ -123,7 +129,7 @@ export function createKimmLive(options: KimmLiveOptions = {}): KimmLive {
       return;
     }
     embed.wake();
-    if (!hovered) timer = setTimeout(sleep, IDLE_SLEEP_MS);
+    if (!hovered && !livelyOn) timer = setTimeout(sleep, IDLE_SLEEP_MS);
   };
 
   const start = (): Promise<boolean> => {
@@ -150,6 +156,7 @@ export function createKimmLive(options: KimmLiveOptions = {}): KimmLive {
           reducedMotion: false,
           poke: false,
           maxDpr: 2,
+          lively: livelyOn,
         });
         embed = next;
         const ok = await next.ready;
@@ -208,6 +215,12 @@ export function createKimmLive(options: KimmLiveOptions = {}): KimmLive {
     },
     hover(on) {
       hovered = on;
+      touch();
+    },
+    lively(on) {
+      if (on === livelyOn) return;
+      livelyOn = on;
+      embed?.lively(on);
       touch();
     },
     sleep,

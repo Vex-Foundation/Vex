@@ -12,12 +12,15 @@
  * DESKTOP PORT (owner decision 2026-11-15): VEX Cloud's `apps/web/src/components/kimm/kimm-embed.ts`, unchanged but
  * for its moods' names (`KimmLiveMood`), the import suffixes and the indentation. The libraries it adds are the
  * same-origin files `kimm-assets.ts` names (`KIMM_LIVE_LIBS`), as `<script src>` elements in order, never inline, so
- * the production CSP keeps `script-src 'self'` alone.
+ * the production CSP keeps `script-src 'self'` alone. Desktop adds the lock screen's lively mode (`lively`, `KIMM_LIVELY`:
+ * the rig's livelier idle and a 30 fps cap), eases her gaze home when the pointer leaves the window, and pauses her
+ * model's own update with the render ticker.
  */
 import { fitKimm, type KimmFitOptions } from "./kimm-fit.js";
 import type { KimmEvent, KimmLiveMood } from "./kimm-live-moods.js";
 import {
   createKimmRig,
+  KIMM_LIVELY,
   type KimmLookTarget,
   type KimmTargets,
 } from "./kimm-rig.js";
@@ -25,6 +28,8 @@ import {
 /** The parts of PIXI 6 and pixi-live2d-display 0.4.0 this module touches (both are globals from the libraries). */
 interface PixiTicker {
   readonly started: boolean;
+  /** 0: no cap (PIXI 6's `Ticker.maxFPS`). */
+  maxFPS: number;
   start(): void;
   stop(): void;
 }
@@ -52,6 +57,8 @@ interface CubismCoreModel {
 }
 interface Live2DModel {
   x: number;
+  /** pixi-live2d-display updates the model on PIXI's shared ticker while this is on. */
+  autoUpdate: boolean;
   y: number;
   readonly scale: { set(value: number): void };
   readonly internalModel: {
@@ -69,6 +76,8 @@ interface Live2DModel {
 }
 interface PixiGlobal {
   Application: new (options: Record<string, unknown>) => PixiApp;
+  /** The shared ticker pixi-live2d-display updates her model on. */
+  Ticker?: { readonly shared: PixiTicker };
   live2d?: {
     Live2DModel: {
       from(url: string, options: Record<string, unknown>): Promise<Live2DModel>;
@@ -101,6 +110,8 @@ export interface KimmEmbedOptions {
   readonly level?: () => number;
   readonly onProgress?: (share: number) => void;
   readonly onPoke?: () => void;
+  /** Desktop's lock screen: the rig's lively mode and the ticker capped at `KIMM_LIVELY.fps` (`lively()` later). */
+  readonly lively?: boolean;
 }
 
 export interface KimmEmbed {
@@ -118,6 +129,8 @@ export interface KimmEmbed {
   wake(): void;
   step(ms: number): void;
   readonly awake: boolean;
+  /** Desktop's lively mode on or off: the rig's (`KIMM_LIVELY`) and the ticker cap (30 fps on, none off). */
+  lively(on: boolean): void;
   destroy(): void;
 }
 
@@ -172,7 +185,10 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     targets: o.targets,
     speaking: o.speaking,
     level: o.level,
+    lively: o.lively === true,
   });
+  let lively = o.lively === true;
+  let shared: PixiTicker | null = null;
 
   const on = (event: KimmEvent, data?: unknown) => {
     /* events before she is ready are queued and replayed, except `say` (`kimm.js:90`, SK KIMM.md 11.10) */
@@ -230,15 +246,29 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     model.y = y0 + jy;
   };
 
-  /* the ticker runs while she is awake, in view and the tab is visible; stopping paints the last frame first */
+  /* the ticker runs while she is awake, in view and the tab is visible; stopping paints the last frame first.
+     DESKTOP: her model's own update (pixi-live2d-display runs it on PIXI's shared ticker) pauses with the render
+     ticker, so a hidden window or a sleeping figure spends nothing on her. */
   const sync = () => {
     if (!app || o.manual) return;
     const run = !asleep && visible && !document.hidden;
-    if (run && !app.ticker.started) app.ticker.start();
-    else if (!run && app.ticker.started) {
+    if (run && !app.ticker.started) {
+      if (model) model.autoUpdate = true;
+      app.ticker.start();
+    } else if (!run && app.ticker.started) {
       app.render();
       app.ticker.stop();
+      if (model) model.autoUpdate = false;
     }
+  };
+  /* DESKTOP: the lively mode's cap, on her render ticker and on the shared ticker her model updates on */
+  const cap = () => {
+    const fps = lively ? KIMM_LIVELY.fps : 0;
+    if (app) app.ticker.maxFPS = fps;
+    if (shared) shared.maxFPS = fps;
+  };
+  const onAway = (event: Event) => {
+    if (event.type === "blur" || (event as PointerEvent).relatedTarget === null) rig.pointerAway();
   };
   const onMove = (event: PointerEvent) =>
     rig.pointerMove(event.clientX, event.clientY);
@@ -262,6 +292,7 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
       canvas.setAttribute("aria-hidden", "true");
       el.appendChild(canvas);
       const dpr = Math.min(o.maxDpr ?? 2, window.devicePixelRatio || 1);
+      shared = PIXI.Ticker?.shared ?? null;
       app = new PIXI.Application({
         view: canvas,
         backgroundAlpha: 0,
@@ -330,6 +361,9 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
       io.observe(el);
       document.addEventListener("visibilitychange", sync);
       window.addEventListener("pointermove", onMove, { passive: true });
+      window.addEventListener("pointerout", onAway, { passive: true });
+      window.addEventListener("blur", onAway);
+      cap();
       canvas.addEventListener("pointerenter", onEnter);
       canvas.addEventListener("pointerleave", onLeave);
       if (o.poke !== false) canvas.addEventListener("click", onPoke);
@@ -349,7 +383,11 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     ro?.disconnect();
     io?.disconnect();
     window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerout", onAway);
+    window.removeEventListener("blur", onAway);
     document.removeEventListener("visibilitychange", sync);
+    if (lively && shared) shared.maxFPS = 0;
+    shared = null;
     if (app) {
       const gl = app.renderer.gl;
       /* the model's textures (three 4096 squares, about 160 MB of GPU memory) go with the stage */
@@ -392,6 +430,12 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     },
     get awake() {
       return app?.ticker.started === true;
+    },
+    lively: (on) => {
+      if (on === lively) return;
+      lively = on;
+      rig.lively(on);
+      cap();
     },
     destroy,
   };

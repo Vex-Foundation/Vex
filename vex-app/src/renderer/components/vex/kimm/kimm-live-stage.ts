@@ -10,6 +10,9 @@
  *   - HER MOOD. The seat that holds her plays its mood: the cue's event, then the mood pinned with no end
  *     (`KIMM_LIVE_CUE`), so she shows what her still would show for as long as desktop's clock holds it. A model
  *     that arrives late arrives in the holder's mood, as Cloud replays its last moment.
+ *   - LIVELY. A seat may ask for the lock screen's lively mode (`KimmLive.lively`: no idle sleep, a livelier rig, a
+ *     30 fps cap). The holder's ask applies, so the card, which never asks, keeps Cloud's calm behaviour even when
+ *     the lock screen hands her over.
  *   - LETTING GO. With no seat, she sleeps at once and her model is freed 30 s later (`KIMM_RELEASE_MS`, Cloud's
  *     `PHONE_DISPOSE_MS`): the textures and the WebGL context go. A seat taken within the 30 s keeps her.
  *   - A FAILURE STAYS A FAILURE. A load that fails, or a GPU the probe refuses, leaves every panel on its still for the
@@ -36,6 +39,8 @@ export interface KimmLiveSeat {
   mood(next: KimmMood): void;
   /** The pointer is over this seat's box (it keeps her awake while it rests there). */
   hover(on: boolean): void;
+  /** This seat asks for the lock screen's lively mode (`KimmLive.lively`); it applies while the seat holds her. */
+  lively(on: boolean): void;
   release(): void;
 }
 
@@ -44,8 +49,8 @@ export interface KimmLiveStage {
   readonly status: KimmLiveStatus;
   /** Hears every change of status or of which seat holds her. */
   subscribe(listener: () => void): () => void;
-  /** Takes a seat in `layer`; the newest seat holds her canvas. */
-  seat(layer: HTMLElement, fit: KimmFitOptions, mood: KimmMood): KimmLiveSeat;
+  /** Takes a seat in `layer`; the newest seat holds her canvas, in its own lively mode (off by default). */
+  seat(layer: HTMLElement, fit: KimmFitOptions, mood: KimmMood, lively?: boolean): KimmLiveSeat;
   /** Whether the seat in `layer` holds her canvas. */
   holds(layer: HTMLElement | null): boolean;
   /** Loads her (no-op without a seat, while loading, or once she failed or the GPU refused her). */
@@ -65,6 +70,7 @@ interface SeatEntry {
   readonly layer: HTMLElement;
   fit: KimmFitOptions;
   mood: KimmMood;
+  lively: boolean;
 }
 
 export function createKimmLiveStage(options: KimmLiveStageOptions = {}): KimmLiveStage {
@@ -127,6 +133,7 @@ export function createKimmLiveStage(options: KimmLiveStageOptions = {}): KimmLiv
     cancelRelease();
     const instance = getLive();
     instance.attach(top.layer, top.fit);
+    instance.lively(top.lively);
     instance.show(true);
     play();
     notify();
@@ -142,8 +149,8 @@ export function createKimmLiveStage(options: KimmLiveStageOptions = {}): KimmLiv
         listeners.delete(listener);
       };
     },
-    seat(layer, fit, mood) {
-      const entry: SeatEntry = { layer, fit, mood };
+    seat(layer, fit, mood, lively = false) {
+      const entry: SeatEntry = { layer, fit, mood, lively };
       seats.push(entry);
       reseat(null);
       let released = false;
@@ -162,6 +169,11 @@ export function createKimmLiveStage(options: KimmLiveStageOptions = {}): KimmLiv
         },
         hover(on) {
           if (holder() === entry) live?.hover(on);
+        },
+        lively(on) {
+          if (entry.lively === on) return;
+          entry.lively = on;
+          if (holder() === entry) live?.lively(on);
         },
         release() {
           if (released) return;

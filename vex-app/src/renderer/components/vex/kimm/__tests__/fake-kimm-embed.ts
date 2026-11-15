@@ -17,6 +17,8 @@ export interface FakeEmbed {
   readonly fits: Array<KimmFitOptions | undefined>;
   awake: boolean;
   destroyed: boolean;
+  /** The last `lively()` value (the mount option until then). */
+  lively: boolean;
   /** Settle `ready`: true (she is on screen) or false (a file or a library failed). */
   settle(ok: boolean): void;
 }
@@ -59,6 +61,7 @@ export function fakeEmbedKit(): FakeEmbedKit {
               fits: [],
               awake: false,
               destroyed: false,
+              lively: options.lively === true,
               settle: (ok) => settle(ok),
             };
             kit.mounts.push(fake);
@@ -88,6 +91,10 @@ export function fakeEmbedKit(): FakeEmbedKit {
               step: () => undefined,
               get awake() {
                 return fake.awake;
+              },
+              lively: (on) => {
+                fake.calls.push(on ? "lively" : "calm");
+                fake.lively = on;
               },
               destroy: () => {
                 fake.calls.push("destroy");

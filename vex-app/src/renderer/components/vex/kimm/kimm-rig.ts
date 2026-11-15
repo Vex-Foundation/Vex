@@ -10,7 +10,8 @@
  *
  * DESKTOP PORT (owner decision 2026-11-15): VEX Cloud's `apps/web/src/components/kimm/kimm-rig.ts`, unchanged but for
  * its moods' names (`KimmLiveMood`, `KIMM_LIVE_MOODS` in `kimm-live-moods.ts`: on desktop `KimmMood` is the mood of
- * her still, `kimm-assets.ts`), the import suffixes and the indentation.
+ * her still, `kimm-assets.ts`), the import suffixes and the indentation, plus desktop's lock-screen lively mode
+ * (`KIMM_LIVELY`, `lively()`, `pointerAway()`), off by default so Cloud's behaviour and the Vex card's stay as they were.
  */
 import {
   KIMM_HANDS,
@@ -54,7 +55,32 @@ export interface KimmRigOptions {
   readonly level?: () => number;
   /** Random in [0, 1) (acts and their timing). */
   readonly random?: () => number;
+  /** The lock screen's lively mode from the start (`KIMM_LIVELY`; `lively()` switches it later). */
+  readonly lively?: boolean;
 }
+
+/**
+ * THE LOCK SCREEN'S LIVELY MODE (desktop only; owner decision 2026-11-15: "like a game login screen, never
+ * standing still"). Off by default, so Cloud's rig and desktop's Vex card are unchanged. On, she:
+ *   - sways and drifts more: the head and body sways run at `sway` times Cloud's amplitude (still within the
+ *     angle clamps);
+ *   - bobs with her breath: up to `bobPx` px up on each 3.4 s breath, a slow bounce, never a jitter;
+ *   - plays her idle acts sooner and more often: the first `firstActMs` after the switch, then every `actGapMs`
+ *     (instead of Cloud's 5 s, then 3.5 to 7 s), and `afterEventMs` after an event that ends a run (Cloud's 4 s);
+ *   - follows the pointer that moved in the last `lookHoldMs` (Cloud's 5 s), then eases back to centre on her
+ *     springs; `pointerAway()` (the pointer left the window) eases her back at once.
+ * Reduced motion never reaches it: the panel never seats her live under it, and the rig zeroes sway and bob anyway.
+ * `fps` is the ticker cap the embed applies in lively mode, to spare the battery.
+ */
+export const KIMM_LIVELY = {
+  sway: 1.8,
+  bobPx: 2.4,
+  firstActMs: 2000,
+  actGapMs: [1400, 3200] as const,
+  afterEventMs: 2000,
+  lookHoldMs: 3000,
+  fps: 30,
+} as const;
 
 /** The box she stands in, in client px (her head line is 18% down it). */
 export interface KimmHostBox {
@@ -190,6 +216,8 @@ export function createKimmRig(options: KimmRigOptions = {}) {
   let hv = 0;
   let shut = 0;
   let lastT = 0;
+  let lively = options.lively === true;
+  if (lively) nextIdle = now() + KIMM_LIVELY.firstActMs;
   const actNames = (options.acts ?? KIMM_ACTS).filter((name) => name in ACTS);
   const targetOf = (name: string): KimmLookTarget | null => {
     const value = targets[name];
@@ -245,7 +273,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     }
     if (event === "idle" || event === "refused" || event === "reset") {
       active = false;
-      nextIdle = t + 4000;
+      nextIdle = t + (lively ? KIMM_LIVELY.afterEventMs : 4000);
     }
     if (event === "press") nextIdle = t + 6000;
     switch (event) {
@@ -330,7 +358,8 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       const u = (t0 - act.t0) / A.ms;
       if (u >= 1) {
         act = null;
-        nextIdle = t0 + 3500 + random() * 3500;
+        const [gapMin, gapMax] = lively ? KIMM_LIVELY.actGapMs : ([3500, 7000] as const);
+        nextIdle = t0 + gapMin + random() * (gapMax - gapMin);
       } else {
         env = smoothstep(0, 0.2, u) * (1 - smoothstep(0.8, 1, u));
         if (A.pose) P = A.pose(u);
@@ -342,12 +371,14 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     const bz = (P.bz ?? 0) * env;
     const mouth = (P.mouth ?? 0) * env;
     if (focus && t0 > focusUntil) focus = null;
-    /* where to look: a target, else the pointer if it moved in the last 5 s, else a slow drift (`kimm.js:170-177`) */
+    /* where to look: a target, else the pointer if it moved in the last 5 s (3 s lively), else a slow drift
+       (`kimm.js:170-177`) */
     const hx = host.left + host.width * 0.5;
     const hy = host.top + host.height * 0.18;
     let tx = hx + Math.sin(t * 0.35) * 60;
     let ty = hy + 40 + Math.sin(t * 0.23) * 24;
-    if (options.pointer !== false && t0 - lastMove < 5000 && px >= 0) {
+    const lookHold = lively ? KIMM_LIVELY.lookHoldMs : 5000;
+    if (options.pointer !== false && t0 - lastMove < lookHold && px >= 0) {
       tx = px;
       ty = py;
     }
@@ -364,7 +395,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
     }
     const dx = clamp((tx - hx) / 520, -1, 1);
     const dy = clamp((ty - hy) / 420, -1, 1);
-    const sw = RM ? 0 : 1;
+    const sw = RM ? 0 : lively ? KIMM_LIVELY.sway : 1;
     const swx = sw * (2.2 * Math.sin(t * 0.47) + 1.3 * Math.sin(t * 0.83 + 2));
     const swz = sw * (1.8 * Math.sin(t * 0.31 + 1) + 0.9 * Math.sin(t * 0.71));
     const swb = sw * 1.3 * Math.sin(t * 0.29 + 0.5);
@@ -489,7 +520,9 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S),
     );
     for (const [id, value] of Object.entries(raw)) params.set(id, value);
-    return { params, y: RM ? 0 : jy, shut, t };
+    /* lively: a slow bounce with her breath, up to `bobPx` up at the top of each breath */
+    const bob = lively && !RM ? -KIMM_LIVELY.bobPx * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / KIMM_BREATH_S)) : 0;
+    return { params, y: RM ? 0 : jy + bob, shut, t };
   };
 
   setMood("rest");
@@ -506,6 +539,16 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       else raw[id] = value;
     },
     /** The pointer moved (client px). */
+    /** The lock screen's lively mode on or off (`KIMM_LIVELY`); on, her next idle act comes sooner. */
+    lively: (on: boolean) => {
+      if (on === lively) return;
+      lively = on;
+      if (on && !act) nextIdle = Math.min(nextIdle, now() + KIMM_LIVELY.firstActMs);
+    },
+    /** The pointer left the window: she stops following it and eases back to centre on her springs. */
+    pointerAway: () => {
+      lastMove = -1e9;
+    },
     pointerMove: (x: number, y: number) => {
       px = x;
       py = y;
@@ -525,6 +568,7 @@ export function createKimmRig(options: KimmRigOptions = {}) {
       return {
         mood,
         active,
+        lively,
         act: act?.name ?? null,
         hands: Object.fromEntries(
           KIMM_HANDS.map((hand) => [hand, Number((cur[hand] ?? 0).toFixed(3))]),
