@@ -56,6 +56,20 @@ here is a defect:
   16px glyph inside its fixed cell, so nothing moves around it (Cloud rides
   its house curve, which desktop keeps for a page's re-lay alone); reduced
   motion and the still frame turn it at once (title-bar.css states both).
+- Kimm's live figure arriving, 900ms (`--vex-duration-kimm-in`,
+  `DURATION_KIMM_IN_MS`) - VEX Cloud's `--vx-dur-kimm-in` (owner decision
+  2026-11-15; `docs/design/H3-DESKTOP.md` section 1.6, "Her live figure"):
+  once her Live2D model is on screen, its layer fades in over her still on
+  the standard curve and the still leaves. Opacity only, inside her panel's
+  fixed box, so nothing moves; kimm.css states its own collapse, and reduced
+  motion and Save-Data never seat her, so her still stands.
+- Kimm's live figure itself (`kimm-embed.ts`, `kimm-rig.ts`) is a canvas loop
+  bound like her glyph field: only while her panel holds her, the window is
+  shown and she is in view (the embed stops its ticker on a painted frame
+  otherwise and wakes when shown), never under reduced motion or Save-Data,
+  and asleep on a painted frame 12 s after her last change of mood unless
+  the pointer rests over her (`IDLE_SLEEP_MS`, Cloud's). Her springs are
+  sub-stepped at 1/60 s, so a stalled window resumes without a jump.
 - The general key's hover fill, 420ms (`--vex-duration-key-fill`,
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
