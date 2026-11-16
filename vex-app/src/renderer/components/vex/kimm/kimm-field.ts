@@ -15,6 +15,8 @@
  * Reduced motion and Save-Data hold either at one frame.
  */
 
+import { KIMM_LOCK } from "./kimm-lock-tuning.js";
+
 /** The options of the port (`mountGradientAscii(container, options)`), as Cloud types them. */
 export interface GradientAsciiOptions {
   readonly colors?: readonly string[];
@@ -113,7 +115,7 @@ export const KIMM_FIELD_CALM = { speed: 1, flow: 0.5, flicker: 0.2, glow: 0.2, p
  * stronger with a slow pulse (one cycle in 4.8 s, `PULSE_SECONDS`). Tuned in place by the port's `tune`, never a
  * remount; the run gate and the still frame bind it exactly as they bind the calm field.
  */
-export const KIMM_FIELD_LIVELY = { speed: 1.8, flow: 0.85, flicker: 0.32, glow: 0.4, pulse: 0.45 } as const;
+export const KIMM_FIELD_LIVELY = KIMM_LOCK.fieldLively;
 
 /** The lively tempo at night by the local clock (22:00 to 06:00): calmer, between the calm and the day's. */
 export const KIMM_FIELD_NIGHT = { speed: 1.2, flow: 0.65, flicker: 0.24, glow: 0.3, pulse: 0.3 } as const;

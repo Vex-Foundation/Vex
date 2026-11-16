@@ -133,19 +133,20 @@ describe("desktop's seats", () => {
     expect(narrow.x + KM.face * narrow.s).toBeCloseTo(200, 9);
   });
 
-  test("her live layer bleeds 16 past the panel and the fit takes it back: the same scale, the same place on screen", () => {
-    expect(KIMM_LIVE_BLEED).toBe(16);
+  test("her live layer bleeds 32 past the panel and the fit takes it back: the same scale, the same place on screen", () => {
+    expect(KIMM_LIVE_BLEED).toBe(32);
+    const b = KIMM_LIVE_BLEED;
     for (const [seat, width, height] of [
       ["lock", 720, 900],
       ["lock", 400, 900],
       ["card", 280, 359],
     ] as const) {
       const panel = fitKimm(width, height, kimmSeatFit(seat, 0));
-      const layer = fitKimm(width + 32, height + 32, kimmSeatFit(seat));
+      const layer = fitKimm(width + 2 * b, height + 2 * b, kimmSeatFit(seat));
       expect(layer.s).toBeCloseTo(panel.s, 9);
-      // the layer starts 16 above and left of the panel, so her hair and face land on the same screen pixels
-      expect(layer.head - 16).toBeCloseTo(panel.head, 9);
-      expect(layer.faceX - 16).toBeCloseTo(panel.faceX, 9);
+      // the layer starts `b` above and left of the panel, so her hair and face land on the same screen pixels
+      expect(layer.head - b).toBeCloseTo(panel.head, 9);
+      expect(layer.faceX - b).toBeCloseTo(panel.faceX, 9);
     }
   });
 });

@@ -8,6 +8,8 @@
  * the top comes back in at the foot at a new place.
  */
 
+import { KIMM_LOCK } from "./kimm-lock-tuning.js";
+
 /** The motes' measures. */
 export const KIMM_MOTES = {
   /** How many float at once. */
@@ -31,7 +33,7 @@ export const KIMM_MOTES = {
    */
   colors: ["#a5d8ff", "#f6f8ff"] as const,
   /** Their pace by the lock screen's: the day's, the night's, sleepy. */
-  pace: { day: 1, night: 0.7, drowsy: 0.45 } as const,
+  pace: { day: KIMM_LOCK.motesDay, night: 0.7, drowsy: 0.45 } as const,
 } as const;
 
 export interface KimmMote {

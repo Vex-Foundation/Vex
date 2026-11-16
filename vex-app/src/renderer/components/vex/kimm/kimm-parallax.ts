@@ -9,11 +9,13 @@
  * `KIMM_FIELD_BLEED`, kimm.css) by more than their largest shift, and the panel clips them.
  */
 
-/** The largest shift of each layer in CSS px, at the window's edge (x; y is `yShare` of it). */
+import { KIMM_LOCK } from "./kimm-lock-tuning.js";
+
+/** The largest shift of each layer in CSS px, at the window's edge (x; y is `yShare` of it): the tuning knob's. */
 export const KIMM_PARALLAX = {
-  field: 3,
-  motes: 6,
-  figure: 10,
+  field: KIMM_LOCK.parallax.field,
+  motes: KIMM_LOCK.parallax.motes,
+  figure: KIMM_LOCK.parallax.figure,
   /** The vertical shift is this share of the horizontal one (the window is wider than tall). */
   yShare: 0.6,
   /** The easing's time constant. */

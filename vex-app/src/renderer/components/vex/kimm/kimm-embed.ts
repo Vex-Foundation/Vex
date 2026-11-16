@@ -185,6 +185,7 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
   let fitHead = 0;
   let zoom = 1;
   let sleepNow = 0;
+  let blinkNow = 1;
   const place = () => {
     if (!model) return;
     model.scale.set(fitS * zoom);
@@ -262,6 +263,7 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
     }
     jy = frame.y;
     sleepNow = frame.sleep;
+    blinkNow = frame.blink;
     if (frame.zoom !== zoom) {
       zoom = frame.zoom;
       place();
@@ -352,7 +354,7 @@ export function mountKimm(el: HTMLElement, o: KimmEmbedOptions): KimmEmbed {
           /* DESKTOP: sleepy, her blink is longer and comes less often */
           const u = (now() - at) / (150 * (1 + 1.5 * sleepNow));
           if (u > 1) {
-            at = now() + (2500 + Math.random() * 4000) * (1 + 0.8 * sleepNow);
+            at = now() + ((2500 + Math.random() * 4000) * (1 + 0.8 * sleepNow)) / Math.max(0.25, blinkNow);
             return;
           }
           if (u < 0 || !core) return;
