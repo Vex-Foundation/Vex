@@ -2038,6 +2038,44 @@ describe("ApprovalCard, the clip cue (Cloud's ClipCue)", () => {
     }
   });
 
+  it("re-reads rows that move after mount though no box it observes resizes, so the count is the settled layout's", async () => {
+    // A late font or a sibling settling the page moves the rows without
+    // resizing the card, its scroller or the dock: the cue read once at mount
+    // must not keep that first answer (the D2 card proof saw one render with
+    // the cue and the other without, on the same final layout).
+    renderScrolled();
+    const drawn = drawnRows().length;
+    cleanup();
+    const place = { lastBottom: 400 };
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number): DOMRect =>
+        ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      if (this.matches(ROW_SELECTOR)) {
+        const rows = Array.from(document.querySelectorAll(ROW_SELECTOR)).filter(
+          (row) => row.closest("details:not([open])") === null || row.closest("summary") !== null,
+        );
+        const index = rows.indexOf(this);
+        const bottom = place.lastBottom - (rows.length - 1 - Math.max(0, index)) * 34;
+        return box(bottom - 34, bottom);
+      }
+      if (this.matches('[data-vex-area="approval-foot"]')) return box(600, 672);
+      return box(0, 500);
+    });
+    try {
+      renderScrolled();
+      expect(drawn).toBeGreaterThan(1);
+      // At mount every drawn row is in view: no cue.
+      expect(document.querySelector('[data-vex-area="approval-clip-cue"]')).toBeNull();
+      // The page settles: the last row now ends inside the cue's band, with no resize, scroll or resize event.
+      place.lastBottom = 490;
+      await waitFor(() => {
+        expect(document.querySelector('[data-vex-area="approval-clip-cue"]')?.textContent).toBe("1 more line below");
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("reads a last row whose foot only dips into the cue's band: no cue claims a line on screen", () => {
     // The last row from 441 to 475: its foot 4 into the band (471 to 500), its middle above it.
     renderScrolled();
