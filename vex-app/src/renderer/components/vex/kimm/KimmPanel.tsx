@@ -19,18 +19,48 @@
  *     hidden window (MOTION-POLICY.md, "Kimm's glyph field");
  *   - her figure: her section still for the mood (`KimmArtSet.sections`),
  *     only while `figure` is set; a still whose file is missing draws the
- *     field alone, never another mood's figure.
+ *     field alone, never another mood's figure;
+ *   - her live figure (owner decision 2026-11-15): VEX Cloud's Live2D Kimm,
+ *     seated in a layer over her still (`useKimmLive`, `kimm-live-stage.ts`),
+ *     framed as the seat frames the still (`kimmSeatFit`), playing the mood
+ *     her still shows (`KIMM_LIVE_CUE`). It fades in over the still once she
+ *     is on screen, and the still leaves only then (kimm.css,
+ *     `data-kimm-live="live"`). Anywhere she cannot stand live (her figure
+ *     hidden, reduced motion, Save-Data, a weak device or GPU, a failed load,
+ *     another panel holding her) the still stands exactly as before;
+ *   - the lock screen's lively mode (`lively`, owner decision 2026-11-15:
+ *     "like a game login screen, never standing still"): asked only by the
+ *     lock screen, never by the card. While her live figure stands there she
+ *     never sleeps on her idle timer, her rig runs livelier (a bounce with her
+ *     breath, more sway, idle acts more often, her gaze on the pointer across
+ *     the window) at 30 fps, the field takes its lively tempo
+ *     (`KIMM_FIELD_LIVELY`) and a few light motes rise behind her
+ *     (`KimmMotes`); she reacts to the lock screen's typed signals
+ *     (`signals`: typing, the password shown or hidden, a failed or a
+ *     successful unlock; words only, never the password); and her figure,
+ *     the field and the motes shift a few pixels against the pointer, the
+ *     nearer the more (`useKimmParallax`); she greets the viewer once a
+ *     launch, leans in while the field has focus or keys go in, plays chained
+ *     idle moments, grows sleepy after 45 s alone and calmer at night by the
+ *     local clock (`useKimmLockLife`, `KIMM_LIFE`). Wherever her still stands
+ *     instead, none of it runs.
  *
  * Decorative: `aria-hidden`, nothing in it takes focus or a pointer, so the
  * screen beside it says everything in words.
  */
 
-import { useState, type JSX } from "react";
+import { useRef, useState, type JSX } from "react";
 import { cn } from "../../../lib/utils.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { KimmField } from "./KimmField.js";
+import { KimmMotes } from "./KimmMotes.js";
 import { kimmGroundStyle } from "./KimmSection.js";
+import type { KimmLockSignals } from "./kimm-lock-signals.js";
+import { useKimmLive } from "./use-kimm-live.js";
+import { useKimmParallax } from "./use-kimm-parallax.js";
+import { useKimmLockLife } from "./use-kimm-lock-life.js";
+import { KIMM_MOTES } from "./kimm-motes.js";
 
 export interface KimmPanelProps {
   /** Her mood: which still stands. */
@@ -45,15 +75,37 @@ export interface KimmPanelProps {
   readonly seat?: "lock" | "card";
   /** Her field holds its frame though her figure stands (on a page, as her section did). */
   readonly hold?: boolean;
+  /** The lock screen's lively mode (the lock screen alone asks for it). */
+  readonly lively?: boolean;
+  /** The lock screen's typed signals to her (`kimm-lock-signals.ts`): words only, never the password. */
+  readonly signals?: KimmLockSignals;
   readonly className?: string;
 }
 
-export function KimmPanel({ mood, figure, seat = "lock", hold = false, className }: KimmPanelProps): JSX.Element {
+export function KimmPanel({
+  mood,
+  figure,
+  seat = "lock",
+  hold = false,
+  lively = false,
+  signals,
+  className,
+}: KimmPanelProps): JSX.Element {
   const art = useKimmArt();
   const still = art.sections[mood];
   const [fieldDrawn, setFieldDrawn] = useState(false);
+  const liveRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const { view: live, react } = useKimmLive(liveRef, { mood, figure, seat, lively });
+  // Everything lively runs only while her live figure stands here; her still never comes with any of it.
+  const livelyOn = lively && live === "live";
+  useKimmParallax(panelRef, livelyOn);
+  // The lock screen's life: the screen's words, her greeting, sleepiness, the local clock's night.
+  const life = useKimmLockLife({ active: livelyOn, signals, react, layerRef: liveRef });
+  const pace = life.sleepy ? "drowsy" : life.night ? "night" : "day";
   return (
     <div
+      ref={panelRef}
       aria-hidden="true"
       data-vex-area="kimm-panel"
       data-kimm-mood={mood}
@@ -61,11 +113,15 @@ export function KimmPanel({ mood, figure, seat = "lock", hold = false, className
       data-kimm-art={isKimmArtReady(still) ? "ready" : "missing"}
       data-kimm-field={fieldDrawn ? "live" : undefined}
       data-kimm-seat={seat}
+      data-kimm-live={live}
+      data-kimm-lively={lively ? (livelyOn ? "on" : "waiting") : "off"}
+      data-kimm-pace={livelyOn ? pace : undefined}
       className={cn("vex-kimm-panel", seat === "card" && "vex-kimm-panel--card", className)}
       style={kimmGroundStyle(art.field)}
     >
       <div className="vex-kimm-panel__ground" />
-      <KimmField open={figure} hold={hold} onDrawn={setFieldDrawn} />
+      <KimmField open={figure} hold={hold} onDrawn={setFieldDrawn} lively={livelyOn} pace={pace} />
+      <KimmMotes active={livelyOn} speed={KIMM_MOTES.pace[pace]} />
       {figure && isKimmArtReady(still) ? (
         <img
           src={still.src}
@@ -77,6 +133,7 @@ export function KimmPanel({ mood, figure, seat = "lock", hold = false, className
           className="vex-kimm-panel__figure"
         />
       ) : null}
+      <div ref={liveRef} data-vex-area="kimm-live" className="vex-kimm-panel__live" />
     </div>
   );
 }

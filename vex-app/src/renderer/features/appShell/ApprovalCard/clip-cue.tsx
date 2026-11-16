@@ -78,9 +78,23 @@ function visibleEnd(card: HTMLElement, scroller: HTMLElement | null, dock: HTMLE
 }
 
 /**
+ * After mount and after every trigger, the cue keeps reading on each frame
+ * until its answer and what it read (the view's end, the last drawn row's
+ * place) have held still for this many frames: a row can move without any
+ * box the cue observes changing size (a late font or a sibling settling the
+ * page), and a cue read once before that would keep a stale count. The read
+ * stops by `CLIP_CUE_SETTLE_MAX_MS` whatever happens.
+ */
+export const CLIP_CUE_SETTLE_FRAMES = 6;
+export const CLIP_CUE_SETTLE_MAX_MS = 3000;
+
+/**
  * How many of the card's rows are out of view under its visible end. Read
- * after layout, again on its scroller's scroll and on any resize; 0 where
- * nothing is cut (and in a test DOM with no layout).
+ * after layout, again on its scroller's scroll, on any resize and when web
+ * fonts finish loading, each time until the layout has settled
+ * (`CLIP_CUE_SETTLE_FRAMES`); 0 where nothing is cut (and in a test DOM with
+ * no layout). So the count is the rule's answer on the layout as it finally
+ * stands, never on an earlier one.
  */
 export function useRowsBelow(
   cardRef: RefObject<HTMLElement | null>,
@@ -96,7 +110,18 @@ export function useRowsBelow(
     }
     const scroller = scrollerOf(card);
     const view = card.ownerDocument.defaultView;
+    const fonts = card.ownerDocument.fonts as FontFaceSet | undefined;
     let frame = 0;
+    // The settle read: what the last read saw, how many reads in a row saw
+    // the same, and when the current settling began.
+    let seen = "";
+    let still = 0;
+    let since = 0;
+    const clock = (): number => view?.performance.now() ?? Date.now();
+    const next = (): void => {
+      if (frame !== 0) return;
+      frame = view?.requestAnimationFrame(measure) ?? 0;
+    };
     const measure = (): void => {
       frame = 0;
       // The cue covers the last 29 of the view when it shows (it takes no
@@ -105,13 +130,24 @@ export function useRowsBelow(
       // from the cue's own state, so the count cannot flip between two stable
       // answers with the load's timing.
       const end = visibleEnd(card, scroller, dock);
-      setBelow(rowsBelow(card, end, CLIP_CUE_PX));
+      const count = rowsBelow(card, end, CLIP_CUE_PX);
+      setBelow(count);
+      const rows = card.querySelectorAll<HTMLElement>(ROWS);
+      const last = rows.length > 0 ? rows[rows.length - 1]?.getBoundingClientRect() : undefined;
+      const read = `${String(count)}|${String(end)}|${String(last?.top ?? "")}|${String(last?.bottom ?? "")}`;
+      still = read === seen ? still + 1 : 0;
+      seen = read;
+      if (still < CLIP_CUE_SETTLE_FRAMES && clock() - since < CLIP_CUE_SETTLE_MAX_MS) next();
     };
+    // A trigger starts a new settling: read on the next frame, and on until still.
     const schedule = (): void => {
+      still = 0;
+      since = clock();
       if (frame !== 0) return;
       frame = view?.requestAnimationFrame(measure) ?? 0;
       if (frame === 0) measure();
     };
+    since = clock();
     measure();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
     observer?.observe(card);
@@ -119,11 +155,14 @@ export function useRowsBelow(
     if (dock !== null) observer?.observe(dock);
     scroller?.addEventListener("scroll", schedule, { passive: true });
     view?.addEventListener("resize", schedule);
+    fonts?.addEventListener?.("loadingdone", schedule);
     return () => {
       if (frame !== 0) view?.cancelAnimationFrame(frame);
+      frame = 0;
       observer?.disconnect();
       scroller?.removeEventListener("scroll", schedule);
       view?.removeEventListener("resize", schedule);
+      fonts?.removeEventListener?.("loadingdone", schedule);
     };
   }, [cardRef, dock, active]);
   return below;

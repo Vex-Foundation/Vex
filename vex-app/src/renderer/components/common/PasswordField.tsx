@@ -21,11 +21,16 @@ import { cn } from "../../lib/utils.js";
 export interface PasswordFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
   readonly visibleByDefault?: boolean;
+  /**
+   * Hears the Show key: true once the value is shown, false once hidden. A
+   * boolean only, never the value (the lock screen tells Kimm with it).
+   */
+  readonly onVisibleChange?: (visible: boolean) => void;
 }
 
 export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
   function PasswordField(
-    { className, visibleByDefault = false, ...props },
+    { className, visibleByDefault = false, onVisibleChange, ...props },
     ref
   ): JSX.Element {
     const [visible, setVisible] = useState(visibleByDefault);
@@ -44,7 +49,11 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
         />
         <button
           type="button"
-          onClick={() => setVisible((v) => !v)}
+          onClick={() => {
+            const next = !visible;
+            setVisible(next);
+            onVisibleChange?.(next);
+          }}
           aria-pressed={visible}
           aria-label={visible ? "Hide password" : "Show password"}
           // The R3 wizard render's "Show": a word in the blue at 13 / 500,

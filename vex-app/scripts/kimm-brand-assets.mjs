@@ -34,7 +34,8 @@
  * build check enforces.
  */
 
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -95,4 +96,90 @@ export function brandAssetPlan(entry, publicDir) {
   if (!existsSync(path.join(publicDir, entry.file))) return "awaiting";
   if (entry.width === null || entry.height === null) return "unpinned";
   return "check";
+}
+
+/**
+ * HER LIVE MODEL (owner decision, 15 November 2026: Kimm moves on desktop as
+ * she does on VEX Cloud). Byte copies of VEX Cloud's
+ * `apps/web/public/kimm/v1/lib/` and `apps/web/public/kimm/v1/model/`, under
+ * the same names in `art/kimm/live/lib/` and `art/kimm/live/model/`
+ * (`src/renderer/public/art/kimm/NOTICE.md`), named by the renderer only in
+ * `src/renderer/components/vex/kimm/kimm-assets.ts` and loaded only by
+ * `kimm-embed.ts`:
+ *   - `lib/`: Live2D Cubism Core 5.0.0 (wasm2js: it defines its own
+ *     `WebAssembly` object and compiles nothing, so the CSP needs no
+ *     `'wasm-unsafe-eval'`), PIXI 6.5.10, the `@pixi/unsafe-eval` 6.5.10 shim
+ *     (so PIXI needs no `'unsafe-eval'`) and pixi-live2d-display 0.4.0, in
+ *     that load order;
+ *   - `model/`: her settings, the moc (`kimm.moc.wasm` is a renamed MOC3, not
+ *     WebAssembly: its first bytes are `MOC3`), physics, the idle loop and
+ *     three textures (4096 x 4096, 4096 x 4096, 4096 x 2048, WebP, no
+ *     metadata).
+ * Each file is pinned by its exact size and sha256, the same pins as VEX
+ * Cloud's `tests/guards/expected/kimm.expected.json`: a file that differs by
+ * one byte, a file that is missing, and a file in the folder that is not
+ * pinned all fail the build (`check-build-artifacts.mjs`, gate 6b) and the
+ * seam's tests. 15,074,293 bytes in all (libraries 790,631, model
+ * 14,283,662). Change a file only with a new pin and the reason beside it.
+ */
+export const KIMM_LIVE_DIR = `${KIMM_ART_DIR}/live`;
+
+function live(file, bytes, sha256) {
+  return Object.freeze({ file: `${KIMM_LIVE_DIR}/${file}`, bytes, sha256 });
+}
+
+export const KIMM_LIVE_FILES = Object.freeze([
+  live("lib/live2dcubismcore.min.js", 206_492, "942783587666a3a1bddea93afd349e26f798ed19dcd7a52449d0ae3322fcff7c"),
+  live("lib/pixi.min.js", 460_333, "403f2f2ee8145fa17f60c5c89403056efe2680e5096ec2762036486914ed19c5"),
+  live("lib/unsafe-eval.min.js", 3_884, "94bb4bfdbd015087772ee03bc4117e253c326e8ca73a61646bd331b22f6847ad"),
+  live("lib/cubism4.min.js", 119_922, "af1267e6d52759b245766c578d905bfa025b532d5c3cc727c370957c4409e21b"),
+  live("model/kimm.model3.json", 379, "5e19da7aebb789ff08acb16e3e5c682d36a5f486b6cd7f17a48e00f99fb60b30"),
+  live("model/kimm.moc.wasm", 11_488_768, "97c42011aa3de77dd0c883768583ce754aeb8d47f50d6cf6cd978cb7709f0683"),
+  live("model/kimm.physics3.json", 124_647, "99de7fdc8cc5ef0d85d24aa0b44a374a8d616dbca56f9eb5f08ebff398af7d84"),
+  live("model/idle.motion3.json", 3_964, "0b94d9d33b2e208468a01214947138b9753f4310a4b0aa21c13d33b6d0b6950a"),
+  live("model/t0_4096.webp", 1_004_750, "2f742973f6f84f6b65234cf19b5ac8ed76a54c6d7621badc4ca08ff52b0cf0c8"),
+  live("model/t1_4096.webp", 1_061_820, "41c0178c5a87b245ce18c15cac064e911afe0af1d128674defad183110aee339"),
+  live("model/t2_4096.webp", 599_334, "6cb03bb0cc3ded61fb7fd596cc64453fda057d2b2b689f33da7e39e5da475cec"),
+]);
+
+/** Every file under `dir` (relative to `root`), as paths relative to `root` with `/` separators. */
+function filesUnder(root, dir) {
+  const full = path.join(root, dir);
+  if (!existsSync(full)) return [];
+  const found = [];
+  for (const entry of readdirSync(full, { withFileTypes: true })) {
+    const relative = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...filesUnder(root, relative));
+    else found.push(relative);
+  }
+  return found;
+}
+
+/**
+ * What is wrong with her live files under `root` (the renderer's public
+ * source, or dist/renderer/ after a build): a pinned file missing or
+ * different in size or sha256, and any file in the folder that is not
+ * pinned. An empty list means the folder holds exactly the pinned bytes.
+ */
+export function kimmLiveFindings(root) {
+  const findings = [];
+  const pinned = new Set(KIMM_LIVE_FILES.map((entry) => entry.file));
+  for (const entry of KIMM_LIVE_FILES) {
+    const full = path.join(root, entry.file);
+    if (!existsSync(full)) {
+      findings.push(`${entry.file}: pinned but missing`);
+      continue;
+    }
+    const size = statSync(full).size;
+    if (size !== entry.bytes) {
+      findings.push(`${entry.file}: ${size} bytes, pinned ${entry.bytes}`);
+      continue;
+    }
+    const sha256 = createHash("sha256").update(readFileSync(full)).digest("hex");
+    if (sha256 !== entry.sha256) findings.push(`${entry.file}: sha256 ${sha256} differs from its pin`);
+  }
+  for (const file of filesUnder(root, KIMM_LIVE_DIR)) {
+    if (!pinned.has(file)) findings.push(`${file}: ships but is not pinned`);
+  }
+  return findings.sort();
 }

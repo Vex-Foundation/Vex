@@ -170,6 +170,15 @@ export const DURATION_GATE_MARK_FADE_MS = 500;
  */
 export const DURATION_KEY_FILL_MS = 420;
 
+/**
+ * Kimm's live figure fades in over her still once she is on screen (VEX
+ * Cloud's `--vx-dur-kimm-in`; owner decision 2026-11-15). A named exception to
+ * the scale (MOTION-POLICY.md), owned by `KimmPanel`'s live layer (kimm.css).
+ * No timer reads it; it is mirrored so the pair stays one number.
+ * CSS: `--vex-duration-kimm-in`.
+ */
+export const DURATION_KIMM_IN_MS = 900;
+
 export const SPRING_PANEL = {
   type: "spring",
   stiffness: 260,

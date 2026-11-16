@@ -72,6 +72,51 @@ Licensed under MIT + Commons Clause License Condition v1.0: use, copy, modify,
 merge, publish and distribute as part of an application, website or product;
 the component itself is not sold, sublicensed or redistributed on its own.
 
+## Kimm's live model: PIXI.js, @pixi/unsafe-eval, pixi-live2d-display, Live2D Cubism Core
+
+Kimm's animated figure (owner decision, 15 November 2026) runs on four
+libraries shipped as byte copies of VEX Cloud's
+`apps/web/public/kimm/v1/lib/`, in
+`src/renderer/public/art/kimm/live/lib/`, unmodified; each file is pinned by
+size and sha256 in `scripts/kimm-brand-assets.mjs`, and
+`src/renderer/public/art/kimm/NOTICE.md` lists them with the model.
+
+- PIXI.js 6.5.10 (`pixi.min.js`, https://github.com/pixijs/pixijs) and
+  `@pixi/unsafe-eval` 6.5.10 (`unsafe-eval.min.js`): MIT, Copyright (c)
+  2013-2023 Mathew Groves, Chad Engler. Each file keeps its licence banner.
+- pixi-live2d-display 0.4.0 (`cubism4.min.js`,
+  https://github.com/guansss/pixi-live2d-display): MIT, Copyright (c) 2020
+  Guan.
+- Live2D Cubism Core 5.0.0 (`live2dcubismcore.min.js`): (C) 2019 Live2D Inc.
+  All rights reserved. Live2D's proprietary "Redistributable Code", licensed
+  under the Live2D Proprietary Software License Agreement
+  (https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html);
+  the file keeps its header. It is not MIT: its terms are Live2D's, and a
+  commercial release may need Live2D's SDK release licence (see the notice
+  beside the files).
+
+The MIT licence of PIXI.js, @pixi/unsafe-eval and pixi-live2d-display:
+
+```text
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Lightweight Charts
 
 The board's market chart is rendered by TradingView Lightweight Charts

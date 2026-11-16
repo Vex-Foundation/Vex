@@ -34,7 +34,14 @@ import { useEffect, useRef, useState, type JSX } from "react";
 import { RunGate } from "../../../lib/motion/run-gate.js";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
 import type { GradientAsciiHandle } from "./gradient-ascii.js";
-import { kimmFieldOptions, kimmFieldRuns, type KimmFieldMode } from "./kimm-field.js";
+import {
+  kimmFieldOptions,
+  kimmFieldRuns,
+  kimmFieldTempo,
+  kimmFieldTempoName,
+  type KimmFieldMode,
+  type KimmFieldPace,
+} from "./kimm-field.js";
 
 export interface KimmFieldProps {
   /** Her section is open: the field runs; closed, it holds its frame. */
@@ -50,6 +57,13 @@ export interface KimmFieldProps {
   readonly hold?: boolean;
   /** The field has painted (true) or is gone (false). */
   readonly onDrawn?: (drawn: boolean) => void;
+  /**
+   * The lock screen's lively tempo (`KIMM_FIELD_LIVELY`) while her live figure stands there: a faster flow and a
+   * slow light pulse, tuned in place. It changes how the field moves, never whether: the gates above still decide.
+   */
+  readonly lively?: boolean;
+  /** The lock screen's pace while lively: the day's, the night's (calmer), or sleepy (slower still). */
+  readonly pace?: KimmFieldPace;
 }
 
 /** Run `fn` two animation frames from now (Cloud's `afterTwoFrames`); returns the cancel. */
@@ -64,7 +78,14 @@ function afterTwoFrames(fn: () => void): () => void {
   };
 }
 
-export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFieldProps): JSX.Element {
+export function KimmField({
+  open,
+  mode = "live",
+  hold = false,
+  onDrawn,
+  lively = false,
+  pace = "day",
+}: KimmFieldProps): JSX.Element {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<GradientAsciiHandle | null>(null);
   const still = useStillFrame();
@@ -72,6 +93,8 @@ export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFi
   const running = kimmFieldRuns({ mode, open: open && !hold, still, onScreen });
   const runningRef = useRef(running);
   const drawnRef = useRef(onDrawn);
+  const tempo = kimmFieldTempo(lively, pace);
+  const tempoRef = useRef(tempo);
   useEffect(() => {
     drawnRef.current = onDrawn;
   }, [onDrawn]);
@@ -90,6 +113,13 @@ export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFi
     handleRef.current?.setStill(!running);
   }, [running]);
 
+  // The tempo: lively on the lock screen while she stands live (by its pace), calm otherwise, in place.
+  useEffect(() => {
+    const was = tempoRef.current;
+    tempoRef.current = tempo;
+    if (was !== tempo) handleRef.current?.tune(tempo);
+  }, [tempo]);
+
   // The port: mounted once per mode, holding one frame, then running if the
   // gate says so by then.
   useEffect(() => {
@@ -101,6 +131,7 @@ export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFi
       if (cancelled) return;
       const handle = mountGradientAscii(box, kimmFieldOptions(mode, false, window.devicePixelRatio));
       handleRef.current = handle;
+      if (tempoRef.current !== kimmFieldTempo(false)) handle.tune(tempoRef.current);
       if (runningRef.current) handle.setStill(false);
       if (!handle.drawn) return;
       cancelFrames = afterTwoFrames(() => {
@@ -124,6 +155,7 @@ export function KimmField({ open, mode = "live", hold = false, onDrawn }: KimmFi
       aria-hidden="true"
       data-vex-area="kimm-field"
       data-kimm-field-running={running ? "true" : "false"}
+      data-kimm-field-tempo={kimmFieldTempoName(lively, pace)}
       className="vex-kimm__field"
     />
   );

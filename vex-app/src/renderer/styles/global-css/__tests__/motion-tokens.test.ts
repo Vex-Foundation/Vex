@@ -45,6 +45,7 @@ import {
   DURATION_FAST_MS,
   DURATION_INSTANT_MS,
   DURATION_KEY_FILL_MS,
+  DURATION_KIMM_IN_MS,
   DURATION_REVEAL_MS,
   DURATION_SLOW_MS,
   DURATION_VEX_CLOSE_MS,
@@ -116,6 +117,7 @@ describe("motion vocabulary", () => {
       ["--vex-duration-gate-mark", DURATION_GATE_MARK_MS],
       ["--vex-duration-gate-mark-fade", DURATION_GATE_MARK_FADE_MS],
       ["--vex-duration-key-fill", DURATION_KEY_FILL_MS],
+      ["--vex-duration-kimm-in", DURATION_KIMM_IN_MS],
     ];
     for (const [token, ms] of pairs) {
       expect(declaration(tokensCss, token)).toBe(`${String(ms)}ms`);
@@ -148,6 +150,7 @@ describe("motion vocabulary", () => {
       "--vex-duration-gate-mark",
       "--vex-duration-gate-mark-fade",
       "--vex-duration-key-fill",
+      "--vex-duration-kimm-in",
       "--vex-ease-standard",
       "--vex-ease-out",
       "--vex-ease-inout",

@@ -18,7 +18,10 @@
  * vault as its keys. She rests while the screen waits, is concerned (as the
  * stage maps it) on a failure, a throttle or the reset panel, and says hi
  * once the vault opens (`stageVexLockMood`); with her stored choice hidden
- * (`vexOpenChat`), the panel keeps her field without her figure. The
+ * (`vexOpenChat`), the panel keeps her field without her figure. Her live
+ * figure stands here in the lock screen's lively mode (`KimmPanel` `lively`,
+ * owner decision 2026-11-15): never resting, her gaze on the pointer, a
+ * livelier field and light motes, all off wherever her still stands. The
  * in-flight signing stroke travels the field's foot ONLY while the unlock
  * IPC is in flight (the sanctioned in-flight loop).
  *
@@ -45,7 +48,7 @@
  *   - `data-vex-button="armed"` + `data-armed` on the CTA.
  */
 
-import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PasswordField } from "../../components/common/PasswordField.js";
@@ -59,6 +62,7 @@ import {
   useStageVex,
 } from "../../components/onboarding/stage-vex.js";
 import { KimmPanel } from "../../components/vex/kimm/KimmPanel.js";
+import { createKimmLockSignals } from "../../components/vex/kimm/kimm-lock-signals.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { PASSWORD_MIN_LENGTH } from "@shared/schemas/secrets.js";
 import { getErrorCopy } from "../../lib/errors/error-copy.js";
@@ -91,6 +95,16 @@ export function UnlockScreen(): JSX.Element {
   // is whether it is empty, which is what lights the CTA up. Guarded by
   // `UnlockScreen-no-leak.test.tsx`.
   const [hasInput, setHasInput] = useState(false);
+  // KIMM'S SIGNALS - five fixed words, never the password, its length or the
+  // field (`kimm-lock-signals.ts`): she looks at the field while keys go in,
+  // away while it is shown, shakes her head on a refusal, smiles on success.
+  // Guarded by `UnlockScreen-kimm-signals.test.tsx`.
+  const kimmSignals = useMemo(() => createKimmLockSignals(), []);
+  // The field takes focus as it mounts (autoFocus), before her panel listens:
+  // say so once her panel is there (a child's effects run before ours).
+  useEffect(() => {
+    if (passwordRef.current !== null && document.activeElement === passwordRef.current) kimmSignals.emit("focus");
+  }, [kimmSignals]);
   const beginUnlockCurtain = useUiStore((s) => s.beginUnlockCurtain);
   // Her stored choice is the chat's, as on the stage (section 4.10): hidden, her
   // panel keeps the field without her figure. Read only: the lock screen has no key for it.
@@ -181,6 +195,7 @@ export function UnlockScreen(): JSX.Element {
     try {
       const result = await window.vex.secrets.unlock({ password });
       if (!result.ok) {
+        kimmSignals.emit("failed");
         if (
           result.error.code === "secrets.unlock_throttled"
           && typeof result.error.retryAfterMs === "number"
@@ -205,6 +220,7 @@ export function UnlockScreen(): JSX.Element {
       }
       if (passwordRef.current) passwordRef.current.value = "";
       setHasInput(false);
+      kimmSignals.emit("unlocked");
       stageVexUnlocked();
       beginUnlockCurtain();
     } finally {
@@ -251,7 +267,7 @@ export function UnlockScreen(): JSX.Element {
         (the mac lights stand over Kimm's top left, the caption overlay at the
         top right). The column below starts under it. */}
       <div aria-hidden="true" className="vex-lock__head vex-drag" />
-      <KimmPanel mood={mood} figure={figure} className="vex-lock__kimm" />
+      <KimmPanel mood={mood} figure={figure} lively signals={kimmSignals} className="vex-lock__kimm" />
       <div className="vex-lock__side">
         <div className="vex-lock__col vex-no-drag">
           <p className="vex-lock__brand">
@@ -291,6 +307,16 @@ export function UnlockScreen(): JSX.Element {
                   disabled={inputsDisabled}
                   onInput={(event) => {
                     setHasInput(event.currentTarget.value.length > 0);
+                    kimmSignals.emit("typing");
+                  }}
+                  onVisibleChange={(visible) => {
+                    kimmSignals.emit(visible ? "shown" : "hidden");
+                  }}
+                  onFocus={() => {
+                    kimmSignals.emit("focus");
+                  }}
+                  onBlur={() => {
+                    kimmSignals.emit("blur");
                   }}
                 />
                 {/* SIGNATURE STROKE - rests at scale 0 on the field's foot;

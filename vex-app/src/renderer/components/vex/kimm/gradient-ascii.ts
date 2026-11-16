@@ -15,6 +15,10 @@
  * frame. Desktop changes: the indent, and the options type lives in
  * `kimm-field.ts`. `KimmField.tsx` mounts it, reached only through a dynamic
  * import, and drives `setStill` from desktop's run gate and still frame.
+ * Desktop also adds `tune()` (the lock screen's lively tempo: speed, flow,
+ * flicker, glow and a slow light pulse, changed in place with no remount) and
+ * the `pulse` it reads; with `pulse` 0 and the recipe's values the field
+ * draws exactly as before.
  */
 import type { GradientAsciiOptions } from "./kimm-field.js";
 
@@ -499,11 +503,26 @@ const buildAtlas = (gl: Gl, characters: string, fontFamily: string): Atlas => {
 };
 
 /** The handle of a mounted field. `drawn` is false when WebGL2 or a shader was not available (nothing was drawn). */
+/** The settings `tune()` may change while the field runs (desktop's lively tempo). */
+export interface GradientAsciiTempo {
+  readonly speed: number;
+  readonly flow: number;
+  readonly flicker: number;
+  readonly glow: number;
+  /** The glow's slow pulse, 0 (none) to 1 (the glow swings from 0 to twice itself), one cycle in `PULSE_SECONDS`. */
+  readonly pulse: number;
+}
+
+/** One cycle of the glow's pulse. */
+export const PULSE_SECONDS = 4.8;
+
 export interface GradientAsciiHandle {
   readonly drawn: boolean;
   dispose(): void;
   wake(): void;
   setStill(on: boolean): void;
+  /** Changes the tempo in place (desktop's lively lock screen); a still field keeps its frame. */
+  tune(tempo: GradientAsciiTempo): void;
 }
 
 export function mountGradientAscii(
@@ -568,6 +587,7 @@ export function mountGradientAscii(
     lightMode,
     fontFamily: fontFamily || DEFAULT_FONT,
     dpr,
+    pulse: 0,
   };
 
   const dispose = ((): (() => void) | undefined => {
@@ -639,6 +659,7 @@ export function mountGradientAscii(
     let introClock = settings.intro && !reduce ? 0 : 1;
     let frameSeed = 0;
     let grainClock = 0;
+    let pulseClock = 0;
     let raf = 0;
     let last = 0;
     let visible = true;
@@ -737,7 +758,9 @@ export function mountGradientAscii(
       gl.uniform1f(fu.uFrame ?? null, frameSeed);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      const glowing = settings.glow > 0.001;
+      const glowNow =
+        settings.glow * (1 + settings.pulse * Math.sin((pulseClock * 2 * Math.PI) / PULSE_SECONDS));
+      const glowing = glowNow > 0.001;
       if (glowing) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, haloA.framebuffer);
         gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -771,7 +794,7 @@ export function mountGradientAscii(
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, haloA.textures[0] ?? null);
       gl.uniform1i(cu.uHalo ?? null, 3);
-      gl.uniform1f(cu.uGlow ?? null, glowing ? settings.glow : 0);
+      gl.uniform1f(cu.uGlow ?? null, glowing ? glowNow : 0);
       gl.uniform1f(cu.uGradient ?? null, settings.gradientOpacity);
       gl.uniform1f(cu.uGrain ?? null, settings.grain);
       gl.uniform1f(cu.uFrame ?? null, frameSeed);
@@ -835,6 +858,7 @@ export function mountGradientAscii(
       const dt = last ? clamp((now - last) / 1000, 0.001, 0.05) : 1 / 60;
       last = now;
       if (!reduce) {
+        pulseClock += dt;
         time += dt * settings.speed * 0.5;
         glyphTime += dt * Math.max(settings.speed, 0.15);
       }
@@ -955,5 +979,13 @@ export function mountGradientAscii(
     },
     wake: () => wakeFn?.(),
     setStill: (on) => stillFn?.(on),
+    tune: (tempo) => {
+      settings.speed = Math.max(0, tempo.speed);
+      settings.flow = clamp(tempo.flow, 0, 2);
+      settings.flicker = clamp(tempo.flicker, 0, 1);
+      settings.glow = clamp(tempo.glow, 0, 2);
+      settings.pulse = clamp(tempo.pulse, 0, 1);
+      wakeFn?.();
+    },
   };
 }

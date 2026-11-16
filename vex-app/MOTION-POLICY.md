@@ -56,6 +56,22 @@ here is a defect:
   16px glyph inside its fixed cell, so nothing moves around it (Cloud rides
   its house curve, which desktop keeps for a page's re-lay alone); reduced
   motion and the still frame turn it at once (title-bar.css states both).
+- Kimm's live figure arriving, 900ms (`--vex-duration-kimm-in`,
+  `DURATION_KIMM_IN_MS`) - VEX Cloud's `--vx-dur-kimm-in` (owner decision
+  2026-11-15; `docs/design/H3-DESKTOP.md` section 1.6, "Her live figure"):
+  once her Live2D model is on screen, its layer fades in over her still on
+  the standard curve; her still stands under the fade and leaves only when
+  it ends (a visibility switch delayed by the same 900ms: Cloud hides it at
+  once, which left her field alone for a moment). Opacity only, inside her panel's
+  fixed box, so nothing moves; kimm.css states its own collapse, and reduced
+  motion and Save-Data never seat her, so her still stands.
+- Kimm's live figure itself (`kimm-embed.ts`, `kimm-rig.ts`) is a canvas loop
+  bound like her glyph field: only while her panel holds her, the window is
+  shown and she is in view (the embed stops its ticker on a painted frame
+  otherwise and wakes when shown), never under reduced motion or Save-Data,
+  and asleep on a painted frame 12 s after her last change of mood unless
+  the pointer rests over her (`IDLE_SLEEP_MS`, Cloud's). Her springs are
+  sub-stepped at 1/60 s, so a stalled window resumes without a jump.
 - The general key's hover fill, 420ms (`--vex-duration-key-fill`,
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
@@ -294,6 +310,151 @@ canvas (WebGL2, plain script: no eval, no wasm, the CSP untouched), so it
 moves nothing in the layout and no transition or keyframe of it exists to
 collapse; the bounds above are the whole of its motion. Where WebGL2 is
 missing it draws nothing and her ground keeps the field's baked frame.
+
+### The lock screen's lively Kimm
+
+The lock screen alone (`UnlockScreen`'s `KimmPanel`, `lively`; owner decision
+2026-11-15: "like a game login screen, never standing still") runs a livelier
+Kimm. The Vex card never asks for it and keeps the calm behaviour above. It
+is one switch, and it is on only while her live Live2D figure stands on the
+lock screen (`data-kimm-lively="on"`): wherever her still stands instead, it
+is entirely off. So reduced motion, Save-Data, a device under 4 GB or 4
+cores, a GPU without WebGL2 or 4096 textures, a failed load and her figure
+hidden each turn all of it off, and her still stands exactly as before.
+
+**One knob** (owner decision 2026-11-16: "she moves but i want more obvious
+moves"; `kimm-lock-tuning.ts`). Every amplitude and cadence below comes from
+`KIMM_LOCK`, which is `kimmLockTuning(KIMM_LOCK_INTENSITY)`: change that one
+number to tune her. The numbers in the list below are at intensity 1, the
+first lively pass; the app ships **intensity 2**, which makes them:
+
+| What | At 1 | Shipped (2) | How it scales |
+| --- | --- | --- | --- |
+| Sway (times Cloud's) | 1.8 | 3.6 | with the knob |
+| Bob on each breath | 2.4px | 4.8px | with the knob |
+| Gaze drift; head turn toward the pointer | 1; 1 | 1.5; 1.4 | gently |
+| Hops (moments, wake, the unlock's beat) | 1 | 2 | with the knob |
+| Greeting hop; tilt | 0.7; 8 degrees | 1.4; 16 degrees | with the knob |
+| Lean body; head; step closer | 7; 4 degrees; 4% | 14 (capped at 10); 8 degrees; 8% | with the knob |
+| Moments' head and body angles | 1 | 2 | with the knob |
+| Smiles; blink rate | 1; 1 | 1.3 (capped at 1); 1.3 | gently |
+| Pause between moments | 1.4 to 3.2 s | 0.93 to 2.13 s | against the knob |
+| Head shake; Show's turn; hover tilt | 12; 7; 5 degrees | 24; 14; 10 degrees | with the knob |
+| Depth: field, motes, figure | 3, 6, 10px | 6, 12, 20px | with the knob |
+| Field's lively tempo (speed) | 1.8 | 2.6, pulse 0.9 | toward its caps |
+| Motes by day | 1 | 1.4 | gently |
+
+The knob holds between 0 and 3. Whatever it asks, the rig clamps every
+parameter to the model's own limits (`KIMM_PARAM_LIMITS`, read from the
+shipped moc: the head ±30 degrees, the body ±10, the eyes ±1, smile and mouth
+0 to 1), so a bold value can never stretch a mesh past what was drawn. At 2,
+three of them meet those limits: the lean's body turn (asked 14, held at 10),
+the head turning fully (30) when the pointer is over the password column,
+and the eye smile at its full 1 in her smiles. Her breath already swings
+through its whole range at 1, so the bigger breath is her bob. Her layer
+bleeds 32px and the field 12px, wider than the largest depth the knob allows
+(30 and 9 at 3), so no panel edge shows. The 30 fps cap, the pause when
+hidden and every gate are not part of the knob.
+
+- **She never rests on a timer.** No 12 s idle sleep (`IDLE_SLEEP_MS` applies
+  to the card only): her breath, blink, hair physics, idle loop and idle acts
+  run continuously while the window is shown.
+- **She pauses with the window.** A hidden or minimised window, a screen that
+  hides the page, or her panel out of view stops her render ticker on a
+  painted frame and pauses her model's own update (the embed's visibility and
+  intersection gate); shown again, she wakes.
+- **30 fps.** Her render ticker and the shared ticker her model updates on are
+  capped at 30 frames a second (`KIMM_LIVELY.fps`), to spare the battery.
+- **Livelier, still natural** (`KIMM_LIVELY`, `kimm-rig.ts`): her head and
+  body sways run at 1.8 times the calm amplitude, inside the same angle
+  clamps; she bobs up to 2.4px with each 3.4 s breath (a slow bounce, never
+  a jitter: under a quarter pixel a frame at 30 fps); her first idle act
+  comes 2 s after the switch and the next every 1.4 to 3.2 s (calm: 5 s, then
+  3.5 to 7 s), 2 s after a run ends (calm: 4 s).
+- **She looks toward the pointer** anywhere over the lock-screen window,
+  head and eyes on their springs and within their limits (the eyes at most
+  0.9 and 0.8 of their range, the head at most 30 degrees), for 3 s after the
+  pointer last moved (calm: 5 s); then, or at once when the pointer leaves
+  the window or the window loses focus, she eases back to centre.
+- **The field moves more visibly** (`KIMM_FIELD_LIVELY`, tuned in place by
+  the port's `tune`, never a remount): the gradient at 1.8 times its pace
+  with a longer flow, a little more flicker, and a stronger glow with a slow
+  pulse, one cycle in 4.8 s (`PULSE_SECONDS`). The field's four bounds above
+  still decide whether it moves at all.
+- **A few light motes** (`KimmMotes.tsx` over `kimm-motes.ts`): 14 soft
+  points of the field's own pale blue and near white rise behind her over 30
+  to 80 s each, swaying and twinkling, on one 2D canvas drawn by our own code,
+  at most 30 redraws a second, each step clamped to a tenth of a second. The
+  run gate stops them with a hidden window or a panel out of view, and they
+  exist only while the lively switch is on.
+
+- **She reacts to the lock screen** (`KIMM_REACT`, `kimm-rig.ts`), told by
+  seven fixed words and nothing else (`kimm-lock-signals.ts`: `typing`,
+  `focus`, `blur`, `shown`, `hidden`, `failed`, `unlocked`; no payload, so the password, its
+  length and the field never reach her code). Typing turns her gaze to the
+  field for 1.2 s after each key and holds her idle acts back for 3 s; while
+  the password is shown she looks away, down and to her side, eyes nearly
+  shut, her head turned 7 degrees, and plays no act until it is hidden (the
+  model has no hand over her eyes); a refusal plays a head shake of at most
+  12 degrees, two swings in 0.9 s fading out, with her refused mood (3.4 s);
+  the unlock plays her happy beat (Cloud's `done`: the V sign, a smile, a
+  hop) as the curtain lifts, adding no wait; a pointer resting over her
+  panel tilts her head 5 degrees with Cloud's hover smile.
+- **Depth** (`kimm-parallax.ts`, `use-kimm-parallax.ts`): her field, the
+  motes and her figure shift against the pointer by up to 3, 6 and 10 px
+  (the vertical 0.6 of it), eased with a 280ms time constant at most 30
+  times a second, only while the eased point still moves, and home when the
+  pointer leaves the window. A transform inside the panel, which clips it;
+  her layer bleeds 32px and the field 12px past the panel, so no edge shows.
+
+- **She greets the viewer** (`KIMM_LIFE`, `use-kimm-lock-life.ts`): 700ms
+  after she first stands live in an app launch (once she has faded in; keys
+  already going in skip it), and again when the window is shown after 10
+  minutes or more hidden (measured on the monotonic clock). A hop, a smile and an 8 degree head
+  tilt toward the viewer for 1.2 s, then her gaze settles on the field, 2 s in
+  all. Typing ends it at once; the field's focus as the screen opens waits
+  for it. It never holds a key back.
+- **She leans in** while the field has focus or keys go in: her body 7 and
+  her head 4 degrees toward the form and a step closer, up to 4% of her size
+  about her face (inside her layer's 32px bleed), eased with a 0.35 s time
+  constant; she eases back on blur or 4 s after the last key or focus.
+- **The order when they meet**, highest first: the unlock's happy beat, a
+  refusal, the password shown, typing and focus, the greeting, sleepiness,
+  the idle moments. The beat, a refusal and Show end the greeting and stand
+  her back from the lean; typing ends the greeting; nothing starts a moment
+  while she greets or is sleepy. The depth adds to all of them.
+- **Chained moments instead of lone acts** (`kimm-moments.ts`): seven short
+  sequences of her own poses (hand to mouth then a playful tilt; arms crossed,
+  a sigh, arms down; a look left, right and back with a smile; a slow stretch;
+  a V sign with a hop; a point at the field then an open hand; a glance and a
+  nod), 2.4 to 4.1 s each, at the lively pause between them, picked at random
+  and never the same twice in a row. Their hand poses change through the cut
+  below, never a crossfade.
+- **Sleepy** after 45 s with no pointer movement, key or focus change: eyes
+  half closed, her blink longer and rarer, her breath 60% slower, her sway at
+  half its pace and her bob at 0.4, a yawn-like head drop every 9 to 15 s, no
+  moments, eased in over 1.2 s; the field takes its drowsy tempo and the
+  motes 0.45 of their pace. Any pointer movement or key wakes her with a small
+  hop and a smile (0.9 s).
+- **Night by the local clock** (22:00 to 06:00, read in the renderer and sent
+  nowhere): her sway at 0.75 and her bob at 0.7 of the day's, her moments
+  every 2.6 to 6 s, the field's night tempo and the motes at 0.7.
+
+No new library and no network: all of it is the rig, the field port and one
+canvas of ours. Nothing moves in the layout. Her arrival keeps its 900ms fade
+(`--vex-duration-kimm-in`).
+
+### Kimm's hand swap is a cut
+
+Everywhere she stands live, the card included: her hand pose changes as a
+cut, never a crossfade (`KIMM_HAND_CUT`, `kimmHandBlend` in `kimm-rig.ts`;
+owner decision 2026-11-15, the "ghost arm"). Measured on the shipped model,
+each hand toggle crossfades two whole drawings, so any value between 0 and 1
+draws the old and the new arm (and sleeve) see-through. The swap keeps
+Cloud's clock (340ms, 260ms into or out of crossed arms, a 650ms hold, 350ms
+at rest) and the body dip that starts it, but each toggle is exactly 0 or 1
+on every frame: the old pose holds until the middle of the leg, at the bottom
+of the dip, and the new one stands from there.
 
 ### Vex's bars
 

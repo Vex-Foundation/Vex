@@ -198,6 +198,36 @@ export const KIMM_SHIPPED_ART: KimmArtSet = {
   field: { still: shipped(KIMM_FILES.field.still), wide: shipped(KIMM_FILES.field.wide) },
 };
 
+/**
+ * HER LIVE MODEL (owner decision 2026-11-15; `public/art/kimm/NOTICE.md`, "Her
+ * live model"). VEX Cloud's `kimm/v1/lib/` and `kimm/v1/model/`, byte copies
+ * under `public/art/kimm/live/`, served from the app's own origin. This is the
+ * only module that names that folder; `kimm-embed.ts` loads what it names.
+ * Each file's size and sha256 are pinned in `scripts/kimm-brand-assets.mjs`
+ * (`KIMM_LIVE_FILES`), which the build check enforces. Where she cannot stand
+ * live, the stills above are drawn as before.
+ */
+export const KIMM_LIVE_DIR = `${KIMM_ART_DIR}/live`;
+
+/** The model folder pixi-live2d-display reads the settings, moc, physics, motion and textures from. */
+export const KIMM_LIVE_MODEL_BASE = `/${KIMM_LIVE_DIR}/model/`;
+
+/** The model's settings file, relative to `KIMM_LIVE_MODEL_BASE`. */
+export const KIMM_LIVE_MODEL_FILE = "kimm.model3.json";
+
+/**
+ * The libraries in load order, each a same-origin script file (never inline):
+ * Live2D Cubism Core 5.0.0 and PIXI 6.5.10 must be globals before the
+ * `@pixi/unsafe-eval` shim patches PIXI (so the CSP keeps no `'unsafe-eval'`)
+ * and before pixi-live2d-display 0.4.0 runs (SK KIMM.md 3, 10.2).
+ */
+export const KIMM_LIVE_LIBS = [
+  `/${KIMM_LIVE_DIR}/lib/live2dcubismcore.min.js`,
+  `/${KIMM_LIVE_DIR}/lib/pixi.min.js`,
+  `/${KIMM_LIVE_DIR}/lib/unsafe-eval.min.js`,
+  `/${KIMM_LIVE_DIR}/lib/cubism4.min.js`,
+] as const;
+
 /** Whether a piece of her art can be drawn. */
 export function isKimmArtReady<Ready extends object>(
   art: KimmArt<Ready>,

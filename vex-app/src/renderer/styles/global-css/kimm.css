@@ -385,6 +385,87 @@
   height: auto;
 }
 
+/* HER LIVE FIGURE (owner decision 2026-11-15; VEX Cloud's `.vx-kimm-live`):
+ * the Live2D model's layer over her still, the panel's whole box (her canvas
+ * is framed in it by `kimmSeatFit`, as the still is framed above). It stays
+ * transparent until she is on screen (`data-kimm-live="live"`, set by
+ * `useKimmLive`), then fades in over `--vex-duration-kimm-in` (900ms, Cloud's
+ * `--vx-dur-kimm-in`) and her still leaves, as Cloud's does. Any other state
+ * (still, gated, failed, loading, another panel holding her) leaves the still
+ * exactly as before. Opacity only, inside the panel's fixed box, so nothing
+ * moves; reduced motion never seats her (the still stands) and states its own
+ * collapse below. The canvas takes no pointer, as the panel takes none. */
+.vex-kimm-panel__live {
+  position: absolute;
+  /* it bleeds 32 past the panel (`KIMM_LIVE_BLEED`, which her fit takes
+   * back), so the lock screen's depth never uncovers an edge */
+  inset: -32px;
+  opacity: 0;
+  transition: opacity var(--vex-duration-kimm-in) var(--vex-ease-standard);
+}
+.vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__live {
+  opacity: 1;
+}
+/* Her still stands under the fade and leaves only once it has ended, so no
+ * frame shows the panel without her (Cloud hides it at once, which leaves
+ * her field alone while her live layer is still near transparent). */
+.vex-kimm-panel[data-kimm-live="live"] .vex-kimm-panel__figure {
+  visibility: hidden;
+  transition: visibility 0s linear var(--vex-duration-kimm-in);
+}
+.vex-kimm-live__host {
+  position: absolute;
+  inset: 0;
+}
+/* THE LOCK SCREEN'S DEPTH (owner decision 2026-11-15; kimm-parallax.ts,
+ * use-kimm-parallax.ts): while her live figure stands there in the lively
+ * mode, her field, the motes and her figure shift against the pointer by up
+ * to 6, 12 and 20 px at the shipped intensity (3, 6 and 10 a step of the
+ * tuning knob, `kimm-lock-tuning.ts`; the vertical 0.6 of it), eased in JS at
+ * most 30 times a second and written as `--vex-kimm-shift-*`. A transform
+ * only, inside the panel, which clips it; the field bleeds 12 past the panel
+ * and her layer 32, more than their shifts at the knob's ceiling for the
+ * figure, so no edge shows. Off, nothing reads the shifts. */
+.vex-kimm-panel > .vex-kimm__field {
+  inset: -12px;
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm__field {
+  transform: translate(var(--vex-kimm-shift-field, 0px, 0px));
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm-panel__motes {
+  transform: translate(var(--vex-kimm-shift-motes, 0px, 0px));
+}
+.vex-kimm-panel[data-kimm-lively="on"] > .vex-kimm-panel__live {
+  transform: translate(var(--vex-kimm-shift-figure, 0px, 0px));
+}
+/* THE LOCK SCREEN'S LIGHT MOTES (owner decision 2026-11-15; KimmMotes.tsx):
+ * a few soft points of light on one canvas over her field and under her
+ * figure, mounted only while her live figure stands on the lock screen. The
+ * canvas draws its own light; the box only places it and takes no pointer. */
+.vex-kimm-panel__motes {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.vex-kimm-live__host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-kimm-panel__live,
+  .vex-kimm-panel__figure {
+    transition: none;
+  }
+}
+html[data-still] .vex-kimm-panel__live,
+html[data-still] .vex-kimm-panel__figure {
+  transition: none;
+}
+
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
  * Reduced motion and Save-Data open and close her at once. Her wipe, its
  * scan head and her drop are Web Animations, which no sheet can collapse:

@@ -661,6 +661,8 @@ describe("AppShell", () => {
       "[data-vex-area='vex-sidebar'] [data-vex-area='vex-portrait-card'] [data-vex-area='kimm-panel']",
     );
     expect(card).not.toBeNull();
+    // The card keeps her calm behaviour: it never asks for the lock screen's lively mode.
+    expect(card?.getAttribute("data-kimm-lively")).toBe("off");
     expect(view.container.querySelector("[data-vex-area='kimm-section']")).toBeNull();
     expect(view.container.querySelector("[data-vex-area='kimm-key']")).toBeNull();
     expect(view.container.querySelector("[data-vex-area='kimm-hint']")).toBeNull();

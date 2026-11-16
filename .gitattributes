@@ -15,3 +15,12 @@
 *.woff2 binary
 *.ttf binary
 *.gguf binary
+
+# Kimm's live model: byte copies pinned by sha256
+# (vex-app/scripts/kimm-brand-assets.mjs), so git never rewrites a byte of
+# them. The moc (.wasm) and textures (.webp) are binary. The minified
+# libraries and JSON are text with no NUL byte: `-text` keeps their bytes
+# exact (no line-ending conversion) while git still reads them as text, so
+# check-no-binary-sources and the diff-scoped gates can see them.
+*.wasm binary
+vex-app/src/renderer/public/art/kimm/live/** -text
