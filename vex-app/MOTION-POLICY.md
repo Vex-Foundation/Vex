@@ -322,6 +322,40 @@ is entirely off. So reduced motion, Save-Data, a device under 4 GB or 4
 cores, a GPU without WebGL2 or 4096 textures, a failed load and her figure
 hidden each turn all of it off, and her still stands exactly as before.
 
+**One knob** (owner decision 2026-11-16: "she moves but i want more obvious
+moves"; `kimm-lock-tuning.ts`). Every amplitude and cadence below comes from
+`KIMM_LOCK`, which is `kimmLockTuning(KIMM_LOCK_INTENSITY)`: change that one
+number to tune her. The numbers in the list below are at intensity 1, the
+first lively pass; the app ships **intensity 2**, which makes them:
+
+| What | At 1 | Shipped (2) | How it scales |
+| --- | --- | --- | --- |
+| Sway (times Cloud's) | 1.8 | 3.6 | with the knob |
+| Bob on each breath | 2.4px | 4.8px | with the knob |
+| Gaze drift; head turn toward the pointer | 1; 1 | 1.5; 1.4 | gently |
+| Hops (moments, wake, the unlock's beat) | 1 | 2 | with the knob |
+| Greeting hop; tilt | 0.7; 8 degrees | 1.4; 16 degrees | with the knob |
+| Lean body; head; step closer | 7; 4 degrees; 4% | 14 (capped at 10); 8 degrees; 8% | with the knob |
+| Moments' head and body angles | 1 | 2 | with the knob |
+| Smiles; blink rate | 1; 1 | 1.3 (capped at 1); 1.3 | gently |
+| Pause between moments | 1.4 to 3.2 s | 0.93 to 2.13 s | against the knob |
+| Head shake; Show's turn; hover tilt | 12; 7; 5 degrees | 24; 14; 10 degrees | with the knob |
+| Depth: field, motes, figure | 3, 6, 10px | 6, 12, 20px | with the knob |
+| Field's lively tempo (speed) | 1.8 | 2.6, pulse 0.9 | toward its caps |
+| Motes by day | 1 | 1.4 | gently |
+
+The knob holds between 0 and 3. Whatever it asks, the rig clamps every
+parameter to the model's own limits (`KIMM_PARAM_LIMITS`, read from the
+shipped moc: the head ±30 degrees, the body ±10, the eyes ±1, smile and mouth
+0 to 1), so a bold value can never stretch a mesh past what was drawn. At 2,
+three of them meet those limits: the lean's body turn (asked 14, held at 10),
+the head turning fully (30) when the pointer is over the password column,
+and the eye smile at its full 1 in her smiles. Her breath already swings
+through its whole range at 1, so the bigger breath is her bob. Her layer
+bleeds 32px and the field 12px, wider than the largest depth the knob allows
+(30 and 9 at 3), so no panel edge shows. The 30 fps cap, the pause when
+hidden and every gate are not part of the knob.
+
 - **She never rests on a timer.** No 12 s idle sleep (`IDLE_SLEEP_MS` applies
   to the card only): her breath, blink, hair physics, idle loop and idle acts
   run continuously while the window is shown.
@@ -371,7 +405,7 @@ hidden each turn all of it off, and her still stands exactly as before.
   (the vertical 0.6 of it), eased with a 280ms time constant at most 30
   times a second, only while the eased point still moves, and home when the
   pointer leaves the window. A transform inside the panel, which clips it;
-  her layer bleeds 16px and the field 8px past the panel, so no edge shows.
+  her layer bleeds 32px and the field 12px past the panel, so no edge shows.
 
 - **She greets the viewer** (`KIMM_LIFE`, `use-kimm-lock-life.ts`): 700ms
   after she first stands live in an app launch (once she has faded in; keys
@@ -382,7 +416,7 @@ hidden each turn all of it off, and her still stands exactly as before.
   for it. It never holds a key back.
 - **She leans in** while the field has focus or keys go in: her body 7 and
   her head 4 degrees toward the form and a step closer, up to 4% of her size
-  about her face (inside her layer's 16px bleed), eased with a 0.35 s time
+  about her face (inside her layer's 32px bleed), eased with a 0.35 s time
   constant; she eases back on blur or 4 s after the last key or focus.
 - **The order when they meet**, highest first: the unlock's happy beat, a
   refusal, the password shown, typing and focus, the greeting, sleepiness,

@@ -19,8 +19,8 @@
  * Off the lock screen nothing here applies: the Vex card keeps Cloud's calm rig.
  */
 
-/** The intensity the app ships (1 is the first lively pass). */
-export const KIMM_LOCK_INTENSITY = 1;
+/** The intensity the app ships (2026-11-16: bold, chosen from frames; 1 is the first lively pass). */
+export const KIMM_LOCK_INTENSITY = 2;
 
 /** The knob's ceiling: above it the depth would outgrow her layer's bleed. */
 export const KIMM_LOCK_MAX_INTENSITY = 3;

@@ -103,6 +103,15 @@ describe("the tuning knob", () => {
     expect(KIMM_MOTES.pace.day).toBe(KIMM_LOCK.motesDay);
   });
 
+  test("ships bold: a several-pixel bob, a 6 to 10% step closer, moments every 1 to 2 s, depth 6, 12 and 20", () => {
+    expect(KIMM_LOCK_INTENSITY).toBe(2);
+    expect(KIMM_LOCK.bobPx).toBeGreaterThanOrEqual(4);
+    expect(KIMM_LOCK.leanZoom).toBeGreaterThanOrEqual(0.06);
+    expect(KIMM_LOCK.leanZoom).toBeLessThanOrEqual(0.1);
+    expect(KIMM_LOCK.actGapMs[0]).toBeGreaterThanOrEqual(800);
+    expect(KIMM_LOCK.actGapMs[1]).toBeLessThanOrEqual(2200);
+    expect(KIMM_LOCK.parallax).toEqual({ field: 6, motes: 12, figure: 20 });
+  });
 });
 
 describe("the model's limits", () => {
