@@ -57,12 +57,19 @@ interface NetworkInformationLike {
   readonly saveData?: boolean;
 }
 
-/** The cheap facts of this renderer (no WebGL context); call it in an effect, never during render. */
-export function readKimmDevice(win: Window = window): KimmDevice {
-  const nav = win.navigator as Navigator & {
+/** The parts of a window the device read touches (the renderer's `window` is one). */
+export interface KimmDeviceWindow {
+  readonly navigator: {
+    readonly hardwareConcurrency?: number;
     readonly connection?: NetworkInformationLike;
     readonly deviceMemory?: number;
   };
+  readonly matchMedia?: (query: string) => { readonly matches: boolean };
+}
+
+/** The cheap facts of this renderer (no WebGL context); call it in an effect, never during render. */
+export function readKimmDevice(win: KimmDeviceWindow = window): KimmDevice {
+  const nav = win.navigator;
   const cores = nav.hardwareConcurrency;
   const reduced =
     typeof win.matchMedia === "function" && win.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -74,19 +81,31 @@ export function readKimmDevice(win: Window = window): KimmDevice {
   };
 }
 
+/** The WebGL2 calls the probe makes (a `WebGL2RenderingContext` is one). */
+export interface KimmGpuContext {
+  readonly MAX_TEXTURE_SIZE: number;
+  getParameter(name: number): unknown;
+  getExtension(name: "WEBGL_lose_context"): { loseContext(): void } | null;
+}
+
+/** The part of a document the probe touches (the renderer's `document` is one). */
+export interface KimmGpuDocument {
+  createElement(tag: "canvas"): { getContext(id: "webgl2"): KimmGpuContext | null };
+}
+
 /** The GPU facts: one WebGL2 context, read and lost at once. */
-export function probeGpu(doc: Document = document): {
+export function probeGpu(doc: KimmGpuDocument = document): {
   readonly webgl2: boolean;
   readonly maxTextureSize: number | undefined;
 } {
-  let gl: WebGL2RenderingContext | null = null;
+  let gl: KimmGpuContext | null = null;
   try {
     gl = doc.createElement("canvas").getContext("webgl2");
   } catch {
     gl = null;
   }
   if (!gl) return { webgl2: false, maxTextureSize: undefined };
-  const size = gl.getParameter(gl.MAX_TEXTURE_SIZE) as unknown;
+  const size = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   gl.getExtension("WEBGL_lose_context")?.loseContext();
   return {
     webgl2: true,

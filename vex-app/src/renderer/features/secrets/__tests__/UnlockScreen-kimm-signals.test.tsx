@@ -82,8 +82,19 @@ function scalars(value: unknown, seen = new Set<unknown>()): Array<string | numb
 describe("UnlockScreen's words to Kimm", () => {
   it("tells her only the seven words, never the password, any part of it or its length", async () => {
     mockUnlock
-      .mockResolvedValueOnce({ ok: false, error: { code: "secrets.invalid_password", message: "Wrong password." } } as never)
-      .mockResolvedValueOnce({ ok: true, value: {} } as never);
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "wallet.password_invalid",
+          domain: "wallet",
+          message: "Master password is incorrect.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "test-correlation",
+        },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { unlocked: true } });
     const view = render(<UnlockScreen />);
     const field = view.getByLabelText(/Master password/i) as HTMLInputElement;
     for (let i = 1; i <= 6; i += 1) {

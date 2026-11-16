@@ -12,7 +12,15 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { type KimmDevice, kimmGateReasons, probeGpu, readKimmDevice } from "../kimm-gates.js";
+import {
+  type KimmDevice,
+  type KimmDeviceWindow,
+  type KimmGpuContext,
+  type KimmGpuDocument,
+  kimmGateReasons,
+  probeGpu,
+  readKimmDevice,
+} from "../kimm-gates.js";
 
 const DESK: KimmDevice = {
   saveData: false,
@@ -55,9 +63,9 @@ describe("kimm-gates", () => {
 
   test("the renderer's facts are read from navigator and the reduced motion query", () => {
     const queries: string[] = [];
-    const win = {
+    const win: KimmDeviceWindow = {
       navigator: {
-        connection: { saveData: true, effectiveType: "2g" },
+        connection: { saveData: true },
         deviceMemory: 4,
         hardwareConcurrency: 0,
       },
@@ -65,7 +73,7 @@ describe("kimm-gates", () => {
         queries.push(query);
         return { matches: query === "(prefers-reduced-motion: reduce)" };
       },
-    } as unknown as Window;
+    };
     expect(readKimmDevice(win)).toEqual({
       saveData: true,
       deviceMemory: 4,
@@ -76,7 +84,7 @@ describe("kimm-gates", () => {
   });
 
   test("a window without matchMedia reads as no reduced motion", () => {
-    const win = { navigator: {} } as unknown as Window;
+    const win: KimmDeviceWindow = { navigator: {} };
     expect(readKimmDevice(win)).toEqual({
       saveData: false,
       deviceMemory: undefined,
@@ -87,7 +95,7 @@ describe("kimm-gates", () => {
 
   test("the GPU probe reads WebGL2's texture size and loses its context", () => {
     let lost = 0;
-    const gl = {
+    const gl: KimmGpuContext = {
       MAX_TEXTURE_SIZE: 3379,
       getParameter: (name: number) => (name === 3379 ? 8192 : 0),
       getExtension: (name: string) =>
@@ -99,14 +107,19 @@ describe("kimm-gates", () => {
             }
           : null,
     };
-    const doc = (context: unknown) =>
-      ({
-        createElement: () => ({ getContext: () => context }),
-      }) as unknown as Document;
+    const doc = (context: KimmGpuContext | null): KimmGpuDocument => ({
+      createElement: () => ({ getContext: () => context }),
+    });
     expect(probeGpu(doc(gl))).toEqual({ webgl2: true, maxTextureSize: 8192 });
     expect(lost).toBe(1);
     expect(probeGpu(doc(null))).toEqual({ webgl2: false, maxTextureSize: undefined });
-    const throwing = { createElement: () => ({ getContext: () => { throw new Error("no gl"); } }) } as unknown as Document;
+    const throwing: KimmGpuDocument = {
+      createElement: () => ({
+        getContext: () => {
+          throw new Error("no gl");
+        },
+      }),
+    };
     expect(probeGpu(throwing)).toEqual({ webgl2: false, maxTextureSize: undefined });
   });
 });
